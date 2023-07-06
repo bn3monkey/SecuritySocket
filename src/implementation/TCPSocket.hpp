@@ -26,8 +26,10 @@ namespace Bn3Monkey
 		virtual ConnectionResult connect();
 		virtual void disconnect();
 		
+		ConnectionResult isConnected();
 		virtual int write(const char* buffer, size_t size);
 		virtual int read(char* buffer, size_t size);
+		
 
 		ConnectionResult poll(const PollType& polltype);
 

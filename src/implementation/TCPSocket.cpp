@@ -59,6 +59,12 @@ Bn3Monkey::TCPSocket::~TCPSocket()
 ConnectionResult Bn3Monkey::TCPSocket::connect()
 {
 	ConnectionResult ret;
+	
+#if !defined(_WIN32) && !defined(__linux__)
+	int sigpipe{ 1 };
+	setsockopt(_socket, SOL_SOCKET, SO_NOSIGPIPE, (void*)(&sigpipe), sizeof(sigpipe));
+#endif
+	
 	{
 		NonBlockMode nonblock{ *this };
 
@@ -66,7 +72,9 @@ ConnectionResult Bn3Monkey::TCPSocket::connect()
 		if (res < 0)
 		{
 			// ERROR
-			return result(res);
+			ret = result(res);
+			if (ret.code != ConnectionCode::SOCKET_CONNECTION_IN_PROGRESS)
+				return ret;
 		}
 		else if (res == 0)
 		{
@@ -85,32 +93,50 @@ ConnectionResult Bn3Monkey::TCPSocket::connect()
 			return ret;
 		}
 
-		int optval;
-		socklen_t optlen = sizeof(optval);
-		if (getsockopt(_socket, SOL_SOCKET, SO_ERROR, reinterpret_cast<char *>(&optval), &optlen) < 0)
-		{
-			return ConnectionResult(ConnectionCode::SOCKET_OPTION_ERROR, "cannot get socket error");
-		}
-		if (optval != 0)
-		{
-			ret = result(optval);
-			return ret;
-		}
+
 	}
 }
 
 void Bn3Monkey::TCPSocket::disconnect()
 {
+#ifdef _WIN32
+	shutdown(_socket, SD_BOTH);
+#else
+	shutdown(_socket, SHUT_RDWR);
+#endif
+}
+
+ConnectionResult Bn3Monkey::TCPSocket::isConnected()
+{
+	int optval;
+	socklen_t optlen = sizeof(optval);
+	if (getsockopt(_socket, SOL_SOCKET, SO_ERROR, reinterpret_cast<char*>(&optval), &optlen) < 0)
+	{
+		return ConnectionResult(ConnectionCode::SOCKET_OPTION_ERROR, "cannot get socket error");
+	}
+	if (optval != 0)
+	{
+		return ConnectionResult(ConnectionCode::SOCKET_CLOSED, "Socket closed");
+	}
+	return ConnectionResult(ConnectionCode::SUCCESS);
 }
 
 int Bn3Monkey::TCPSocket::write(const char* buffer, size_t size)
 {
-	return 0;
+	int32_t ret{0};
+#ifdef __linux__
+	ret = send(_socket, buffer, size, MSG_NOSIGNAL);
+#else
+	ret = send(_socket, buffer, size, 0);
+#endif
+	return ret;
 }
 
 int Bn3Monkey::TCPSocket::read(char* buffer, size_t size)
 {
-	return 0;
+	int32_t ret{ 0 };
+	ret = ::recv(_socket, buffer, size, 0);
+	return ret;
 }
 
 ConnectionResult Bn3Monkey::TCPSocket::poll(const PollType& polltype)
@@ -298,32 +324,58 @@ Bn3Monkey::TLSSocket::~TLSSocket()
 
 ConnectionResult Bn3Monkey::TLSSocket::connect()
 {
-	ConnectionResult result = TCPSocket::connect();
-	if (result.code != ConnectionCode::SUCCESS)
+	ConnectionResult ret = TCPSocket::connect();
+	if (ret.code != ConnectionCode::SUCCESS)
 	{
-		return result;
+		return ret;
 	}
 
-
-
-	return result;
+	if (SSL_set_fd(_ssl, _socket) == 0)
+	{
+		return ConnectionResult(ConnectionCode::TLS_SETFD_ERROR, "tls set fd error");
+	}
+	auto res = SSL_connect(_ssl);
+	if (res != 1)
+	{
+		ret = result(res);
+		if (ret.code != ConnectionCode::SUCCESS)
+			return ret;
+	}
+	return ret;
 }
 
 void Bn3Monkey::TLSSocket::disconnect()
 {
+	TCPSocket::disconnect();
 }
 
 int Bn3Monkey::TLSSocket::write(const char* buffer, size_t size)
 {
-	return 0;
+	int32_t ret = SSL_write(_ssl, buffer, size);
+	return ret;
 }
 
 int Bn3Monkey::TLSSocket::read(char* buffer, size_t size)
 {
-	return 0;
+	int32_t ret = SSL_read(_ssl, buffer, size);
+	return ret;
 }
 
 ConnectionResult Bn3Monkey::TLSSocket::result(int operation_return)
 {
-	return ConnectionResult();
+	if (operation_return == 1)
+		return ConnectionResult(ConnectionCode::SUCCESS);
+
+	int code = SSL_get_error(_ssl, operation_return);
+	switch (code)
+	{
+	case SSL_ERROR_SSL:
+		return ConnectionResult(ConnectionCode::SSL_PROTOCOL_ERROR, "SSL Protocol Error");
+	case SSL_ERROR_SYSCALL:
+		// System Error / TCP Error
+		return TCPSocket::result(operation_return);
+	case SSL_ERROR_ZERO_RETURN:
+		return ConnectionResult(ConnectionCode::SSL_ERROR_CLOSED_BY_PEER, "the connection has been terminated by peer");
+	}
+	return ConnectionResult(ConnectionCode::UNKNOWN_ERROR);
 }

@@ -12,5 +12,5 @@ Bn3Monkey::TCPClient::~TCPClient()
 
 ConnectionResult Bn3Monkey::TCPClient::getLastResult()
 {
-
+	return ConnectionResult();
 }

@@ -20,13 +20,21 @@ namespace Bn3Monkey
 		virtual ~TCPClientImpl();
 
 		inline ConnectionResult getLastError() {
-			return _last_error.load();
+			{
+				std::lock_guard<std::mutex> lock(_last_error_lock);
+				return _last_error;
+			}
 		}
 	private:
 		inline void setLastError(const ConnectionResult& result) {
-			_last_error.store(result);
+			{
+				std::lock_guard<std::mutex> lock(_last_error_lock);
+				_last_error = result;
+			}
 		}
-		std::atomic<ConnectionResult> _last_error;
+
+		std::mutex _last_error_lock;
+		ConnectionResult _last_error;
 		
 				
 		static constexpr size_t container_size = sizeof(TCPSocket) > sizeof(TLSSocket) ? sizeof(TCPSocket) : sizeof(TLSSocket);

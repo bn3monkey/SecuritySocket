@@ -56,11 +56,16 @@ namespace Bn3Monkey
         SOCKET_CONNECTION_ALREADY,
         SOCKET_CONNECTION_IN_PROGRESS,
 
+        TLS_SETFD_ERROR,
+
+        SSL_PROTOCOL_ERROR,
+        SSL_ERROR_CLOSED_BY_PEER,
+
         SOCKET_TIMEOUT,
         SOCKET_CLOSED,
 
         POLL_ERROR,
-
+        UNKNOWN_ERROR,
 
         LENGTH,
     };
