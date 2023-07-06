@@ -18,34 +18,49 @@ namespace Bn3Monkey
 	class TCPSocket
 	{
 	public:
-		TCPSocket(const TCPAddress& address, uint32_t timeout_milliseconds);
+		TCPSocket(TCPAddress& address, uint32_t timeout_milliseconds);
 		virtual ~TCPSocket();
 
 		operator const ConnectionResult& () const { return _result; }
 
-		virtual long connect();
+		virtual ConnectionResult connect();
 		virtual void disconnect();
+		
 		virtual int write(const char* buffer, size_t size);
 		virtual int read(char* buffer, size_t size);
 
-		void poll(const PollType& polltype);
+		ConnectionResult poll(const PollType& polltype);
 
 		virtual ConnectionResult result(int operation_return);
 
 	protected:
+		TCPAddress& _address;
 		ConnectionResult _result;
 		SOCKET _socket;
+		uint32_t _timeout_milliseconds;
+
+	private:
+		class NonBlockMode
+		{
+		public:
+			explicit NonBlockMode(const TCPSocket& socket);
+			~NonBlockMode();
+		private:
+			SOCKET _socket;
+			int32_t _flags;
+		};
 	};
 
 	class TLSSocket : public TCPSocket
 	{
 	public:
-		TLSSocket(const TCPAddress& address, uint32_t timeout_milliseconds);
+		TLSSocket(TCPAddress& address, uint32_t timeout_milliseconds);
 		virtual ~TLSSocket();
 
 
-		long connect() override;
+		ConnectionResult connect() override;
 		void disconnect() override;
+
 		int write(const char* buffer, size_t size) override;
 		int read(char* buffer, size_t size) override;
 

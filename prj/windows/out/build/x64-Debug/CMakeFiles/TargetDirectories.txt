@@ -1,6 +1,0 @@
-E:/repo/SecuritySocket/prj/windows/out/build/x64-Debug/CMakeFiles/openssl_crypto.dir
-E:/repo/SecuritySocket/prj/windows/out/build/x64-Debug/CMakeFiles/openssl_ssl.dir
-E:/repo/SecuritySocket/prj/windows/out/build/x64-Debug/CMakeFiles/securitysocket.dir
-E:/repo/SecuritySocket/prj/windows/out/build/x64-Debug/CMakeFiles/securitysocket_test.dir
-E:/repo/SecuritySocket/prj/windows/out/build/x64-Debug/CMakeFiles/edit_cache.dir
-E:/repo/SecuritySocket/prj/windows/out/build/x64-Debug/CMakeFiles/rebuild_cache.dir

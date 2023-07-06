@@ -29,10 +29,10 @@ Bn3Monkey::TCPClientImpl::TCPClientImpl(const TCPClientConfiguration& configurat
 	}
 
 	if (configuration.tls) {
-		new (_container) TCPSocket {address };
+		new (_container) TCPSocket {address, configuration.timeout_milliseconds };
 	}
 	else {
-		new (_container) TLSSocket{ address };
+		new (_container) TLSSocket{ address, configuration.timeout_milliseconds };
 	}
 
 	result = _socket;
@@ -42,7 +42,6 @@ Bn3Monkey::TCPClientImpl::TCPClientImpl(const TCPClientConfiguration& configurat
 	}
 
 	size_t max_retries = configuration.max_retries;
-	size_t timeout_milliseconds = configuration.timeout_milliseconds;
 }
 
 Bn3Monkey::TCPClientImpl::~TCPClientImpl()
