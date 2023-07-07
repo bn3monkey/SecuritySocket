@@ -43,6 +43,10 @@ public:
     }
     void onRead(char* buffer, size_t size) override {
         {
+            std::lock_guard<std::mutex> lock(test_mtx);
+            printf("onRead (%d) : %s\n", size, buffer);
+        }
+        {
             std::lock_guard<std::mutex> lock(_read_mtx);            
             _read_buffer.push(std::vector<char>(buffer, buffer + size));
         }
@@ -57,6 +61,11 @@ public:
         _write_cv.notify_all();
     }
     void onWrite(char* buffer, size_t size) override {
+        {
+            std::lock_guard<std::mutex> lock(test_mtx);
+            printf("onWrite (%d) : %s\n", size, buffer);
+        }
+
         {
             std::unique_lock<std::mutex> lock(_write_mtx);
             _write_cv.wait(
@@ -81,6 +90,8 @@ public:
     }
 
 private:
+    std::mutex test_mtx;
+
     bool _is_connected{ false };
     std::queue<std::vector<char>> _read_buffer;
     std::mutex _read_mtx;
@@ -112,6 +123,12 @@ int main() {
 
 	{
 		TCPClient client{config, *handler};
+        auto result = client.getLastError();
+        if (result.code != ConnectionCode::SUCCESS)
+        {
+            printf("error : %s\n", result.message.c_str());
+            return 0;
+        }
 
 		char buffer[512]{ 0 };
 
@@ -140,6 +157,7 @@ int main() {
 		handler->read(buffer, 512);
 		printf("%s\n", buffer);
 
+        std::this_thread::sleep_for(std::chrono::seconds(30));
 	}
 
 	printf("³¡?");
