@@ -9,7 +9,7 @@ namespace Bn3Monkey
 	class TCPAddress
 	{
 	public:
-		explicit TCPAddress(const std::string& ip, const std::string& port);
+		explicit TCPAddress(const std::string& ip, const std::string& port, bool is_server);
 		virtual ~TCPAddress();
 
 		operator const ConnectionResult&() const { return _result; }

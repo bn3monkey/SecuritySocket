@@ -22,6 +22,7 @@
 
 #include <mutex>
 #include <condition_variable>
+#include <vector>
 
 namespace Bn3Monkey
 {
@@ -77,21 +78,27 @@ namespace Bn3Monkey
         ConnectionResult(const ConnectionCode& code = ConnectionCode::SUCCESS, const std::string& message = "") : code(code), message(message) {}
     };
 
-    class TCPClientImpl;
 
-    struct TCPClientConfiguration {
+    struct TCPConfiguration {
+        constexpr static size_t MAX_PDU_SIZE = 32768;
+
         const std::string ip;
         const std::string port;
         const bool tls;
         const uint32_t max_retries;
         const uint32_t timeout_milliseconds;
+        const size_t pdu_size;
 
-        explicit TCPClientConfiguration(
+        explicit TCPConfiguration(
             const std::string& ip,
             const std::string& port,
             bool tls,
             uint32_t max_retries,
-            uint32_t timeout_milliseconds) : ip(ip), port(port), tls(tls), max_retries(max_retries), timeout_milliseconds(timeout_milliseconds)
+            uint32_t timeout_milliseconds,
+            size_t pdu_size = MAX_PDU_SIZE) : 
+            ip(ip), port(port), tls(tls), 
+            max_retries(max_retries), timeout_milliseconds(timeout_milliseconds),
+            pdu_size(pdu_size)
         {}
     };
 
@@ -111,6 +118,9 @@ namespace Bn3Monkey
     class TCPStreamHandler : public TCPEventHandler
     {
     public:
+        TCPStreamHandler(size_t size) : _read_buffer(size), _write_buffer(size) {
+
+        }
         void onConnected() override {
             printf("Socket Connected!");
             _read_dirty = false;
@@ -133,14 +143,14 @@ namespace Bn3Monkey
                     }
                 );
 
-                ::memcpy(buffer, _read_buffer, size);
+                ::memcpy(buffer, _read_buffer.data(), size);
                 _read_dirty = false;
             }
         }
         void onRead(char* buffer, size_t size) override {
             {
                 std::lock_guard<std::mutex> lock(_read_mtx);
-                ::memcpy(_read_buffer, buffer, size);
+                ::memcpy(_read_buffer.data(), buffer, size);
                 _read_dirty = true;
             }
             _read_cv.notify_all();
@@ -149,7 +159,7 @@ namespace Bn3Monkey
         void write(char* buffer, size_t size) {
             {
                 std::lock_guard<std::mutex> lock(_read_mtx);
-                ::memcpy(_write_buffer, buffer, size);
+                ::memcpy(_write_buffer.data(), buffer, size);
                 _write_dirty = true;
             }
             _write_cv.notify_all();
@@ -163,45 +173,60 @@ namespace Bn3Monkey
                     }
                 );
 
-                ::memcpy(buffer, _write_buffer, size);
+                ::memcpy(buffer, _write_buffer.data(), size);
                 _write_dirty = false;
             }
         }
 
-        virtual void onError(const ConnectionResult& result) override {
+        void onError(const ConnectionResult& result) override {
             printf("result : %s\n", result.message.c_str());
-        };
+        }
 
     private:
-        char _read_buffer[8196];
+        std::vector<char> _read_buffer;
         std::mutex _read_mtx;
         std::condition_variable _read_cv;
         bool _read_dirty{ false };
 
-        char _write_buffer[8196];
+        std::vector<char> _write_buffer;
         std::mutex _write_mtx;
         std::condition_variable _write_cv;
         bool _write_dirty{ false };
     };
 
-    
+    class TCPClientImpl;
+    class TCPServerImpl;
 
     class TCPClient
     {
     public:
         explicit TCPClient(
-            const TCPClientConfiguration& configuration,
+            const TCPConfiguration& configuration,
             TCPEventHandler& handler
             );
         
         virtual ~TCPClient();
 
-        ConnectionResult getLastResult();
-
+        ConnectionResult getLastError();
+        void close();
     private:
         std::shared_ptr<TCPClientImpl> _impl;
     };
 
+    class TCPServer
+    {
+    public:
+        explicit TCPServer(
+            const TCPConfiguration& configuration,
+            TCPEventHandler& handler
+        );
+        virtual ~TCPServer();
+
+        ConnectionResult getLastError();
+        void close();
+    private:
+        std::shared_ptr<TCPServerImpl> _impl;
+    };
 
 }
 

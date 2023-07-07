@@ -1,6 +1,5 @@
-#if !defined(__BN3MONKEY__TCPCLIENT__)
-#define __BN3MONKEY__TCPCLIENT__
-
+#if !defined(__BN3MONKEY__TCPSERVER__)
+#define __BN3MONKEY__TCPSERVER__
 #include "../SecuritySocket.hpp"
 #include "TCPSocket.hpp"
 #include "TCPStream.hpp"
@@ -14,12 +13,11 @@
 
 namespace Bn3Monkey
 {
-	class TCPClientImpl : public Bn3Monkey::TCPStream
+	class TCPServerImpl : public TCPStream
 	{
 	public:
-		TCPClientImpl() = delete;
-		explicit TCPClientImpl(const TCPConfiguration& configuration, TCPEventHandler& handler);
-		virtual ~TCPClientImpl();
+		TCPServerImpl(const TCPConfiguration& configuration, TCPEventHandler& handler);
+		virtual ~TCPServerImpl();
 
 		void close();
 
@@ -32,5 +30,6 @@ namespace Bn3Monkey
 		TCPEventHandler& _handler;
 	};
 }
+
 
 #endif

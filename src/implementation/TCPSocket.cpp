@@ -92,9 +92,8 @@ ConnectionResult Bn3Monkey::TCPSocket::connect()
 		{
 			return ret;
 		}
-
-
 	}
+	return ret;
 }
 
 void Bn3Monkey::TCPSocket::disconnect()
@@ -143,12 +142,51 @@ ConnectionResult Bn3Monkey::TCPSocket::poll(const PollType& polltype)
 {
 	ConnectionResult ret;
 
-	fd_set set;
-	FD_ZERO(&set);
-	FD_SET(_socket, &set);
+	/*
+	//short io_flags = PollType::READ == polltype ? POLLIN : POLLOUT;
+	short io_flags = POLLIN;
+	short up_flags = PollType::CONNECT == polltype ? 0 : POLLHUP;
+	short err_flags = POLLERR;
+
+	pollfd fds[1];
+	fds[0].fd = _socket;
+	fds[0].events = io_flags | up_flags | err_flags;
+	fds[0].revents = 0;
+	int32_t res =
+#ifdef _WIN32
+		WSAPoll(fds, 1, _timeout_milliseconds);
+#else
+		::poll(fds, 1, _timeout_milliseconds);
+#endif
+	if (res < 0) {
+		return result(res);
+	}
+	else if (res == 0)
+	{
+		return ConnectionResult(ConnectionCode::SOCKET_TIMEOUT);
+	}
+	else {
+		if (fds[0].revents & io_flags) {
+			ret = ConnectionResult(ConnectionCode::SUCCESS);
+		}
+		if (fds[0].revents & up_flags) {
+			ret = ConnectionResult(ConnectionCode::SOCKET_CLOSED, "Connection is closed");
+		}
+		if (fds[0].revents & err_flags) {
+			ret = ConnectionResult(ConnectionCode::SOCKET_CONNECTION_REFUSED, "Connection is refused");
+		}
+	}
+	*/
+
+	fd_set io_set;
+	fd_set error_set;
+	FD_ZERO(&io_set);
+	FD_ZERO(&error_set);
+	FD_SET(_socket, &io_set);
+	FD_SET(_socket, &error_set);
 
 	struct timeval timeout;
-	timeout.tv_sec = _timeout_milliseconds % 1000;
+	timeout.tv_sec = _timeout_milliseconds / 1000;
 	timeout.tv_usec = 1000 * (_timeout_milliseconds - 1000 * timeout.tv_sec);
 	
 	int32_t res{ 0 };
@@ -156,23 +194,26 @@ ConnectionResult Bn3Monkey::TCPSocket::poll(const PollType& polltype)
 	{
 	case PollType::READ: 
 		{
-			res = select(_socket + 1, &set, nullptr, nullptr, &timeout);
+			res = ::select(_socket + 1, &io_set, nullptr, &error_set, &timeout);
 		}
 		break;
 	case PollType::WRITE:
 	case PollType::CONNECT: 
 		{
-		res = select(_socket + 1, nullptr, &set, nullptr, &timeout);
+		res = ::select(_socket + 1, nullptr, &io_set, &error_set, &timeout);
 		}
 		 break;
 	}
 
+	if (FD_ISSET(_socket, &error_set))
+	{
+		ret = ConnectionResult(ConnectionCode::SOCKET_CLOSED, "Socket closed");
+	}
 	if (res < 0)
 	{
 		ret = ConnectionResult(ConnectionCode::POLL_ERROR, "Polling error");
 	}
-	else if (res == 0)
-	{
+	else if (res == 0) {
 		ret = ConnectionResult(ConnectionCode::SOCKET_TIMEOUT);
 	}
 	else {
@@ -235,6 +276,8 @@ ConnectionResult Bn3Monkey::TCPSocket::result(int operation_return)
 	case WSAEINPROGRESS:
 		return ConnectionResult(ConnectionCode::SOCKET_CONNECTION_IN_PROGRESS,
 			"");
+	case WSAEWOULDBLOCK:
+		return ConnectionResult(ConnectionCode::SOCKET_CONNECTION_IN_PROGRESS, "");
 	}
 #else
 	int error	= errno;
@@ -284,7 +327,7 @@ ConnectionResult Bn3Monkey::TCPSocket::result(int operation_return)
 			"");
 	}
 #endif
-
+	return ConnectionResult(ConnectionCode::UNKNOWN_ERROR, "");
 }
 
 Bn3Monkey::TLSSocket::TLSSocket(TCPAddress& address, uint32_t timeout_milliseconds)

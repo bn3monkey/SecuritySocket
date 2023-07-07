@@ -581,6 +581,8 @@ add_library(securitysocket STATIC ${securitysocket_source_files})
 target_include_directories(
     securitysocket PRIVATE "${openssl_include_dir}"
 )
+add_dependencies(securitysocket openssl_crypto openssl_ssl)
+target_link_libraries(securitysocket PRIVATE openssl_crypto openssl_ssl)
 
 configure_file(${source_dir}/SecuritySocket.hpp ${securitysocket_include_dir}/SecuritySocket.hpp)
 
@@ -601,5 +603,6 @@ message("-- Security Socket Sample App CMake Initialization --")
 
 add_executable(securitysocket_test main.cpp)
 add_dependencies(securitysocket_test securitysocket)
+target_link_libraries(securitysocket_test securitysocket)
 target_include_directories(securitysocket_test PRIVATE ${securitysocket_include_dir})
 

@@ -1,13 +1,13 @@
 #include "TCPAddress.hpp"
 
-Bn3Monkey::TCPAddress::TCPAddress(const std::string& ip, const std::string& port)
+Bn3Monkey::TCPAddress::TCPAddress(const std::string& ip, const std::string& port, bool is_server)
 {
 	addrinfo hints;
 	::memset(&hints, 0, sizeof(hints));
 	hints.ai_socktype = SOCK_STREAM;
 	hints.ai_family = AF_INET;
 	hints.ai_protocol = IPPROTO_TCP;
-	hints.ai_flags = 0; // ACTIVTE
+	hints.ai_flags = is_server ? AI_PASSIVE : 0; // ACTIVTE
 
 	const char* node{ ip.empty() ? 0 : ip.c_str() };
 	const char* service{ port.empty() ? 0 : port.c_str() };
