@@ -12,11 +12,11 @@ public:
 
     }
     void onConnected() override {
-        printf("Socket Connected!");
+        printf("Socket Connected!\n");
         _is_connected = true;
     }
     void onDisconnected() override {
-        printf("Socket Disconnected!");
+        printf("Socket Disconnected!\n");
 
         _is_connected = false;
         _read_cv.notify_all();
@@ -113,8 +113,8 @@ int main() {
 
 	TCPConfiguration config {
 		"127.0.0.1",
-		"4444",
-		false,
+		"443",
+		true,
 		3,
 		2000
 	};
@@ -159,7 +159,6 @@ int main() {
 
         std::this_thread::sleep_for(std::chrono::seconds(30));
 	}
-
 	printf("³¡?");
 	return 0;
 }

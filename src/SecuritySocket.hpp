@@ -47,6 +47,7 @@ namespace Bn3Monkey
         // - SOCKET CONNECTION
         // SOCKET_PERMISSION_DENIED,
         // SOCKET_ADDRESS_NOT_SUPPORTED
+        SOCKET_CONNECTION_NOT_RESPOND,
         SOCKET_CONNECTION_ADDRESS_IN_USE,
         SOCKET_CONNECTION_BAD_DESCRIPTOR,
         SOCKET_CONNECTION_REFUSED,
@@ -113,85 +114,6 @@ namespace Bn3Monkey
         virtual void onError(const ConnectionResult& result) = 0;
 
     private:
-    };
-
-    class TCPStreamHandler : public TCPEventHandler
-    {
-    public:
-        TCPStreamHandler(size_t size) : _read_buffer(size), _write_buffer(size) {
-
-        }
-        void onConnected() override {
-            printf("Socket Connected!");
-            _read_dirty = false;
-            _write_dirty = false;
-        }
-        void onDisconnected() override {
-            printf("Socket Disconnected!");
-            _read_dirty = true;
-            _write_dirty = true;
-            _read_cv.notify_all();
-            _write_cv.notify_all();
-        }
-
-        void read(char* buffer, size_t size) {
-            {
-                std::unique_lock<std::mutex> lock(_read_mtx);
-                _read_cv.wait(
-                    lock, [&]() {
-                        return _read_dirty == true;
-                    }
-                );
-
-                ::memcpy(buffer, _read_buffer.data(), size);
-                _read_dirty = false;
-            }
-        }
-        void onRead(char* buffer, size_t size) override {
-            {
-                std::lock_guard<std::mutex> lock(_read_mtx);
-                ::memcpy(_read_buffer.data(), buffer, size);
-                _read_dirty = true;
-            }
-            _read_cv.notify_all();
-        }
-
-        void write(char* buffer, size_t size) {
-            {
-                std::lock_guard<std::mutex> lock(_read_mtx);
-                ::memcpy(_write_buffer.data(), buffer, size);
-                _write_dirty = true;
-            }
-            _write_cv.notify_all();
-        }
-        void onWrite(char* buffer, size_t size) override {
-            {
-                std::unique_lock<std::mutex> lock(_write_mtx);
-                _write_cv.wait(
-                    lock, [&]() {
-                        return _write_dirty == true;
-                    }
-                );
-
-                ::memcpy(buffer, _write_buffer.data(), size);
-                _write_dirty = false;
-            }
-        }
-
-        void onError(const ConnectionResult& result) override {
-            printf("result : %s\n", result.message.c_str());
-        }
-
-    private:
-        std::vector<char> _read_buffer;
-        std::mutex _read_mtx;
-        std::condition_variable _read_cv;
-        bool _read_dirty{ false };
-
-        std::vector<char> _write_buffer;
-        std::mutex _write_mtx;
-        std::condition_variable _write_cv;
-        bool _write_dirty{ false };
     };
 
     class TCPClientImpl;

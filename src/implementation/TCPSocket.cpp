@@ -251,7 +251,9 @@ ConnectionResult Bn3Monkey::TCPSocket::result(int operation_return)
 		return ConnectionResult(ConnectionCode::SOCKET_CANNOT_ALLOC,
 			"No more sockets can be created due to insufficient memory.");
 
-
+	case WSAETIMEDOUT:
+		return ConnectionResult(ConnectionCode::SOCKET_CONNECTION_NOT_RESPOND,
+			"Connected host is not responding to requests.");
 	case WSAEADDRINUSE:
 		return ConnectionResult(ConnectionCode::SOCKET_CONNECTION_ADDRESS_IN_USE,
 			"Address is already used for another socket connection");
@@ -300,7 +302,9 @@ ConnectionResult Bn3Monkey::TCPSocket::result(int operation_return)
 		return ConnectionResult(ConnectionCode::SOCKET_CANNOT_ALLOC,
 			"No more sockets can be created due to insufficient memory.");
 
-
+	case ETIMEDOUT:
+		return ConnectionResult(ConnectionCode::SOCKET_CONNECTION_NOT_RESPOND,
+			"Connected host is not responding to requests.");
 	case EADDRINUSE:
 		return ConnectionResult(ConnectionCode::SOCKET_CONNECTION_ADDRESS_IN_USE,
 			"Address is already used for another socket connection");
@@ -406,7 +410,7 @@ int Bn3Monkey::TLSSocket::read(char* buffer, size_t size)
 
 ConnectionResult Bn3Monkey::TLSSocket::result(int operation_return)
 {
-	if (operation_return == 1)
+	if (operation_return >= 1)
 		return ConnectionResult(ConnectionCode::SUCCESS);
 
 	int code = SSL_get_error(_ssl, operation_return);
