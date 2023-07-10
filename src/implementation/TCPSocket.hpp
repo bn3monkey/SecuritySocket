@@ -4,6 +4,7 @@
 #include "../SecuritySocket.hpp"
 #include "TCPAddress.hpp"
 
+#include <cstdint>
 #include <openssl/ssl.h>
 #include <openssl/err.h>
 
@@ -38,7 +39,7 @@ namespace Bn3Monkey
 	protected:
 		TCPAddress& _address;
 		ConnectionResult _result;
-		SOCKET _socket;
+		int32_t _socket;
 		uint32_t _timeout_milliseconds;
 
 	private:
@@ -48,7 +49,7 @@ namespace Bn3Monkey
 			explicit NonBlockMode(const TCPSocket& socket);
 			~NonBlockMode();
 		private:
-			SOCKET _socket;
+            int32_t _socket;
 			int32_t _flags;
 		};
 	};

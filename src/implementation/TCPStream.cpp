@@ -89,7 +89,8 @@ void TCPStream::read(TCPSocket* socket)
 			break;
 		}
 		else {
-			_handler.onRead(buffer.data(), read_size);
+			if (read_size > 0)
+				_handler.onRead(buffer.data(), read_size);
 		}
 	}
 }

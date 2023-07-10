@@ -1,7 +1,23 @@
+#ifdef __ANDROID__
+#include <jni.h>
+#include <android/log.h>
+#endif
+
 #include <SecuritySocket.hpp>
-#include <cstring>
-#include <vector>
+#include <string>
 #include <queue>
+#include <vector>
+#include <mutex>
+#include <condition_variable>
+#include <thread>
+
+#ifdef __ANDROID__
+#define LOG_D(...) __android_log_print(ANDROID_LOG_DEBUG, "SECURITYSOCKET", __VA_ARGS__)
+#define LOG_E(...) __android_log_print(ANDROID_LOG_ERROR, "SECURITYSOCKET", __VA_ARGS__)
+#else
+#define LOG_D(...) printf(__VA_ARGS__)
+#define LOG_E(...) printf(__VA_ARGS__)
+#endif
 
 using namespace Bn3Monkey;
 
@@ -12,11 +28,11 @@ public:
 
     }
     void onConnected() override {
-        printf("Socket Connected!\n");
+        LOG_D("Socket connected!\n");
         _is_connected = true;
     }
     void onDisconnected() override {
-        printf("Socket Disconnected!\n");
+        LOG_D("Socket Disconnected!\n");
 
         _is_connected = false;
         _read_cv.notify_all();
@@ -44,10 +60,10 @@ public:
     void onRead(char* buffer, size_t size) override {
         {
             std::lock_guard<std::mutex> lock(test_mtx);
-            printf("onRead (%d) : %s\n", size, buffer);
+            LOG_D("onRead (%d) : %s\n", size, buffer);
         }
         {
-            std::lock_guard<std::mutex> lock(_read_mtx);            
+            std::lock_guard<std::mutex> lock(_read_mtx);
             _read_buffer.push(std::vector<char>(buffer, buffer + size));
         }
         _read_cv.notify_all();
@@ -63,14 +79,14 @@ public:
     void onWrite(char* buffer, size_t size) override {
         {
             std::lock_guard<std::mutex> lock(test_mtx);
-            printf("onWrite (%d) : %s\n", size, buffer);
+            LOG_D("onWrite (%d) : %s\n", size, buffer);
         }
 
         {
             std::unique_lock<std::mutex> lock(_write_mtx);
             _write_cv.wait(
                 lock, [&]() {
-                    return !(_is_connected  && _write_buffer.empty());
+                    return !(_is_connected && _write_buffer.empty());
                 }
             );
 
@@ -86,7 +102,7 @@ public:
     }
 
     void onError(const ConnectionResult& result) override {
-        printf("result : %s\n", result.message.c_str());
+        LOG_E("result : %s\n", result.message.c_str());
     }
 
 private:
@@ -103,62 +119,189 @@ private:
 };
 
 void echo(TCPStreamHandler* handler, const char* message) {
-	char buffer[1024]{ 0 };
-	size_t size = strlen(message);
-	handler->write((char *)message, size);
-	handler->read(buffer, 1024);
-	printf("%s\n", buffer);
+    char buffer[1024]{ 0 };
+    size_t size = strlen(message);
+    handler->write((char*)message, size);
+    handler->read(buffer, 1024);
+    LOG_D("READ VALUE : %s\n", buffer);
 }
-int main() {
 
-	TCPConfiguration config {
-		"127.0.0.1",
-		"443",
-		true,
-		3,
-		2000
-	};
+void tlsTest() {
+    TCPConfiguration config{
+            "192.168.0.69",
+            "443",
+            true,
+            3,
+            2000
+    };
 
-	auto* handler = new TCPStreamHandler(32768);
+    auto* handler = new TCPStreamHandler(32768);
 
-	{
-		TCPClient client{config, *handler};
+    {
+        TCPClient client{ config, *handler };
         auto result = client.getLastError();
         if (result.code != ConnectionCode::SUCCESS)
         {
-            printf("error : %s\n", result.message.c_str());
-            return 0;
+            LOG_E("error : %s\n", result.message.c_str());
+            return;
         }
 
-		char buffer[512]{ 0 };
+        char buffer[512]{ 0 };
 
-		echo(handler, "Do you know kimchi?");
-		echo(handler, "Do you know sans?");
-		echo(handler, "Do you know papyrus?");
 
-		std::string big_sentense;
-		for (size_t i = 0; i < 100; i++)
-		{
-			big_sentense += "MONKEY";
-		}
 
-		echo(handler, big_sentense.c_str());
+        std::string big_sentense;
+        for (size_t i = 0; i < 100; i++)
+        {
+            big_sentense += "MONKEY";
+        }
 
-		std::string small_sentense;
-		small_sentense = "do you know picakchu?";
-		handler->write((char *)small_sentense.c_str(), small_sentense.size());
-		small_sentense = "do you know raichu?";
-		handler->write((char*)small_sentense.c_str(), small_sentense.size());
+        echo(handler, big_sentense.c_str());
+
+        std::string small_sentense;
+        small_sentense = "do you know picakchu?";
+        handler->write((char*)small_sentense.c_str(), small_sentense.size());
+        small_sentense = "do you know raichu?";
+        handler->write((char*)small_sentense.c_str(), small_sentense.size());
+        small_sentense = "Do you know kimchi?";
+        handler->write((char*)small_sentense.c_str(), small_sentense.size());
+        small_sentense = "Do you know sans?";
+        handler->write((char*)small_sentense.c_str(), small_sentense.size());
+        small_sentense = "Do you know papyrus?";
+        handler->write((char*)small_sentense.c_str(), small_sentense.size());
+
+        std::this_thread::sleep_for(std::chrono::seconds(20));
 
         memset(buffer, 0, 512);
-		handler->read(buffer, 512);
-		printf("%s\n", buffer);
-        memset(buffer, 0, 512);
-		handler->read(buffer, 512);
-		printf("%s\n", buffer);
+        handler->read(buffer, 512);
+        LOG_D("READ_VALUE : %s\n", buffer);
 
-        std::this_thread::sleep_for(std::chrono::seconds(30));
-	}
-	printf("³¡?");
-	return 0;
+        memset(buffer, 0, 512);
+        handler->read(buffer, 512);
+        LOG_D("READ_VALUE : %s\n", buffer);
+
+        memset(buffer, 0, 512);
+        handler->read(buffer, 512);
+        LOG_D("READ_VALUE : %s\n", buffer);
+
+        memset(buffer, 0, 512);
+        handler->read(buffer, 512);
+        LOG_D("READ_VALUE : %s\n", buffer);
+
+        memset(buffer, 0, 512);
+        handler->read(buffer, 512);
+        LOG_D("READ_VALUE : %s\n", buffer);
+
+    }
+}
+
+void tcpTest() {
+    TCPConfiguration config{
+            "192.168.0.69",
+            "3000",
+            false,
+            3,
+            2000
+    };
+
+    auto* handler = new TCPStreamHandler(32768);
+
+    {
+        TCPClient client{ config, *handler };
+        auto result = client.getLastError();
+        if (result.code != ConnectionCode::SUCCESS)
+        {
+            LOG_E("error : %s\n", result.message.c_str());
+            return;
+        }
+
+        char buffer[512]{ 0 };
+
+        LOG_D("Send : Do you know kimchi?\n");
+        echo(handler, "Do you know kimchi?");
+        result = client.getLastError();
+        if (result.code != ConnectionCode::SUCCESS)
+        {
+            LOG_E("error : %s\n", result.message.c_str());
+            return;
+        }
+        LOG_D("Send : Do you know sans?\n");
+        echo(handler, "Do you know sans?");
+        result = client.getLastError();
+        if (result.code != ConnectionCode::SUCCESS)
+        {
+            LOG_E("error : %s\n", result.message.c_str());
+            return;
+        }
+        LOG_D("Send : Do you know papyrus?\n");
+        echo(handler, "Do you know papyrus?");
+        result = client.getLastError();
+        if (result.code != ConnectionCode::SUCCESS)
+        {
+            LOG_E("error : %s\n", result.message.c_str());
+            return;
+        }
+
+        std::string big_sentense;
+        for (size_t i = 0; i < 100; i++)
+        {
+            big_sentense += "MONKEY";
+        }
+
+        LOG_D("Send : MONKEY\n");
+        echo(handler, big_sentense.c_str());
+        result = client.getLastError();
+        if (result.code != ConnectionCode::SUCCESS)
+        {
+            LOG_E("error : %s\n", result.message.c_str());
+            return;
+        }
+
+        std::string small_sentense;
+        small_sentense = "do you know picakchu?";
+        LOG_D("Send : %s\n", small_sentense.c_str());
+        handler->write((char*)small_sentense.c_str(), small_sentense.size());
+        result = client.getLastError();
+        if (result.code != ConnectionCode::SUCCESS)
+        {
+            LOG_E("error : %s\n", result.message.c_str());
+            return;
+        }
+
+        small_sentense = "do you know raichu?";
+        LOG_D("Send : %s\n", small_sentense.c_str());
+        handler->write((char*)small_sentense.c_str(), small_sentense.size());
+        result = client.getLastError();
+        if (result.code != ConnectionCode::SUCCESS)
+        {
+            LOG_E("error : %s\n", result.message.c_str());
+            return;
+        }
+
+        memset(buffer, 0, 512);
+        handler->read(buffer, 512);
+        result = client.getLastError();
+        if (result.code != ConnectionCode::SUCCESS) {
+            LOG_E("error : %s\n", result.message.c_str());
+            return;
+        }
+        LOG_D("READ_VALUE : %s\n", buffer);
+        memset(buffer, 0, 512);
+
+        handler->read(buffer, 512);
+        result = client.getLastError();
+        if (result.code != ConnectionCode::SUCCESS)
+        {
+            LOG_E("error : %s\n", result.message.c_str());
+            return;
+        }
+        LOG_D("READ_VALUE : %s\n", buffer);
+
+        std::this_thread::sleep_for(std::chrono::seconds(2));
+    }
+}
+
+int main() {
+    tcpTest();
+    // tlsTest();
 }

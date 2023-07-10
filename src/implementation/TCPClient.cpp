@@ -28,7 +28,8 @@ Bn3Monkey::TCPClientImpl::TCPClientImpl(const TCPConfiguration& configuration, T
 	}
 
 	if (configuration.tls) {
-		_socket = new (_container) TLSSocket{ address, configuration.timeout_milliseconds };
+		_socket = reinterpret_cast<TCPSocket *>(new(_container) TLSSocket{address,
+																	 configuration.timeout_milliseconds});
 	}
 	else {
 		_socket = new (_container) TCPSocket{ address, configuration.timeout_milliseconds };

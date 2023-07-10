@@ -14,7 +14,7 @@ def echo_server(host, port):
 
         while True:
             print("DATA 와라!")
-            data = client_socket.recv(1024)  # 클라이언트로부터 데이터 수신
+            data = client_socket.recv(32768)  # 클라이언트로부터 데이터 수신
             print("DATA 왔따!")
 
             if not data:
@@ -32,4 +32,4 @@ def echo_server(host, port):
     server_socket.close()  # 서버 소켓 닫기
 
 # 에코 서버 실행
-echo_server('localhost', 4444)
+echo_server('192.168.0.69', 3000)

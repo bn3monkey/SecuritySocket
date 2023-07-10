@@ -1,5 +1,9 @@
 #include "TCPSocket.hpp"
 
+#ifndef _WIN32
+#include <ctime>
+#endif
+
 using namespace Bn3Monkey;
 
 TCPSocket::NonBlockMode::NonBlockMode(const TCPSocket& tcp_socket)  : _socket(tcp_socket._socket), _flags(0) {
@@ -7,8 +11,8 @@ TCPSocket::NonBlockMode::NonBlockMode(const TCPSocket& tcp_socket)  : _socket(tc
 	unsigned long mode{ 1 };
 	ioctlsocket(_socket, FIONBIO, &mode);
 #else
-	flags = fcntl(_socket, F_GETFL, 0);
-	fcntl(_socket, F_SETFL, flags | O_NONBLOCK);
+	_flags = fcntl(_socket, F_GETFL, 0);
+	fcntl(_socket, F_SETFL, _flags | O_NONBLOCK);
 #endif
 }
 TCPSocket::NonBlockMode::~NonBlockMode() {
@@ -16,7 +20,7 @@ TCPSocket::NonBlockMode::~NonBlockMode() {
 	unsigned long mode{ 0 };
 	ioctlsocket(_socket, FIONBIO, &mode);
 #else
-	fcntl(_socket, F_SETFL, flags);
+	fcntl(_socket, F_SETFL, _flags);
 #endif
 }
 
@@ -30,18 +34,20 @@ Bn3Monkey::TCPSocket::TCPSocket(TCPAddress& address, uint32_t timeout_millisecon
 	}
 
 #ifdef _WIN32
-	const char* timeout_ref = reinterpret_cast<const char*>(&_timeout_milliseconds);
-#elif 
+	uint32_t timeout = timeout_milliseconds;
+	const char* timeout_ref = reinterpret_cast<const char*>(&timeout);
+#else
 	timeval timeout;
-	timeout.tv_sec = (time_t)socket_timeout / (time_t)1000;
-	timeout.tv_usec = (suseconds_t)socket_timeout * (suseconds_t)1000 - (suseconds_t)(timeout.tv_sec * (suseconds_t)1000000);
+	timeout.tv_sec = (time_t)timeout_milliseconds / (time_t)1000;
+	timeout.tv_usec = (suseconds_t)timeout_milliseconds * (suseconds_t)1000 - (suseconds_t)(timeout.tv_sec * (suseconds_t)1000000);
 	timeval* timeout_ref = &timeout;
 #endif
-	if (setsockopt(_socket, SOL_SOCKET, SO_RCVTIMEO, timeout_ref, sizeof(_timeout_milliseconds)) < 0)
+
+	if (setsockopt(_socket, SOL_SOCKET, SO_RCVTIMEO, timeout_ref, sizeof(timeout)) < 0)
 	{
 		_result = ConnectionResult(ConnectionCode::SOCKET_OPTION_ERROR, "cannot get socket receive timeout");
 	}
-	if (setsockopt(_socket, SOL_SOCKET, SO_SNDTIMEO, timeout_ref, sizeof(_timeout_milliseconds)) < 0)
+	if (setsockopt(_socket, SOL_SOCKET, SO_SNDTIMEO, timeout_ref, sizeof(timeout)) < 0)
 	{
 		_result = ConnectionResult(ConnectionCode::SOCKET_OPTION_ERROR, "cannot get socket send timeout");
 	}
