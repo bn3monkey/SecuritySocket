@@ -104,7 +104,11 @@ void TCPStream::write(TCPSocket* socket)
 		size_t written_size{ 0 };
 		memset(buffer.data(), 0, _pdu_size);
 
-		_handler.onWrite(buffer.data(), _pdu_size);
+		size_t total_size = _handler.onWrite(buffer.data(), _pdu_size);
+		if (total_size == 0)
+		{
+			std::this_thread::sleep_for(std::chrono::milliseconds(50));
+		}
 
 		for (size_t trial = 0; trial < _max_retries; )
 		{
@@ -117,7 +121,7 @@ void TCPStream::write(TCPSocket* socket)
 				break;
 			}
 
-			auto ret = socket->write(buffer.data() + written_size, _pdu_size - written_size);
+			auto ret = socket->write(buffer.data() + written_size, total_size - written_size);
 			result = socket->result(ret);
 			if (result.code == ConnectionCode::SOCKET_TIMEOUT) {
 				trial++;
@@ -128,7 +132,7 @@ void TCPStream::write(TCPSocket* socket)
 			}
 
 			written_size += (size_t)ret;
-			if (written_size == _pdu_size)
+			if (written_size == total_size)
 				break;
 		}
 

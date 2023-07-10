@@ -76,10 +76,10 @@ public:
         }
         _write_cv.notify_all();
     }
-    void onWrite(char* buffer, size_t size) override {
+    size_t onWrite(char* buffer, size_t size) override {
+        size_t new_size{ 0 };
         {
             std::lock_guard<std::mutex> lock(test_mtx);
-            LOG_D("onWrite (%d) : %s\n", size, buffer);
         }
 
         {
@@ -91,14 +91,17 @@ public:
             );
 
             if (!_is_connected)
-                return;
+                return 0;
 
             auto src = _write_buffer.front();
             _write_buffer.pop();
 
-            size_t new_size = src.size() < size ? src.size() : size;
+            new_size = src.size() < size ? src.size() : size;
             ::memcpy(buffer, src.data(), new_size);
+
+            LOG_D("onWrite (%d / %d) : %s\n", new_size, size, buffer);
         }
+        return new_size;
     }
 
     void onError(const ConnectionResult& result) override {

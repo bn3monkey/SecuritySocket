@@ -555,12 +555,21 @@ if( MSVC )
   endif()  
 endif()
 
+if (ANDROID)
+set_target_properties(openssl_ssl PROPERTIES LIBRARY_OUTPUT_DIRECTORY
+    ${openssl_binary_dir}/${ANDROID_ABI})
+set_target_properties(openssl_ssl PROPERTIES ARCHIVE_OUTPUT_DIRECTORY
+    ${openssl_binary_dir}/${ANDROID_ABI})
+set_target_properties(openssl_ssl PROPERTIES RUNTIME_OUTPUT_DIRECTORY
+    ${openssl_binary_dir}/${ANDROID_ABI})
+else()
 set_target_properties(openssl_ssl PROPERTIES LIBRARY_OUTPUT_DIRECTORY
     ${openssl_binary_dir})
 set_target_properties(openssl_ssl PROPERTIES ARCHIVE_OUTPUT_DIRECTORY
     ${openssl_binary_dir})
 set_target_properties(openssl_ssl PROPERTIES RUNTIME_OUTPUT_DIRECTORY
     ${openssl_binary_dir})
+endif()
 
 ## Security Socket
 
@@ -582,20 +591,26 @@ target_include_directories(
     securitysocket PRIVATE "${openssl_include_dir}"
 )
 add_dependencies(securitysocket openssl_crypto openssl_ssl)
-target_link_libraries(securitysocket PRIVATE openssl_crypto openssl_ssl)
+# target_link_libraries(securitysocket PUBLIC openssl_crypto openssl_ssl)
+target_sources(securitysocket PRIVATE $<TARGET_OBJECTS:openssl_crypto> $<TARGET_OBJECTS:openssl_ssl>)
 
 configure_file(${source_dir}/SecuritySocket.hpp ${securitysocket_include_dir}/SecuritySocket.hpp)
 
 if (ANDROID)
-    set(${securitysocket_binary_dir} ${securitysocket_binary_dir}/${ANDROID_ABI})
-endif()
-
+set_target_properties(securitysocket PROPERTIES LIBRARY_OUTPUT_DIRECTORY
+    ${securitysocket_binary_dir}/${ANDROID_ABI})
+set_target_properties(securitysocket PROPERTIES ARCHIVE_OUTPUT_DIRECTORY
+    ${securitysocket_binary_dir}/${ANDROID_ABI})
+set_target_properties(securitysocket PROPERTIES RUNTIME_OUTPUT_DIRECTORY
+    ${securitysocket_binary_dir}/${ANDROID_ABI})
+else()
 set_target_properties(securitysocket PROPERTIES LIBRARY_OUTPUT_DIRECTORY
     ${securitysocket_binary_dir})
 set_target_properties(securitysocket PROPERTIES ARCHIVE_OUTPUT_DIRECTORY
     ${securitysocket_binary_dir})
 set_target_properties(securitysocket PROPERTIES RUNTIME_OUTPUT_DIRECTORY
     ${securitysocket_binary_dir})
+endif()
 
 ## Security Socket Test App
 
