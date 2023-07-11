@@ -109,7 +109,7 @@ namespace Bn3Monkey
         virtual void onConnected() = 0;
         virtual void onDisconnected() = 0;
         virtual void onRead(char* buffer, size_t size) = 0;
-        virtual void onWrite(char* buffer, size_t size) = 0;
+        virtual size_t onWrite(char* buffer, size_t size) = 0;
         virtual void onError(const ConnectionResult& result) = 0;
 
     private:
