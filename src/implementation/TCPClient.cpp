@@ -29,10 +29,10 @@ Bn3Monkey::TCPClientImpl::TCPClientImpl(const TCPConfiguration& configuration, T
 
 	if (configuration.tls) {
 		_socket = reinterpret_cast<TCPSocket *>(new(_container) TLSSocket{address,
-																	 configuration.timeout_milliseconds});
+																	 configuration.read_timeout, configuration.write_timeout});
 	}
 	else {
-		_socket = new (_container) TCPSocket{ address, configuration.timeout_milliseconds };
+		_socket = new (_container) TCPSocket{ address, configuration.read_timeout, configuration.write_timeout };
 	}
 
 	result = *_socket;

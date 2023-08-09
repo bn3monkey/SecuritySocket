@@ -86,7 +86,8 @@ namespace Bn3Monkey
         const std::string port;
         const bool tls;
         const uint32_t max_retries;
-        const uint32_t timeout_milliseconds;
+        const uint32_t read_timeout;
+        const uint32_t write_timeout;
         const size_t pdu_size;
 
         explicit TCPConfiguration(
@@ -94,10 +95,13 @@ namespace Bn3Monkey
             const std::string& port,
             bool tls,
             uint32_t max_retries,
-            uint32_t timeout_milliseconds,
+            uint32_t read_timeout,
+            uint32_t write_timeout,
             size_t pdu_size = MAX_PDU_SIZE) : 
             ip(ip), port(port), tls(tls), 
-            max_retries(max_retries), timeout_milliseconds(timeout_milliseconds),
+            max_retries(max_retries), 
+            read_timeout(read_timeout),
+            write_timeout(write_timeout),
             pdu_size(pdu_size)
         {}
     };

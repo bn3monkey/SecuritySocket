@@ -19,7 +19,7 @@ namespace Bn3Monkey
 	class TCPSocket
 	{
 	public:
-		TCPSocket(TCPAddress& address, uint32_t timeout_milliseconds);
+		TCPSocket(TCPAddress& address, uint32_t read_timeout, uint32_t write_timeout);
 		virtual ~TCPSocket();
 
 		operator const ConnectionResult& () const { return _result; }
@@ -40,7 +40,8 @@ namespace Bn3Monkey
 		TCPAddress& _address;
 		ConnectionResult _result;
 		int32_t _socket;
-		uint32_t _timeout_milliseconds;
+		uint32_t _read_timeout;
+		uint32_t _write_timeout;
 
 	private:
 		class NonBlockMode
@@ -57,7 +58,7 @@ namespace Bn3Monkey
 	class TLSSocket : public TCPSocket
 	{
 	public:
-		TLSSocket(TCPAddress& address, uint32_t timeout_milliseconds);
+		TLSSocket(TCPAddress& address, uint32_t read_timeout, uint32_t write_timeout);
 		virtual ~TLSSocket();
 
 
