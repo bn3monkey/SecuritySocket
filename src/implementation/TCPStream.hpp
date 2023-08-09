@@ -5,6 +5,7 @@
 #include "TCPSocket.hpp"
 #include <thread>
 #include <atomic>
+#include <mutex>
 
 namespace Bn3Monkey
 {
