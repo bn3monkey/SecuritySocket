@@ -131,7 +131,7 @@ void echo(TCPStreamHandler* handler, const char* message) {
 
 void tlsTest() {
     TCPConfiguration config{
-            "192.168.0.69",
+            "192.168.0.98",
             "443",
             true,
             3,
@@ -201,7 +201,7 @@ void tlsTest() {
 
 void tcpTest() {
     TCPConfiguration config{
-            "192.168.0.69",
+            "192.168.0.98",
             "3000",
             false,
             3,
