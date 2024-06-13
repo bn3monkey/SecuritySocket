@@ -104,20 +104,26 @@ namespace Bn3Monkey
     class TCPClientImpl;
     class TCPServerImpl;
 
+
     class TCPClient
     {
     public:
-        explicit TCPClient(
-            const TCPConfiguration& configuration,
-            TCPEventHandler& handler
-            );
+        explicit TCPClient(const TCPConfiguration& configuration);
         
         virtual ~TCPClient();
 
         ConnectionResult getLastError();
+
+        void open(TCPEventHandler& handler);
         void close();
+
+        ConnectionResult read(char* buffer, size_t size);
+        ConnectionResult write(char* buffer, size_t size);
+
     private:
         std::shared_ptr<TCPClientImpl> _impl;
+
+        friend class TCPStream;
     };
 
     class TCPServer

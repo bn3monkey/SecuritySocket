@@ -32,18 +32,19 @@ namespace Bn3Monkey
 	{
 	public:
 		TCPClientImpl() = delete;
-		explicit TCPClientImpl(const TCPConfiguration& configuration, TCPEventHandler& handler);
+		explicit TCPClientImpl(const TCPConfiguration& configuration);
 		virtual ~TCPClientImpl();
 
+		
+		void open(TCPEventHandler& handler);
 		void close();
 
 	private:
 				
 		static constexpr size_t container_size = sizeof(TCPSocket) > sizeof(TLSSocket) ? sizeof(TCPSocket) : sizeof(TLSSocket);
 		char _container[container_size];
+		
 		TCPSocket* _socket{ nullptr };
-
-		TCPEventHandler& _handler;
 	};
 }
 

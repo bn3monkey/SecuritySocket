@@ -2,8 +2,8 @@
 
 
 
-Bn3Monkey::TCPClientImpl::TCPClientImpl(const TCPConfiguration& configuration, TCPEventHandler& handler)
-	: TCPStream(handler, configuration.max_retries, configuration.pdu_size), _handler(handler)
+Bn3Monkey::TCPClientImpl::TCPClientImpl(const TCPConfiguration& configuration)
+	: TCPStream(configuration.max_retries, configuration.pdu_size)
 {
 
 	ConnectionResult result;
@@ -86,9 +86,13 @@ Bn3Monkey::TCPClientImpl::~TCPClientImpl()
 #endif
 }
 
-void Bn3Monkey::TCPClientImpl::close()
+void Bn3Monkey::TCPClientImpl::open(TCPEventHandler& handler)
 {
-	
+
+}
+
+void Bn3Monkey::TCPClientImpl::close()
+{	
 	if (_socket)
 	{
 		_handler.onDisconnected();
