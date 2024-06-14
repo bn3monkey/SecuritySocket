@@ -117,7 +117,7 @@ namespace Bn3Monkey
         void open(TCPEventHandler& handler);
         void close();
 
-        ConnectionResult read(char* buffer, size_t size);
+        ConnectionResult read(char* buffer, size_t* size);
         ConnectionResult write(char* buffer, size_t size);
 
     private:

@@ -29,7 +29,7 @@ void Bn3Monkey::TCPClient::close()
 	_impl->close();
 }
 
-ConnectionResult read(char* buffer, size_t size)
+ConnectionResult read(char* buffer, size_t* size)
 {
 	return _impl->read(buffer, size);
 }

@@ -35,9 +35,6 @@ namespace Bn3Monkey
 		explicit TCPClientImpl(const TCPConfiguration& configuration);
 		virtual ~TCPClientImpl();
 
-		
-		void open(TCPEventHandler& handler);
-		void close();
 
 	private:
 				

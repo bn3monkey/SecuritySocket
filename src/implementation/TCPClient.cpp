@@ -14,7 +14,6 @@ Bn3Monkey::TCPClientImpl::TCPClientImpl(const TCPConfiguration& configuration)
 	if (ret != 0) {
 		result = ConnectionResult(ConnectionCode::WINDOWS_SOCKET_INITIALIZATION_FAIL, "Cannot start windows socket");
 		setLastError(result);
-		handler.onError(result);
 		return;
 	}
 #endif
@@ -23,7 +22,6 @@ Bn3Monkey::TCPClientImpl::TCPClientImpl(const TCPConfiguration& configuration)
 	result = address;
 	if (result.code != ConnectionCode::SUCCESS) {
 		setLastError(result);
-		handler.onError(result);
 		return;
 	}
 
@@ -40,7 +38,6 @@ Bn3Monkey::TCPClientImpl::TCPClientImpl(const TCPConfiguration& configuration)
 		delete _socket;
 		_socket = nullptr;
 		setLastError(result);
-		_handler.onError(result);
 		return;
 	}
 
@@ -52,7 +49,6 @@ Bn3Monkey::TCPClientImpl::TCPClientImpl(const TCPConfiguration& configuration)
 	{
 		result = _socket->connect();
 		if (result.code == ConnectionCode::SUCCESS) {
-			_handler.onConnected();
 			break;
 		}
 		else if (result.code == ConnectionCode::SOCKET_TIMEOUT) {
@@ -62,7 +58,6 @@ Bn3Monkey::TCPClientImpl::TCPClientImpl(const TCPConfiguration& configuration)
 			_socket->~TCPSocket();
 			_socket = nullptr;
 			setLastError(result);
-			_handler.onError(result);
 			return;
 		}
 	}
@@ -75,32 +70,17 @@ Bn3Monkey::TCPClientImpl::TCPClientImpl(const TCPConfiguration& configuration)
 		return;
 	}
 
-	start(_socket);
 }
 
 Bn3Monkey::TCPClientImpl::~TCPClientImpl()
 {
 	close();
+
+	_socket->disconnect();
+	_socket->~TCPSocket();
+	_socket = nullptr;
+
 #ifdef _WIN32
 	WSACleanup();
 #endif
-}
-
-void Bn3Monkey::TCPClientImpl::open(TCPEventHandler& handler)
-{
-
-}
-
-void Bn3Monkey::TCPClientImpl::close()
-{	
-	if (_socket)
-	{
-		_handler.onDisconnected();
-
-		stop();
-		_socket->disconnect();
-		
-		_socket->~TCPSocket();
-		_socket = nullptr;
-	}
 }
