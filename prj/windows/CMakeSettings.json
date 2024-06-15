@@ -28,7 +28,18 @@
       "remoteCopySources": true,
       "rsyncCommandArgs": "-t --delete",
       "remoteCopyBuildOutput": false,
-      "remoteCopySourcesMethod": "rsync",
+      "remoteCopySourcesMethod": "rsync"
+    },
+    {
+      "name": "x64-Release",
+      "generator": "Ninja",
+      "configurationType": "RelWithDebInfo",
+      "buildRoot": "${projectDir}\\out\\build\\${name}",
+      "installRoot": "${projectDir}\\out\\install\\${name}",
+      "cmakeCommandArgs": "",
+      "buildCommandArgs": "",
+      "ctestCommandArgs": "",
+      "inheritEnvironments": [ "msvc_x64_x64" ],
       "variables": []
     }
   ]

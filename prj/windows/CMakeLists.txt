@@ -1,9 +1,11 @@
+cmake_minimum_required (VERSION 3.22)
+
 project(SecuritySocket)
-cmake_minimum_required (VERSION 3.8)
 
 # Security Socket Project
 
 message("-- Security Socket --")
+
 
 ## COMMON VARIABLE
 
