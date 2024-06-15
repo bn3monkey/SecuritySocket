@@ -57,6 +57,7 @@ void TCPStream::disconnect()
 ConnectionResult TCPStream::read(char* buffer, size_t* read_length)
 {
 	ConnectionResult result;
+	int length {0};
 	for (size_t trial = 0; trial < _max_retries; )
 	{
 		result = _socket->poll(PollType::READ);
@@ -68,8 +69,8 @@ ConnectionResult TCPStream::read(char* buffer, size_t* read_length)
 			break;
 		}
 
-		*read_length = _socket->read(buffer, _pdu_size);
-		result = _socket->result((int)(*read_length));
+		length = _socket->read(buffer, _pdu_size);
+		result = _socket->result(length);
 		if (result.code == ConnectionCode::SOCKET_TIMEOUT) {
 			trial++;
 			continue;
@@ -90,6 +91,9 @@ ConnectionResult TCPStream::read(char* buffer, size_t* read_length)
 	else if (result.code != ConnectionCode::SUCCESS)
 	{
 		setLastError(result);
+	}
+	else {
+		*read_length = length;
 	}
 	return result;
 }

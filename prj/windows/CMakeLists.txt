@@ -11,6 +11,8 @@ FetchContent_Declare(SecuritySocket
     GIT_TAG main)
 FetchContent_MakeAvailable(SecuritySocket)
 add_library(SecuritySocket ALIAS securitysocket)
+set(securitysocket_include_dir ${securitysocket_BINARY_DIR}/include)
+message("SecuritySocket Include dir is ${securitysocket_include_dir}")
 
 ## Security Socket Test App
 

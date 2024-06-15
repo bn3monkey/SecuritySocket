@@ -492,8 +492,8 @@ void tcpTest()
 
 
 int main() {
-    //tcpTest();
+    // tcpTest();
     // tcpAsyncTest();
-    // tlsTest();
-    tlsAsyncTest();
+    tlsTest();
+    // tlsAsyncTest();
 }
