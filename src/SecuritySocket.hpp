@@ -56,6 +56,7 @@ namespace Bn3Monkey
     {
         ConnectionCode code{ ConnectionCode::SUCCESS };
         std::string message;
+        int bytes {0};
         
         ConnectionResult(const ConnectionCode& code = ConnectionCode::SUCCESS, const std::string& message = "") : code(code), message(message) {}
     };
@@ -94,6 +95,8 @@ namespace Bn3Monkey
         
         virtual void onConnected() = 0;
         virtual void onDisconnected() = 0;
+
+        
         virtual void onRead(char* buffer, size_t size) = 0;
         virtual size_t onWrite(char* buffer, size_t size) = 0;
         virtual void onError(const ConnectionResult& result) = 0;
@@ -117,7 +120,7 @@ namespace Bn3Monkey
         void open(const std::shared_ptr<TCPEventHandler>& handler);
         void close();
 
-        ConnectionResult read(char* buffer, size_t* size);
+        ConnectionResult read(char* buffer, size_t size);
         ConnectionResult write(char* buffer, size_t size);
 
     private:

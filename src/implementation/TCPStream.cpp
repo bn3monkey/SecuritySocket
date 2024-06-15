@@ -54,10 +54,9 @@ void TCPStream::disconnect()
 	_socket->disconnect();
 }
 
-ConnectionResult TCPStream::read(char* buffer, size_t* read_length)
+ConnectionResult TCPStream::read(char* buffer, size_t size)
 {
 	ConnectionResult result;
-	int length {0};
 	for (size_t trial = 0; trial < _max_retries; )
 	{
 		result = _socket->poll(PollType::READ);
@@ -69,8 +68,8 @@ ConnectionResult TCPStream::read(char* buffer, size_t* read_length)
 			break;
 		}
 
-		length = _socket->read(buffer, _pdu_size);
-		result = _socket->result(length);
+		result.bytes = _socket->read(buffer, size);
+		result = _socket->result(result.bytes);
 		if (result.code == ConnectionCode::SOCKET_TIMEOUT) {
 			trial++;
 			continue;
@@ -92,9 +91,6 @@ ConnectionResult TCPStream::read(char* buffer, size_t* read_length)
 	{
 		setLastError(result);
 	}
-	else {
-		*read_length = length;
-	}
 	return result;
 }
 ConnectionResult TCPStream::write(char* buffer, size_t length)
@@ -112,8 +108,8 @@ ConnectionResult TCPStream::write(char* buffer, size_t length)
 			break;
 		}
 
-		auto ret = _socket->write(buffer + written_size, length - written_size);
-		result = _socket->result(ret);
+		result.bytes = _socket->write(buffer + written_size, length - written_size);
+		result = _socket->result(result.bytes);
 		if (result.code == ConnectionCode::SOCKET_TIMEOUT) {
 			trial++;
 			continue;
@@ -122,7 +118,7 @@ ConnectionResult TCPStream::write(char* buffer, size_t length)
 			break;
 		}
 
-		written_size += (size_t)ret;
+		written_size += (size_t)result.bytes;
 		if (written_size == length)
 			break;
 	}
@@ -166,10 +162,10 @@ void TCPStream::readRoutine()
 	{
 		size_t read_size{ 0 };
 		memset(buffer.data(), 0, _pdu_size);
-		result = read(buffer.data(), &read_size);
+		result = read(buffer.data(), _pdu_size);
 		if (result.code == ConnectionCode::SUCCESS)
 		{
-			_handler->onRead(buffer.data(), read_size);
+			_handler->onRead(buffer.data(), result.bytes);
 		}
 		else
 		{
