@@ -6,7 +6,7 @@ project(SecuritySocket)
 
 message("-- Security Socket --")
 
-set(source_dir ${CMAKE_CURRENT_SOURCE_DIR}/src)
+set(source_dir ${PROJECT_SOURCE_DIR}/src)
 message("Security Socket Source Dir : ${source_dir}")
 
 ## OpenSSL
