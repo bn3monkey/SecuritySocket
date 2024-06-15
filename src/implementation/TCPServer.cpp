@@ -1,7 +1,7 @@
 #include "TCPServer.hpp"
 
 Bn3Monkey::TCPServerImpl::TCPServerImpl(const TCPConfiguration& configuration, TCPEventHandler& handler)
-	: TCPStream(handler, configuration.max_retries, configuration.pdu_size), _handler(handler)
+	: TCPStream(nullptr, configuration.max_retries, configuration.pdu_size), _handler(handler)
 {
 }
 

@@ -39,4 +39,16 @@ class ExampleInstrumentedTest {
         val nativeLib = NativeLib()
         nativeLib.tlsTest()
     }
+
+    @Test
+    fun tcpAsyncTest() {
+        val nativeLib = NativeLib()
+        nativeLib.tcpAsyncTest()
+    }
+
+    @Test
+    fun tlsAsyncTest() {
+        val nativeLib = NativeLib()
+        nativeLib.tlsAsyncTest()
+    }
 }

@@ -20,7 +20,7 @@ ConnectionResult Bn3Monkey::TCPClient::getLastError()
 {
 	return _impl->getLastError();
 }
-void Bn3Monkey::TCPClient::open(TCPEventHandler& handler)
+void Bn3Monkey::TCPClient::open(const std::shared_ptr<TCPEventHandler>& handler)
 {
 	_impl->open(handler);
 }	
@@ -29,14 +29,16 @@ void Bn3Monkey::TCPClient::close()
 	_impl->close();
 }
 
-ConnectionResult read(char* buffer, size_t* size)
+ConnectionResult Bn3Monkey::TCPClient::read(char* buffer, size_t* size)
 {
 	return _impl->read(buffer, size);
 }
-ConnectionResult write(char* buffer, size_t size)
+ConnectionResult Bn3Monkey::TCPClient::write(char* buffer, size_t size)
 {
 	return _impl->write(buffer, size);
 }
+
+
 Bn3Monkey::TCPServer::TCPServer(const TCPConfiguration& configuration, TCPEventHandler& handler)
 {
 	_impl = std::make_shared<TCPServerImpl>(configuration, handler);

@@ -24,7 +24,7 @@ TCPSocket::NonBlockMode::~NonBlockMode() {
 #endif
 }
 
-Bn3Monkey::TCPSocket::TCPSocket(TCPAddress& address, uint32_t read_timeout, uint32_t write_timeout) : _address(address), _read_timeout(read_timeout), _write_timeout(write_timeout)
+Bn3Monkey::TCPSocket::TCPSocket(const TCPAddress& address, uint32_t read_timeout, uint32_t write_timeout) : _address(address), _read_timeout(read_timeout), _write_timeout(write_timeout)
 {
 	_socket = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
 	if (_socket < 0)
@@ -40,14 +40,14 @@ Bn3Monkey::TCPSocket::TCPSocket(TCPAddress& address, uint32_t read_timeout, uint
 #else
 	constexpr size_t size = sizeof(timeval);
 	timeval read_timeout_value;
-	timeout.tv_sec = (time_t)_read_timeout / (time_t)1000;
-	timeout.tv_usec = (suseconds_t)_read_timeout * (suseconds_t)1000 - (suseconds_t)(read_timeout_value.tv_sec * (suseconds_t)1000000);
-	timeval* read_time_ref = &read_timeout_value;
+	read_timeout_value.tv_sec = (time_t)_read_timeout / (time_t)1000;
+	read_timeout_value.tv_usec = (suseconds_t)_read_timeout * (suseconds_t)1000 - (suseconds_t)(read_timeout_value.tv_sec * (suseconds_t)1000000);
+	timeval* read_timeout_ref = &read_timeout_value;
 
 	timeval write_timeout_value;
-	timeout.tv_sec = (time_t)_write_timeout / (time_t)1000;
-	timeout.tv_usec = (suseconds_t)_write_timeout * (suseconds_t)1000 - (suseconds_t)(write_timeout_value.tv_sec * (suseconds_t)1000000);
-	timeval* write_time_ref = &write_timeout_value;
+	write_timeout_value.tv_sec = (time_t)_write_timeout / (time_t)1000;
+	write_timeout_value.tv_usec = (suseconds_t)_write_timeout * (suseconds_t)1000 - (suseconds_t)(write_timeout_value.tv_sec * (suseconds_t)1000000);
+	timeval* write_timeout_ref = &write_timeout_value;
 #endif
 
 	if (setsockopt(_socket, SOL_SOCKET, SO_RCVTIMEO, read_timeout_ref, size) < 0)

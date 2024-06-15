@@ -5,24 +5,6 @@
 #include <cstdint>
 #include <memory>
 
-#ifdef _WIN32
-#pragma comment(lib, "Ws2_32.lib")
-#include <Winsock2.h>
-#include <WS2tcpip.h>
-#else
-#include <netdb.h>
-#include <sys/types.h>
-#include <sys/socket.h>
-#include <unistd.h>
-#include <fcntl.h>
-#include <poll.h>
-#include <netinet/in.h>
-#endif
-
-#include <mutex>
-#include <condition_variable>
-#include <vector>
-
 namespace Bn3Monkey
 {
     enum class ConnectionCode
@@ -86,7 +68,8 @@ namespace Bn3Monkey
         const std::string port;
         const bool tls;
         const uint32_t max_retries;
-        const uint32_t timeout_milliseconds;
+        const uint32_t read_timeout;
+        const uint32_t write_timeout;
         const size_t pdu_size;
 
         explicit TCPConfiguration(
@@ -94,10 +77,13 @@ namespace Bn3Monkey
             const std::string& port,
             bool tls,
             uint32_t max_retries,
-            uint32_t timeout_milliseconds,
+            uint32_t read_timeout,
+            uint32_t write_timeout,
             size_t pdu_size = MAX_PDU_SIZE) : 
             ip(ip), port(port), tls(tls), 
-            max_retries(max_retries), timeout_milliseconds(timeout_milliseconds),
+            max_retries(max_retries), 
+            read_timeout(read_timeout),
+            write_timeout(write_timeout),
             pdu_size(pdu_size)
         {}
     };
@@ -118,20 +104,26 @@ namespace Bn3Monkey
     class TCPClientImpl;
     class TCPServerImpl;
 
+
     class TCPClient
     {
     public:
-        explicit TCPClient(
-            const TCPConfiguration& configuration,
-            TCPEventHandler& handler
-            );
+        explicit TCPClient(const TCPConfiguration& configuration);
         
         virtual ~TCPClient();
 
         ConnectionResult getLastError();
+
+        void open(const std::shared_ptr<TCPEventHandler>& handler);
         void close();
+
+        ConnectionResult read(char* buffer, size_t* size);
+        ConnectionResult write(char* buffer, size_t size);
+
     private:
         std::shared_ptr<TCPClientImpl> _impl;
+
+        friend class TCPStream;
     };
 
     class TCPServer

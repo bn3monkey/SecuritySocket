@@ -33,7 +33,7 @@ namespace Bn3Monkey
 	class TCPSocket
 	{
 	public:
-		TCPSocket(TCPAddress& address, uint32_t read_timeout, uint32_t write_timeout);
+		TCPSocket(const TCPAddress& address, uint32_t read_timeout, uint32_t write_timeout);
 		virtual ~TCPSocket();
 
 		operator const ConnectionResult& () const { return _result; }
@@ -51,7 +51,7 @@ namespace Bn3Monkey
 		virtual ConnectionResult result(int operation_return);
 
 	protected:
-		TCPAddress& _address;
+		TCPAddress _address;
 		ConnectionResult _result;
 		int32_t _socket;
 		uint32_t _read_timeout;

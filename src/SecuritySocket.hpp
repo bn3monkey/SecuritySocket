@@ -114,7 +114,7 @@ namespace Bn3Monkey
 
         ConnectionResult getLastError();
 
-        void open(TCPEventHandler& handler);
+        void open(const std::shared_ptr<TCPEventHandler>& handler);
         void close();
 
         ConnectionResult read(char* buffer, size_t* size);

@@ -37,11 +37,10 @@ namespace Bn3Monkey
 
 
 	private:
-				
+		TCPSocket* createSocket(const TCPConfiguration& configuration);
 		static constexpr size_t container_size = sizeof(TCPSocket) > sizeof(TLSSocket) ? sizeof(TCPSocket) : sizeof(TLSSocket);
 		char _container[container_size];
-		
-		TCPSocket* _socket{ nullptr };
+
 	};
 }
 
