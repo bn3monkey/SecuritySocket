@@ -21,7 +21,7 @@ namespace Bn3Monkey
 
         ConnectionResult connect();
         void disconnect();
-        ConnectionResult read(char* buffer, size_t size;
+        ConnectionResult read(char* buffer, size_t size);
         ConnectionResult write(char* buffer, size_t length);
         ConnectionResult getLastError();
 

@@ -180,24 +180,24 @@ void tlsAsyncTest() {
 
         size_t read_size;
         memset(buffer.data(), 0, 512);
-        client.read(buffer.data(), &read_size);
-        LOG_D("READ_VALUE : %s %d\n", buffer.data(), read_size);
+        client.read(buffer.data(), 512);
+        LOG_D("READ_VALUE : %s %d\n", buffer.data(), 512);
 
         memset(buffer.data(), 0, 512);
-        client.read(buffer.data(), &read_size);
-        LOG_D("READ_VALUE : %s %d\n", buffer.data(), read_size);
+        client.read(buffer.data(), 512);
+        LOG_D("READ_VALUE : %s %d\n", buffer.data(), 512);
 
         memset(buffer.data(), 0, 512);
-        client.read(buffer.data(), &read_size);
-        LOG_D("READ_VALUE : %s %d\n", buffer.data(), read_size);
+        client.read(buffer.data(), 512);
+        LOG_D("READ_VALUE : %s %d\n", buffer.data(), 512);
 
         memset(buffer.data(), 0, 512);
-        client.read(buffer.data(), &read_size);
-        LOG_D("READ_VALUE : %s %d\n", buffer.data(), read_size);
+        client.read(buffer.data(), 512);
+        LOG_D("READ_VALUE : %s %d\n", buffer.data(), 512);
 
         memset(buffer.data(), 0, 512);
-        client.read(buffer.data(), &read_size);
-        LOG_D("READ_VALUE : %s %d\n", buffer.data(), read_size);
+        client.read(buffer.data(), 512);
+        LOG_D("READ_VALUE : %s %d\n", buffer.data(), 512);
 
     }
 }
@@ -313,14 +313,23 @@ void tcpAsyncTest() {
 
 ConnectionResult echo(TCPClient& client, const char* msg, std::vector<char>& buffer)
 {
-    size_t read_length;
     auto ret = client.write((char *)msg, strlen(msg));
     if (ret.code != ConnectionCode::SUCCESS)
         return ret;
-    ret = client.read(buffer.data(), &read_length);
+    ret = client.read(buffer.data(), 1024);
     if (ret.code != ConnectionCode::SUCCESS)
         return ret;
     return ret;
+}
+
+void printReceived(const char* buffer, size_t length)
+{
+    if (length != 0)
+    {
+        std::vector<char> received{ buffer, buffer + length };
+        received[length - 1] = 0;
+        LOG_D("Receive : %s %d\n", received.data(), length);
+    }
 }
 
 void tlsTest() {
@@ -354,6 +363,7 @@ void tlsTest() {
         }
 
         result = echo(client, big_sentense.c_str(), buffer);
+        printReceived(buffer.data(), result.bytes);
 
         std::string small_sentense;
         small_sentense = "do you know picakchu?";
@@ -371,24 +381,24 @@ void tlsTest() {
 
         size_t read_size;
         memset(buffer.data(), 0, 512);
-        client.read(buffer.data(), &read_size);
-        LOG_D("READ_VALUE : %s %d\n", buffer.data(), read_size);
+        client.read(buffer.data(), 512);
+        LOG_D("READ_VALUE : %s %d\n", buffer.data(), 512);
 
         memset(buffer.data(), 0, 512);
-        client.read(buffer.data(), &read_size);
-        LOG_D("READ_VALUE : %s %d\n", buffer.data(), read_size);
+        client.read(buffer.data(), 512);
+        LOG_D("READ_VALUE : %s %d\n", buffer.data(), 512);
 
         memset(buffer.data(), 0, 512);
-        client.read(buffer.data(), &read_size);
-        LOG_D("READ_VALUE : %s %d\n", buffer.data(), read_size);
+        client.read(buffer.data(), 512);
+        LOG_D("READ_VALUE : %s %d\n", buffer.data(), 512);
 
         memset(buffer.data(), 0, 512);
-        client.read(buffer.data(), &read_size);
-        LOG_D("READ_VALUE : %s %d\n", buffer.data(), read_size);
+        client.read(buffer.data(), 512);
+        LOG_D("READ_VALUE : %s %d\n", buffer.data(), 512);
 
         memset(buffer.data(), 0, 512);
-        client.read(buffer.data(), &read_size);
-        LOG_D("READ_VALUE : %s %d\n", buffer.data(), read_size);
+        client.read(buffer.data(), 512);
+        LOG_D("READ_VALUE : %s %d\n", buffer.data(), 512);
 
     }
 }
@@ -417,11 +427,13 @@ void tcpTest()
 
     LOG_D("Send : Do you know kimchi?\n");
     result = echo(client, "Do you know kimchi?", buffer);
+    printReceived(buffer.data(), result.bytes);
     if (result.code != ConnectionCode::SUCCESS)
     {
         LOG_E("error : %s\n", result.message.c_str());
         return;
     }
+
     LOG_D("Send : Do you know sans?\n");
     result = echo(client, "Do you know sans?", buffer);
     if (result.code != ConnectionCode::SUCCESS)
@@ -429,6 +441,8 @@ void tcpTest()
         LOG_E("error : %s\n", result.message.c_str());
         return;
     }
+    printReceived(buffer.data(), result.bytes);
+
     LOG_D("Send : Do you know papyrus?\n");
     result = echo(client, "Do you know papyrus?", buffer);
     if (result.code != ConnectionCode::SUCCESS)
@@ -436,6 +450,8 @@ void tcpTest()
         LOG_E("error : %s\n", result.message.c_str());
         return;
     }
+    printReceived(buffer.data(), result.bytes);
+
 
     std::string big_sentense;
     for (size_t i = 0; i < 100; i++)
@@ -450,6 +466,7 @@ void tcpTest()
         LOG_E("error : %s\n", result.message.c_str());
         return;
     }
+    printReceived(buffer.data(), result.bytes);
 
     std::string small_sentense;
     small_sentense = "do you know picakchu?";
@@ -460,6 +477,7 @@ void tcpTest()
         LOG_E("error : %s\n", result.message.c_str());
         return;
     }
+    printReceived(buffer.data(), result.bytes);
 
     small_sentense = "do you know raichu?";
     LOG_D("Send : %s\n", small_sentense.c_str());
@@ -469,9 +487,10 @@ void tcpTest()
         LOG_E("error : %s\n", result.message.c_str());
         return;
     }
+    printReceived(buffer.data(), result.bytes);
 
     memset(buffer.data(), 0, 512);
-    result = client.read(buffer.data(), &read_length);
+    result = client.read(buffer.data(), 512);
     if (result.code != ConnectionCode::SUCCESS) {
         LOG_E("error : %s\n", result.message.c_str());
         return;
@@ -479,7 +498,7 @@ void tcpTest()
     LOG_D("READ_VALUE : %s\n", buffer.data());
     memset(buffer.data(), 0, 512);
 
-    result = client.read(buffer.data(), &read_length);
+    result = client.read(buffer.data(), 512);
     if (result.code != ConnectionCode::SUCCESS)
     {
         LOG_E("error : %s\n", result.message.c_str());
@@ -492,7 +511,7 @@ void tcpTest()
 
 
 int main() {
-    // tcpTest();
+     // tcpTest();
     // tcpAsyncTest();
     tlsTest();
     // tlsAsyncTest();

@@ -68,8 +68,9 @@ ConnectionResult TCPStream::read(char* buffer, size_t size)
 			break;
 		}
 
-		result.bytes = _socket->read(buffer, size);
+		int ret = _socket->read(buffer, size);
 		result = _socket->result(result.bytes);
+		result.bytes = ret;
 		if (result.code == ConnectionCode::SOCKET_TIMEOUT) {
 			trial++;
 			continue;
@@ -97,6 +98,7 @@ ConnectionResult TCPStream::write(char* buffer, size_t length)
 {
 	ConnectionResult result;
 	size_t written_size{ 0 };
+
 	for (size_t trial = 0; trial < _max_retries; )
 	{
 		result = _socket->poll(PollType::WRITE);
@@ -108,8 +110,9 @@ ConnectionResult TCPStream::write(char* buffer, size_t length)
 			break;
 		}
 
-		result.bytes = _socket->write(buffer + written_size, length - written_size);
-		result = _socket->result(result.bytes);
+		int ret = _socket->write(buffer + written_size, length - written_size);
+		result = _socket->result(ret);
+
 		if (result.code == ConnectionCode::SOCKET_TIMEOUT) {
 			trial++;
 			continue;
@@ -118,9 +121,12 @@ ConnectionResult TCPStream::write(char* buffer, size_t length)
 			break;
 		}
 
-		written_size += (size_t)result.bytes;
+		written_size += (size_t)ret;
+		result.bytes = (int)written_size;
 		if (written_size == length)
+		{
 			break;
+		}
 	}
 
 	if (result.code == ConnectionCode::SOCKET_TIMEOUT)
