@@ -40,6 +40,9 @@ namespace Bn3Monkey
         SOCKET_ALREADY_CONNECTED,
         SOCKET_CONNECTION_IN_PROGRESS,
 
+        SOCKET_BIND_FAILED,
+        SOCKET_LISTEN_FAILED,
+
         TLS_SETFD_ERROR,
 
         SSL_PROTOCOL_ERROR,
@@ -49,6 +52,9 @@ namespace Bn3Monkey
         SOCKET_CLOSED,
 
         POLL_ERROR,
+        POLL_OBJECT_NOT_CREATED,
+        POLL_EVENT_CANNOT_ADDED,
+
         UNKNOWN_ERROR,
 
         LENGTH,
@@ -80,15 +86,24 @@ namespace Bn3Monkey
         inline const char* port() {return _port;}
         inline bool tls() { return _tls;}
         inline size_t pdu_size() { return _pdu_size;}
+        inline const uint32_t max_retries() { return _max_retries; }
+        inline const uint32_t read_timeout() { return _read_timeout; }
+        inline const uint32_t write_timeout() { return _write_timeout; }
 
 
         explicit SocketConfiguration(
             const char* ip,
             uint32_t port,
             bool tls,
+            uint32_t max_retries = 3,
+            uint32_t read_timeout = 2000,
+            uint32_t write_timeout = 2000,
             size_t pdu_size = MAX_PDU_SIZE) : 
             _tls(tls), 
-            _pdu_size(pdu_size)
+            _pdu_size(pdu_size),
+            _max_retries(max_retries),
+            _read_timeout(read_timeout),
+            _write_timeout(write_timeout)
         {
             ::memcpy(_ip, ip, strlen(ip));
             sprintf(_port, "%d", port);
@@ -99,29 +114,6 @@ namespace Bn3Monkey
         char _port[16] {0};
         bool _tls {false};
         size_t _pdu_size { MAX_PDU_SIZE};
-    };
-
-    class ClientSocketConfiguration : public SocketConfiguration {
-    public:
-        inline const uint32_t max_retries() { return _max_retries; }
-        inline const uint32_t read_timeout() { return _read_timeout; }
-        inline const uint32_t write_timeout() { return _write_timeout; }
-
-        explicit ClientSocketConfiguration(
-            const char* ip,
-            uint32_t port,
-            bool tls,
-            uint32_t max_retries = 3,
-            uint32_t read_timeout = 2000,
-            uint32_t write_timeout = 2000,
-            size_t pdu_size = SocketConfiguration::MAX_PDU_SIZE) : 
-            SocketConfiguration(ip, port, tls, pdu_size),
-            _max_retries(max_retries),
-            _read_timeout(read_timeout),
-            _write_timeout(write_timeout)
-        {
-        }
-    private:
         uint32_t _max_retries;
         uint32_t _read_timeout;
         uint32_t _write_timeout;
@@ -143,7 +135,7 @@ namespace Bn3Monkey
     public:
         static constexpr size_t IMPLEMENTATION_SIZE = 4096;
 
-        explicit SocketClient(const ClientSocketConfiguration& configuration);
+        explicit SocketClient(const SocketConfiguration& configuration);
         virtual ~SocketClient();
 
         SocketResult open();

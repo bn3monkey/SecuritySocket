@@ -70,6 +70,7 @@
         "queue": "cpp",
         "ranges": "cpp",
         "span": "cpp",
-        "*.tcc": "cpp"
+        "*.tcc": "cpp",
+        "cassert": "cpp"
     }
 }

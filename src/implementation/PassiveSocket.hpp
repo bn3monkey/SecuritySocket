@@ -33,13 +33,14 @@ namespace Bn3Monkey
 	class PassiveSocket : public PassiveSocket
 	{
 	public:
-		virtual SocketResult open(const SocketAddress& address, uint32_t read_timeout, uint32_t write_timeout);
+		virtual SocketResult open(const SocketAddress& address);
 		virtual void close();
+
+		virtual SocketResult poll(const PassivePollType& polltype, uint32_t timeout_ms);
 
 		virtual SocketResult connect();
 		virtual void disconnect(); 
 		virtual SocketResult isConnected();
-		virtual SocketResult poll(const PassivePollType& polltype);
 		virtual int read(void* buffer, size_t size);
 		virtual int write(const void* buffer, size_t size);
 
@@ -49,16 +50,6 @@ namespace Bn3Monkey
 		uint32_t _read_timeout {0};
 		uint32_t _write_timeout {0};
 
-	private:
-		class NonBlockMode
-		{
-		public:
-			explicit NonBlockMode(PassiveSocket& socket);
-			~NonBlockMode();
-		private:
-            int32_t _socket;
-			int32_t _flags;
-		};
 	};
 
 	class TLSPassiveSocket : public PassiveSocket
@@ -67,11 +58,12 @@ namespace Bn3Monkey
 		virtual SocketResult open(const SocketAddress& address, uint32_t read_timeout, uint32_t write_timeout) override;
 		virtual void close() override;
 
-		SocketResult connect() override;
 
+		SocketResult poll(const PassivePollType& polltype, uint32_t timeout_ms) override;
+
+		SocketResult connect() override;
 		void disconnect() override;
 		SocketResult isConnected() override;
-		SocketResult poll(const PassivePollType& polltype) override;
 		int read(void* buffer, size_t size) override;
 		int write(const void* buffer, size_t size) override;
 

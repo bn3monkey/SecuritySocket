@@ -1,30 +1,13 @@
 #include "PassiveSocket.hpp"
+
 #include "SocketResult.hpp"
+#include "SocketHelper.hpp"
+
 #ifndef _WIN32
 #include <ctime>
 #endif
 
 using namespace Bn3Monkey;
-
-
-PassiveSocket::NonBlockMode::NonBlockMode(PassiveSocket& socket) : _socket(socket._socket), _flags(0) 
-{
-#ifdef _WIN32
-	unsigned long mode{ 1 };
-	ioctlsocket(_socket, FIONBIO, &mode);
-#else
-	_flags = fcntl(_socket, F_GETFL, 0);
-	fcntl(_socket, F_SETFL, _flags | O_NONBLOCK);
-#endif
-}
-PassiveSocket::NonBlockMode::~NonBlockMode() {
-#ifdef _WIN32
-	unsigned long mode{ 0 };
-	ioctlsocket(_socket, FIONBIO, &mode);
-#else
-	fcntl(_socket, F_SETFL, _flags);
-#endif
-}
 
 Bn3Monkey::PassiveSocket::~PassiveSocket()
 {
@@ -32,13 +15,17 @@ Bn3Monkey::PassiveSocket::~PassiveSocket()
 	close();
 }
 
-SocketResult PassiveSocket::open(const SocketAddress& address, uint32_t read_timeout, uint32_t write_timeout)
+SocketResult PassiveSocket::open(const SocketAddress& address)
 {
 	SocketResult result;
 
+	if (_socket >= 0 )
+	{
+		result = SocketResult(SocketCode::SOCKET_ALREADY_CONNECTED, "Socket is already connected");
+		return result;
+	}	
+
 	_address = address;
-	_read_timeout = read_timeout;
-	_write_timeout = write_timeout;
 
 	if (address.isUnixDomain())
 		_socket = ::socket(AF_UNIX, SOCK_STREAM, 0);
@@ -50,31 +37,7 @@ SocketResult PassiveSocket::open(const SocketAddress& address, uint32_t read_tim
 		return result;
 	}
 
-#ifdef _WIN32
-	constexpr size_t size = sizeof(uint32_t);
-	const char* read_timeout_ref = reinterpret_cast<const char*>(&_read_timeout);
-	const char* write_timeout_ref = reinterpret_cast<const char*>(&_write_timeout);
-#else
-	constexpr size_t size = sizeof(timeval);
-	timeval read_timeout_value;
-	read_timeout_value.tv_sec = (time_t)_read_timeout / (time_t)1000;
-	read_timeout_value.tv_usec = (suseconds_t)_read_timeout * (suseconds_t)1000 - (suseconds_t)(read_timeout_value.tv_sec * (suseconds_t)1000000);
-	timeval* read_timeout_ref = &read_timeout_value;
-
-	timeval write_timeout_value;
-	write_timeout_value.tv_sec = (time_t)_write_timeout / (time_t)1000;
-	write_timeout_value.tv_usec = (suseconds_t)_write_timeout * (suseconds_t)1000 - (suseconds_t)(write_timeout_value.tv_sec * (suseconds_t)1000000);
-	timeval* write_timeout_ref = &write_timeout_value;
-#endif
-
-	if (setsockopt(_socket, SOL_SOCKET, SO_RCVTIMEO, read_timeout_ref, size) < 0)
-	{
-		return SocketResult(SocketCode::SOCKET_OPTION_ERROR, "cannot get socket receive timeout");
-	}
-	if (setsockopt(_socket, SOL_SOCKET, SO_SNDTIMEO, write_timeout_ref, size) < 0)
-	{
-		return SocketResult(SocketCode::SOCKET_OPTION_ERROR, "cannot get socket send timeout");
-	}
+	setNonBlockingMode(_socket);
 
 	return result;
 }
@@ -93,8 +56,6 @@ SocketResult PassiveSocket::connect()
 	SocketResult result;
 	
 	{
-		NonBlockMode nonblock{ *this };
-
 		int32_t res = ::connect(_socket, _address.address(), _address.size());
 		if (res < 0)
 		{
@@ -107,17 +68,6 @@ SocketResult PassiveSocket::connect()
 		{
 			// TIMEOUT
 			return SocketResult(SocketCode::SOCKET_TIMEOUT, "");
-		}
-
-		result = poll(PassivePollType::CONNECT);
-		
-		if (result.code() == SocketCode::SOCKET_TIMEOUT)
-		{
-			return SocketResult(SocketCode::SOCKET_TIMEOUT, "");
-		}
-		else if (result.code() != SocketCode::SUCCESS)
-		{
-			return result;
 		}
 	}
 	return result;
@@ -168,7 +118,7 @@ int Bn3Monkey::PassiveSocket::read(void* buffer, size_t size)
 	return ret;
 }
 
-SocketResult Bn3Monkey::PassiveSocket::poll(const PassivePollType& polltype)
+SocketResult Bn3Monkey::PassiveSocket::poll(const PassivePollType& polltype, uint32_t timeout_ms)
 {
 	SocketResult ret;
 
@@ -218,22 +168,20 @@ SocketResult Bn3Monkey::PassiveSocket::poll(const PassivePollType& polltype)
 
 	
 	int32_t res{ 0 };
+	struct timeval timeout;
+	timeout.tv_sec = timeout_ms / 1000;
+	timeout.tv_usec = 1000 * (timeout_ms - 1000 * timeout.tv_sec);
+
 	switch (polltype)
 	{
 	case PassivePollType::READ: 
 		{
-			struct timeval timeout;
-			timeout.tv_sec = _read_timeout / 1000;
-			timeout.tv_usec = 1000 * (_read_timeout - 1000 * timeout.tv_sec);
 			res = ::select(_socket + 1, &io_set, nullptr, &error_set, &timeout);
 		}
 		break;
 	case PassivePollType::WRITE:
 	case PassivePollType::CONNECT: 
 		{
-			struct timeval timeout;
-			timeout.tv_sec = _write_timeout / 1000;
-			timeout.tv_usec = 1000 * (_write_timeout - 1000 * timeout.tv_sec);
 			res = ::select(_socket + 1, nullptr, &io_set, &error_set, &timeout);
 		}
 		 break;
@@ -257,9 +205,9 @@ SocketResult Bn3Monkey::PassiveSocket::poll(const PassivePollType& polltype)
 }
 
 
-SocketResult Bn3Monkey::TLSPassiveSocket::open(const SocketAddress& address, uint32_t read_timeout, uint32_t write_timeout)
+SocketResult Bn3Monkey::TLSPassiveSocket::open(const SocketAddress& address)
 {
-	auto result = TLSPassiveSocket::open(address, read_timeout, write_timeout);
+	auto result = TLSPassiveSocket::open(address);
 	if (result.code() != SocketCode::SUCCESS)
 	{
 		return result;
