@@ -64,7 +64,7 @@ SocketResult ActiveSocket::listen(size_t num_of_clients)
         return SocketResult(SocketCode::SOCKET_BIND_FAILED, "Bind Fail");
     }
 
-    ret = ::listen(_socket, SOMAXCONN);
+    ret = ::listen(_socket, num_of_clients);
     if (!ret)
     {
         return SocketResult(SocketCode::SOCKET_LISTEN_FAILED, "Listen Fail");
@@ -76,8 +76,6 @@ SocketResult ActiveSocket::listen(size_t num_of_clients)
     {
         return SocketResult(SocketCode::POLL_OBJECT_NOT_CREATED, "Poll object is not created");
     }
-
-    loadAcceptExFunction(_socket, &acceptEx);
 #else
     linux_pollhandle = epoll_create1(0);
     if (linux_pollhandle < 0)
@@ -97,39 +95,86 @@ SocketResult ActiveSocket::listen(size_t num_of_clients)
 
     return SocketResult(SocketCode::SUCCESS);
 }
-ActivePollResult ActiveSocket::poll(uint32_t timeout_ms)
+SocketEventListResult ActiveSocket::poll(uint32_t timeout_ms)
 {
-    ActivePollResult result;
+    SocketEventListResult result;
 
 #ifdef _WIN32
-    OVERLAPPED_ENTRY entries[MAX_CLIENTS];
-    ULONG num_entries_removed;
+    OVERLAPPED_ENTRY events[MAX_EVENTS];
+    ULONG event_count;
 
-    BOOL success = GetQueuedCompletionStatusEx(window_pollhandle, entries, _num_of_clients, &num_entries_removed, timeout_ms, FALSE);
+    BOOL success = GetQueuedCompletionStatusEx(window_pollhandle, events, _num_of_clients, &event_count, timeout_ms, FALSE);
     if (!success)
     {
         result.result = SocketResult(SocketCode::POLL_ERROR, "Poll error");
         return result;
     }
 
-    result.length = num_entries_removed;
-    for (size_t i=0;i<num_entries_removed;i++)
+    result.result = SocketResult(SocketCode::SUCCESS);
+    result.event_list.length = event_count;
+    for (size_t i=0;i<event_count;i++)
     {
-        auto& entry = entries[i];
-        int32_t sock = static_cast<int32_t>(entry.lpCompletionKey);
-        result.sockets[i] = sock;
-        result.types[i] = sock == _socket ? ActivePollType::ACCEPT : ActivePollType::READ;
+        auto& event = events[i];
+        int32_t sock = static_cast<int32_t>(event.lpCompletionKey);
+        result.event_list.events[i].sock = sock;
+        result.event_list.events[i].type = sock == _socket ? SocketEventType::ACCEPT : SocketEventType::READ;
     }
 
 #else
-    
+    struct epoll_event events[MAX_EVENTS];
+    int event_count;
+
+    event_count = epoll_wait(linux_pollhandle, events, _num_of_clients, timeout_ms);
+    if (event_count < 0)
+    {
+        result.result = SocketResult(SocketCode::POLL_ERROR, "Poll error");
+        return result;
+    }
+
+    result.result = SocketResult(SocketCode::SUCCESS);
+    result.event_list.length = event_count;
+    for (size_t i=0;i<event_count;i++)
+    {
+        auto& event = events[i];
+        int32_t sock = event.data.fd;
+        result.event_list.events[i].sock = sock;
+        result.event_list.events[i].type = sock == _socket ? SocketEventType::ACCEPT : SocketEventType::READ;
+    }
 #endif
 
     return result;
 }
-int32_t ActiveSocket::accept()
+SocketEventResult ActiveSocket::accept()
 {
+    SocketEventResult result;
 
+    result.result = SocketResult(SocketCode::SUCCESS);
+
+    {
+        result.event.sock = ::accept(_socket, NULL, NULL);
+        if (result.event.sock < 0)
+        {
+            result.result = createResult(result.event.sock);
+            if (result.result.code() != SocketCode::SOCKET_CONNECTION_IN_PROGRESS)
+                return result;
+        }
+        setNonBlockingMode(result.event.sock);
+    }
+
+#if defined(_WIN32)
+    
+#else
+    struct epoll_event events;
+    events.events = EPOLLIN;
+    events.data.fd = result.event.sock;
+
+    if (epoll_ctl(linux_pollhandle, EPOLL_CTL_ADD, result.event.sock, &events) < 0)
+    {
+         return SocketResult(SocketCode::POLL_EVENT_CANNOT_ADDED, "Accepting Event cannot be added");
+    }
+#endif
+
+    return result;
 }
 int32_t ActiveSocket::read(int32_t client_idx, void* buffer, size_t size)
 {

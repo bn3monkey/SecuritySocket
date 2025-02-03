@@ -25,21 +25,33 @@
 
 
 namespace Bn3Monkey {
-	static constexpr size_t MAX_CLIENTS = 16;
+	static constexpr size_t MAX_EVENTS = 16;
 
-	enum class ActivePollType {
+	enum class SocketEventType {
 		UNDEFINED,
 		ACCEPT,
 		READ
 	};
+	struct SocketEvent {
+		SocketEventType type {SocketEventType::UNDEFINED};
+		int32_t sock {-1};
+	};
 
-	struct ActivePollResult
+	struct SocketEventList {
+		size_t length;
+		SocketEvent events[MAX_EVENTS];
+	};
+
+	struct SocketEventResult
 	{
 		SocketResult result;
+		SocketEvent event;
+	};
 
-		size_t length {0};
-		ActivePollType types[MAX_CLIENTS] { UNDEFINED, };
-		int32_t sockets[MAX_CLIENTS] {0};
+	struct SocketEventListResult
+	{
+		SocketResult result;
+		SocketEventList event_list;
 	};
 	
 	class ActiveSocket {
@@ -49,9 +61,9 @@ namespace Bn3Monkey {
 
 		virtual SocketResult listen(size_t num_of_clients);
 		
-		virtual ActivePollResult poll(uint32_t timeout_ms);
+		virtual SocketEventListResult poll(uint32_t timeout_ms);
 
-		virtual int32_t accept();
+		virtual SocketEventResult accept();
 		virtual int32_t read(int32_t client_socket, void* buffer, size_t size);
 		virtual int32_t write(int32_t client_socket, const void* buffer, size_t size) ;
 		
@@ -65,10 +77,6 @@ namespace Bn3Monkey {
 		int32_t linux_pollhandle {0};
 		void* window_pollhandle {nullptr};
 		
-#ifdef _WIN32
-		// Function Pointer for acceptEx
-		LPFN_ACCEPTEX acceptEx;
-#endif
 	};
 
 	class TLSActiveSocket : public ActiveSocket
@@ -78,9 +86,9 @@ namespace Bn3Monkey {
 		virtual void close();
 
 		virtual SocketResult listen(size_t num_of_clients);
-		virtual ActivePollResult poll(uint32_t timeout_ms);
+		virtual SocketEventListResult poll(uint32_t timeout_ms);
 
-		virtual int32_t accept();
+		virtual SocketEventResult accept();
 		virtual int32_t read(int32_t client_socket, void* buffer, size_t size);
 		virtual int32_t write(int32_t client_socket, const void* buffer, size_t size);
 		virtual void drop(int32_t client_socket);
