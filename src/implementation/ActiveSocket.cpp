@@ -162,7 +162,14 @@ SocketEventResult ActiveSocket::accept()
     }
 
 #if defined(_WIN32)
-    
+    window_pollhandle = CreateIoCompletionPort((HANDLE)result.event.sock, NULL, (ULONG_PTR)result.event.sock, 0);
+    if (window_pollhandle == nullptr)
+    {
+        closesocket(result.event.sock);
+        result.event.sock = -1;
+        result.result = SocketResult(SocketCode::POLL_EVENT_CANNOT_ADDED, "Accepting Event cannot be added");
+        return result;
+    } 
 #else
     struct epoll_event events;
     events.events = EPOLLIN;
@@ -170,23 +177,40 @@ SocketEventResult ActiveSocket::accept()
 
     if (epoll_ctl(linux_pollhandle, EPOLL_CTL_ADD, result.event.sock, &events) < 0)
     {
-         return SocketResult(SocketCode::POLL_EVENT_CANNOT_ADDED, "Accepting Event cannot be added");
+        close(result.event.sock);
+        result.event.sock = -1;
+        result.result = SocketResult(SocketCode::POLL_EVENT_CANNOT_ADDED, "Accepting Event cannot be added");
+        return result;
     }
 #endif
 
     return result;
 }
-int32_t ActiveSocket::read(int32_t client_idx, void* buffer, size_t size)
+int32_t ActiveSocket::read(int32_t client_socket, void* buffer, size_t size)
 {
+    int32_t ret{ 0 };
+	ret = ::recv(client_socket, static_cast<char*>(buffer), size, 0);
+	return ret;
 
 }
-int32_t ActiveSocket::write(int32_t client_idx, const void* buffer, size_t size) 
+int32_t ActiveSocket::write(int32_t client_socket, const void* buffer, size_t size) 
 {
-
+	int32_t ret{0};
+#ifdef __linux__
+	ret = send(client_socket, buffer, size, MSG_NOSIGNAL);
+#else
+	ret = send(client_socket, static_cast<const char*>(buffer), size, 0);
+#endif
+	return ret;
 }
-void ActiveSocket::drop(int32_t client_idx)
+void ActiveSocket::drop(int32_t client_socket)
 {
-
+    #if defined(_WIN32)
+    closesocket(client_socket);
+#else
+    close(client_socket);
+    epoll_ctl(linux_pollhandle, EPOLL_CTL_DEL, client_sock, NULL);
+#endif
 }
 
 
@@ -202,11 +226,11 @@ SocketResult TLSActiveSocket::listen(size_t num_of_clients)
 {
     throw std::runtime_error("Not Implemented");
 }
-ActivePollResult TLSActiveSocket::poll(uint32_t timeout_ms)
+SocketEventListResult TLSActiveSocket::poll(uint32_t timeout_ms)
 {
     throw std::runtime_error("Not Implemented");
 }
-int32_t TLSActiveSocket::accept()
+SocketEventResult TLSActiveSocket::accept()
 {
     throw std::runtime_error("Not Implemented");
 }
