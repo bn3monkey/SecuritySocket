@@ -1,14 +1,6 @@
 #include "SocketAddress.hpp"
 #include <cstring>
 
-#if defined(_WIN32)
-#define UNIX_PATH_MAX 108
-typedef struct sockaddr_un {
-  ADDRESS_FAMILY sun_family;
-  char sun_path[UNIX_PATH_MAX];
-} SOCKADDR_UN, *PSOCKADDR_UN;
-#endif
-
 static inline bool checkUnixDomain(const char* ip)
 {
 	static constexpr char* unix_domain_prefix = "/tmp/";

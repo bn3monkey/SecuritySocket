@@ -1,5 +1,5 @@
 #if !defined(__BN3MONKEY_SOCKETRESULT__)
-#defined __BN3MONKEY_SOCKETRESULT__
+#define __BN3MONKEY_SOCKETRESULT__
 
 #include "../SecuritySocket.hpp"
 #include <windows.h>
