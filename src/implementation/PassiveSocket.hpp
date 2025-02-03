@@ -55,7 +55,7 @@ namespace Bn3Monkey
 	class TLSPassiveSocket : public PassiveSocket
 	{
 	public:
-		virtual SocketResult open(const SocketAddress& address, uint32_t read_timeout, uint32_t write_timeout) override;
+		virtual SocketResult open(const SocketAddress& address) override;
 		virtual void close() override;
 
 
