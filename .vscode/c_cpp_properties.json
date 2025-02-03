@@ -1,0 +1,56 @@
+{
+    "configurations": [
+        {
+            "name": "WINHOST-Win32",
+            "includePath": [
+                "${workspaceFolder}/**"
+            ],
+            "defines": [
+                "_DEBUG",
+                "UNICODE",
+                "_UNICODE"
+            ],
+            "windowsSdkVersion": "10.0.19041.0",
+            "compilerPath": "cl.exe",
+            "cStandard": "c17",
+            "cppStandard": "c++17",
+            "intelliSenseMode": "windows-msvc-x64"
+        },
+        {
+            "name": "WINHOST-Android",
+            "includePath": [
+                "${workspaceFolder}/**",
+                "${config:android.ndkPath}/toolchains/llvm/prebuilt/windows-x86_64/sysroot/usr/include/**"
+            ],
+            "defines": [
+                "__ANDROID__",
+                "ANDROID"
+            ],
+            "compilerPath": "${config:android.ndkPath}/toolchains/llvm/prebuilt/windows-x86_64/bin/clang++",
+            "cStandard": "c11",
+            "cppStandard": "c++17",
+            "intelliSenseMode": "clang-x64"
+        },
+        {
+            "name" : "WINHOST-Linux",
+            "includePath": [
+                "${workspaceFolder}/**",
+                "${config:linux.wsl}/usr/include",
+                "${config:linux.wsl}/usr/include",          // 리눅스 시스템 헤더 경로
+                "${config:linux.wsl}/usr/include/c++/9",    // 리눅스용 C++ 헤더 경로
+                "${config:linux.wsl}/usr/include/c++/11",    // 리눅스용 C++ 헤더 경로
+                "${config:linux.wsl}/usr/include/x86_64-linux-gnu", // glibc 헤더
+                "${config:linux.wsl}/usr/include/linux"
+            ],
+            "defines": [
+                "__linux__",  // 리눅스 환경처럼 동작하게 함
+                "LINUX"
+            ],
+            "compilerPath": "${config:linux.wsl}/usr/bin/g++", // 리눅스 GCC 컴파일러 경로(모의 설정)
+            "cStandard": "c11",
+            "cppStandard": "c++17",
+            "intelliSenseMode": "linux-gcc-arm64"  // IntelliSense를 gcc 리눅스 기반으로 설정
+        }
+    ],
+    "version": 4
+}

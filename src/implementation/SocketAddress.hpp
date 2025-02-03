@@ -1,32 +1,31 @@
-#if !defined(__BN3MONKEY__TCPADDRESS__)
-#define __BN3MONKEY__TCPADDRESS__
+#if !defined(__BN3MONKEY_SOCKETADDRESS__)
+#define __BN3MONKEY_SOCKETADDRESS__
 
 #include "../SecuritySocket.hpp"
-#include <vector>
 
-#ifdef _WIN32
+#if defined(_WIN32)
 #pragma comment(lib, "Ws2_32.lib")
 #include <Winsock2.h>
 #include <WS2tcpip.h>
+#include <afunix.h>
 #else
 #include <netdb.h>
+#include <sys/un.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <unistd.h>
 #include <fcntl.h>
-#include <poll.h>
-#include <netinet/in.h>
 #endif
 
 namespace Bn3Monkey
 {
-	class TCPAddress
+	class SocketAddress
 	{
 	public:
-		explicit TCPAddress(const std::string& ip, const std::string& port, bool is_server);
-		virtual ~TCPAddress();
+		explicit SocketAddress(const char* ip, const char* port, bool is_server);
+		virtual ~SocketAddress();
 
-		operator const ConnectionResult&() const { return _result; }
+		operator const SocketResult&() const { return _result; }
 
 		inline const sockaddr* address() const {
 			return reinterpret_cast<const sockaddr *>(_socket_address);
@@ -35,12 +34,18 @@ namespace Bn3Monkey
 			return static_cast<socklen_t>(_socket_address_size);
 		}
 
+		inline bool isUnixDomain() const {
+			return _is_unix_domain;
+		}
+
 	private:
-		ConnectionResult _result;
+		SocketResult _result;
 
 		size_t _socket_address_size{ 0 };
 		uint8_t _socket_address[512]{ 0 };
+		bool _is_unix_domain { false};
 	};
+
 }
 
-#endif
+#endif // __BN3MONKEY_SOCKETADDRESS__

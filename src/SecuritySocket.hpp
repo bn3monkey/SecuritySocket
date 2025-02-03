@@ -3,11 +3,12 @@
 
 #include <string>
 #include <cstdint>
+#include <cstdio>
 #include <memory>
 
 namespace Bn3Monkey
 {
-    enum class ConnectionCode
+    enum class SocketCode
     {
         SUCCESS,
 
@@ -36,7 +37,7 @@ namespace Bn3Monkey
         SOCKET_CONNECTION_UNREACHED,
         SOCKET_CONNECTION_INTERRUPTED,
         
-        SOCKET_CONNECTION_ALREADY,
+        SOCKET_ALREADY_CONNECTED,
         SOCKET_CONNECTION_IN_PROGRESS,
 
         TLS_SETFD_ERROR,
@@ -52,96 +53,123 @@ namespace Bn3Monkey
 
         LENGTH,
     };
-    struct ConnectionResult
+    struct SocketResult
     {
-        ConnectionCode code{ ConnectionCode::SUCCESS };
-        std::string message;
-        int bytes {0};
-        
-        ConnectionResult(const ConnectionCode& code = ConnectionCode::SUCCESS, const std::string& message = "") : code(code), message(message) {}
+        inline SocketCode code() { return _code; }
+        inline const char* message() { return _message; }
+                
+        SocketResult(
+            const SocketCode& code = SocketCode::SUCCESS, 
+            const char* message = "") : _code(code) {
+                ::memcpy(_message, message, strlen(message));
+            }
+        SocketResult(const SocketResult& result) : _code(result._code) {
+            ::memcpy(_message, result._message, 256);
+        }
+    private:
+        SocketCode _code;
+        char _message[256] {0};
     };
 
 
-    struct TCPConfiguration {
+    class SocketConfiguration {
+    public:
         constexpr static size_t MAX_PDU_SIZE = 32768;
 
-        const std::string ip;
-        const std::string port;
-        const bool tls;
-        const uint32_t max_retries;
-        const uint32_t read_timeout;
-        const uint32_t write_timeout;
-        const size_t pdu_size;
+        inline const char* ip() { return _ip; }
+        inline const char* port() {return _port;}
+        inline bool tls() { return _tls;}
+        inline size_t pdu_size() { return _pdu_size;}
 
-        explicit TCPConfiguration(
-            const std::string& ip,
-            const std::string& port,
+
+        explicit SocketConfiguration(
+            const char* ip,
+            uint32_t port,
             bool tls,
-            uint32_t max_retries,
-            uint32_t read_timeout,
-            uint32_t write_timeout,
             size_t pdu_size = MAX_PDU_SIZE) : 
-            ip(ip), port(port), tls(tls), 
-            max_retries(max_retries), 
-            read_timeout(read_timeout),
-            write_timeout(write_timeout),
-            pdu_size(pdu_size)
-        {}
+            _tls(tls), 
+            _pdu_size(pdu_size)
+        {
+            ::memcpy(_ip, ip, strlen(ip));
+            sprintf(_port, "%d", port);
+        }
+
+    private:
+        char _ip[128] {0};
+        char _port[16] {0};
+        bool _tls {false};
+        size_t _pdu_size { MAX_PDU_SIZE};
     };
 
-    class TCPEventHandler
-    {
+    class ClientSocketConfiguration : public SocketConfiguration {
     public:
-        
+        inline const uint32_t max_retries() { return _max_retries; }
+        inline const uint32_t read_timeout() { return _read_timeout; }
+        inline const uint32_t write_timeout() { return _write_timeout; }
+
+        explicit ClientSocketConfiguration(
+            const char* ip,
+            uint32_t port,
+            bool tls,
+            uint32_t max_retries = 3,
+            uint32_t read_timeout = 2000,
+            uint32_t write_timeout = 2000,
+            size_t pdu_size = SocketConfiguration::MAX_PDU_SIZE) : 
+            SocketConfiguration(ip, port, tls, pdu_size),
+            _max_retries(max_retries),
+            _read_timeout(read_timeout),
+            _write_timeout(write_timeout)
+        {
+        }
+    private:
+        uint32_t _max_retries;
+        uint32_t _read_timeout;
+        uint32_t _write_timeout;
+    };
+
+    struct SocketEventHandler
+    {
+    public:        
         virtual void onConnected() = 0;
         virtual void onDisconnected() = 0;
-
         
-        virtual void onRead(char* buffer, size_t size) = 0;
-        virtual size_t onWrite(char* buffer, size_t size) = 0;
-        virtual void onError(const ConnectionResult& result) = 0;
-
-    private:
+        virtual int onDataProcessed(const void* input_data, size_t input_size, void* output_data, size_t output_size) = 0;
     };
 
-    class TCPClientImpl;
-    class TCPServerImpl;
 
 
-    class TCPClient
+    class SocketClient
     {
     public:
-        explicit TCPClient(const TCPConfiguration& configuration);
-        
-        virtual ~TCPClient();
+        static constexpr size_t IMPLEMENTATION_SIZE = 4096;
 
-        ConnectionResult getLastError();
+        explicit SocketClient(const ClientSocketConfiguration& configuration);
+        virtual ~SocketClient();
 
-        void open(const std::shared_ptr<TCPEventHandler>& handler);
+        SocketResult open();
         void close();
 
-        ConnectionResult read(char* buffer, size_t size);
-        ConnectionResult write(char* buffer, size_t size);
+        SocketResult read(const void* buffer, size_t size);
+        SocketResult write(void* buffer, size_t size);
 
     private:
-        std::shared_ptr<TCPClientImpl> _impl;
-
-        friend class TCPStream;
+        char _container[IMPLEMENTATION_SIZE];
     };
 
-    class TCPServer
+
+    class SocketServer
     {
     public:
-        explicit TCPServer(
-            const TCPConfiguration& configuration,
-            TCPEventHandler& handler
-        );
-        virtual ~TCPServer();
+        static constexpr size_t IMPLEMENTATION_SIZE = 4096;
 
-        ConnectionResult getLastError();
+        explicit SocketServer(const SocketConfiguration& configuration);
+        virtual ~SocketServer();
+
+        bool open(SocketEventHandler& handler);
         void close();
+
     private:
-        std::shared_ptr<TCPServerImpl> _impl;
+        char _container[IMPLEMENTATION_SIZE];
     };
 
 }

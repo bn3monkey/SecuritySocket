@@ -69,6 +69,7 @@
         "deque": "cpp",
         "queue": "cpp",
         "ranges": "cpp",
-        "span": "cpp"
+        "span": "cpp",
+        "*.tcc": "cpp"
     }
 }

@@ -6,55 +6,42 @@
 using namespace Bn3Monkey;
 
 
-Bn3Monkey::TCPClient::TCPClient(const TCPConfiguration& configuration)
+Bn3Monkey::SocketClient::SocketClient(const ClientSocketConfiguration& configuration)
 {
-	_impl = std::make_shared<TCPClientImpl>(configuration);
 }
 
-Bn3Monkey::TCPClient::~TCPClient()
+Bn3Monkey::SocketClient::~SocketClient()
 {
-	_impl.reset();
 }
 
-ConnectionResult Bn3Monkey::TCPClient::getLastError()
+Bn3Monkey::SocketResult Bn3Monkey::SocketClient::open()
 {
-	return _impl->getLastError();
-}
-void Bn3Monkey::TCPClient::open(const std::shared_ptr<TCPEventHandler>& handler)
-{
-	_impl->open(handler);
 }	
-void Bn3Monkey::TCPClient::close()
+void Bn3Monkey::SocketClient::close()
 {
-	_impl->close();
 }
 
-ConnectionResult Bn3Monkey::TCPClient::read(char* buffer, size_t size)
+Bn3Monkey::SocketResult Bn3Monkey::SocketClient::read(const void* buffer, size_t size)
 {
-	return _impl->read(buffer, size);
 }
-ConnectionResult Bn3Monkey::TCPClient::write(char* buffer, size_t size)
+Bn3Monkey::SocketResult Bn3Monkey::SocketClient::write(void* buffer, size_t size)
 {
-	return _impl->write(buffer, size);
 }
 
 
-Bn3Monkey::TCPServer::TCPServer(const TCPConfiguration& configuration, TCPEventHandler& handler)
+Bn3Monkey::SocketServer::SocketServer(const SocketConfiguration& configuration)
 {
-	_impl = std::make_shared<TCPServerImpl>(configuration, handler);
 }
 
-Bn3Monkey::TCPServer::~TCPServer()
+Bn3Monkey::SocketServer::~SocketServer()
 {
-	_impl.reset();
 }
 
-ConnectionResult Bn3Monkey::TCPServer::getLastError()
+bool Bn3Monkey::SocketServer::open(SocketEventHandler& handler)
 {
-	return _impl->getLastError();
-}
 
-void Bn3Monkey::TCPServer::close()
+}
+void Bn3Monkey::SocketServer::close()
 {
-	_impl->close();
+	
 }
