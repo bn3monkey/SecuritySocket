@@ -25,13 +25,11 @@ static inline void loadAcceptExFunction(int32_t socket, LPFN_ACCEPTEX* function_
 }
 #endif
 
-SocketResult ActiveSocket::open(const SocketAddress& address)
+SocketResult ActiveSocket::open()
 {
 	SocketResult result;
 
-	_address = address;
-
-	if (address.isUnixDomain())
+	if (_address.isUnixDomain())
 		_socket = ::socket(AF_UNIX, SOCK_STREAM, 0);
 	else
 		_socket = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
@@ -106,7 +104,15 @@ SocketEventListResult ActiveSocket::poll(uint32_t timeout_ms)
     BOOL success = GetQueuedCompletionStatusEx(window_pollhandle, events, _num_of_clients, &event_count, timeout_ms, FALSE);
     if (!success)
     {
-        result.result = SocketResult(SocketCode::POLL_ERROR, "Poll error");
+        DWORD error = GetLastError();
+        if (error == WAIT_TIMEOUT)
+        {
+            result.result = SocketResult(SocketCode::SOCKET_TIMEOUT, "Timeout when polling");
+        }
+        else
+        {
+            result.result = SocketResult(SocketCode::POLL_ERROR, "Poll error");
+        }
         return result;
     }
 
@@ -214,7 +220,7 @@ void ActiveSocket::drop(int32_t client_socket)
 }
 
 
-SocketResult TLSActiveSocket::open(const SocketAddress& address)
+SocketResult TLSActiveSocket::open()
 {
     throw std::runtime_error("Not Implemented");
 }

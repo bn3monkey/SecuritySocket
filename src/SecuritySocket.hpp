@@ -55,6 +55,8 @@ namespace Bn3Monkey
         POLL_OBJECT_NOT_CREATED,
         POLL_EVENT_CANNOT_ADDED,
 
+        SOCKET_SERVER_ALREADY_RUNNING,
+
         UNKNOWN_ERROR,
 
         LENGTH,
@@ -72,6 +74,11 @@ namespace Bn3Monkey
         SocketResult(const SocketResult& result) : _code(result._code) {
             ::memcpy(_message, result._message, 256);
         }
+        SocketResult operator=(const SocketResult& result) {
+            _code = result._code;
+            ::memcpy(_message, result._message, 256);
+        }
+
     private:
         SocketCode _code;
         char _message[256] {0};
@@ -125,7 +132,8 @@ namespace Bn3Monkey
         virtual void onConnected() = 0;
         virtual void onDisconnected() = 0;
         
-        virtual int onDataProcessed(const void* input_data, size_t input_size, void* output_data, size_t output_size) = 0;
+        virtual int onDataProcessed(const void* input_data, size_t input_size, void* output_data, size_t* output_size) = 0;
+        virtual void onError(const SocketResult& result) = 0;
     };
 
 
@@ -133,7 +141,7 @@ namespace Bn3Monkey
     class SocketClient
     {
     public:
-        static constexpr size_t IMPLEMENTATION_SIZE = 4096;
+        static constexpr size_t IMPLEMENTATION_SIZE = 2048;
 
         explicit SocketClient(const SocketConfiguration& configuration);
         virtual ~SocketClient();
@@ -141,27 +149,28 @@ namespace Bn3Monkey
         SocketResult open();
         void close();
 
-        SocketResult read(const void* buffer, size_t size);
-        SocketResult write(void* buffer, size_t size);
+        SocketResult connect();
+        SocketResult read(void* buffer, size_t* size);
+        SocketResult write(const void* buffer, size_t size);
 
     private:
-        char _container[IMPLEMENTATION_SIZE];
+        char _container[IMPLEMENTATION_SIZE]{ 0 };
     };
 
 
     class SocketServer
     {
     public:
-        static constexpr size_t IMPLEMENTATION_SIZE = 4096;
+        static constexpr size_t IMPLEMENTATION_SIZE = 2048;
 
         explicit SocketServer(const SocketConfiguration& configuration);
         virtual ~SocketServer();
 
-        bool open(SocketEventHandler& handler);
+        bool open(SocketEventHandler& handler, size_t num_of_clients);
         void close();
 
     private:
-        char _container[IMPLEMENTATION_SIZE];
+        char _container[IMPLEMENTATION_SIZE]{ 0 };
     };
 
 }

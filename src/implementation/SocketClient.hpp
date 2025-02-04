@@ -2,8 +2,7 @@
 #define __BN3MONKEY__TCPCLIENT__
 
 #include "../SecuritySocket.hpp"
-#include "TCPSocket.hpp"
-#include "TCPStream.hpp"
+#include "PassiveSocket.hpp"
 
 #include <type_traits>
 #include <atomic>
@@ -28,19 +27,26 @@
 
 namespace Bn3Monkey
 {
-	class TCPClientImpl : public Bn3Monkey::TCPStream
+	class SocketClientImpl
 	{
 	public:
-		TCPClientImpl() = delete;
-		explicit TCPClientImpl(const TCPConfiguration& configuration);
-		virtual ~TCPClientImpl();
+		explicit SocketClientImpl(const SocketConfiguration& configuration) : _configuration(configuration) {};
+		virtual ~SocketClientImpl();
 
+		SocketResult open();
+        void close();
+
+		SocketResult connect();
+		SocketResult read(void* buffer, size_t* size);
+		SocketResult write(const void* buffer, size_t size);
 
 	private:
-		TCPSocket* createSocket(const TCPConfiguration& configuration);
-		static constexpr size_t container_size = sizeof(TCPSocket) > sizeof(TLSSocket) ? sizeof(TCPSocket) : sizeof(TLSSocket);
-		char _container[container_size];
+		
+		PassiveSocket* _socket{ nullptr };
+		static constexpr size_t container_size = sizeof(PassiveSocket) > sizeof(TLSPassiveSocket) ? sizeof(PassiveSocket) : sizeof(TLSPassiveSocket);
+		char _container[container_size]{ 0 };
 
+		SocketConfiguration _configuration;
 	};
 }
 

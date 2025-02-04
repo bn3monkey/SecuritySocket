@@ -15,7 +15,7 @@ Bn3Monkey::PassiveSocket::~PassiveSocket()
 	close();
 }
 
-SocketResult PassiveSocket::open(const SocketAddress& address)
+SocketResult PassiveSocket::open()
 {
 	SocketResult result;
 
@@ -25,9 +25,7 @@ SocketResult PassiveSocket::open(const SocketAddress& address)
 		return result;
 	}	
 
-	_address = address;
-
-	if (address.isUnixDomain())
+	if (_address.isUnixDomain())
 		_socket = ::socket(AF_UNIX, SOCK_STREAM, 0);
 	else
 		_socket = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
@@ -205,9 +203,9 @@ SocketResult Bn3Monkey::PassiveSocket::poll(const PassivePollType& polltype, uin
 }
 
 
-SocketResult Bn3Monkey::TLSPassiveSocket::open(const SocketAddress& address)
+SocketResult Bn3Monkey::TLSPassiveSocket::open()
 {
-	auto result = TLSPassiveSocket::open(address);
+	auto result = TLSPassiveSocket::open();
 	if (result.code() != SocketCode::SUCCESS)
 	{
 		return result;

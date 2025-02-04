@@ -30,10 +30,11 @@ namespace Bn3Monkey
 		WRITE
 	};
 
-	class PassiveSocket : public PassiveSocket
+	class PassiveSocket
 	{
 	public:
-		virtual SocketResult open(const SocketAddress& address);
+		PassiveSocket(const SocketAddress& address) : _address(address) {};
+		virtual SocketResult open();
 		virtual void close();
 
 		virtual SocketResult poll(const PassivePollType& polltype, uint32_t timeout_ms);
@@ -55,7 +56,9 @@ namespace Bn3Monkey
 	class TLSPassiveSocket : public PassiveSocket
 	{
 	public:
-		virtual SocketResult open(const SocketAddress& address) override;
+		TLSPassiveSocket(const SocketAddress& address) : PassiveSocket(address) {}
+
+		virtual SocketResult open() override;
 		virtual void close() override;
 
 

@@ -56,7 +56,8 @@ namespace Bn3Monkey {
 	
 	class ActiveSocket {
 	public:
-		virtual SocketResult open(const SocketAddress& address);
+		ActiveSocket(const SocketAddress& address) : _address(address) {}
+		virtual SocketResult open();
 		virtual void close();
 
 		virtual SocketResult listen(size_t num_of_clients);
@@ -82,7 +83,8 @@ namespace Bn3Monkey {
 	class TLSActiveSocket : public ActiveSocket
 	{
 	public:
-		virtual SocketResult open(const SocketAddress& address);
+		TLSActiveSocket(const SocketAddress& address) : ActiveSocket(address) {}
+		virtual SocketResult open();
 		virtual void close();
 
 		virtual SocketResult listen(size_t num_of_clients);
