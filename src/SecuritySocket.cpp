@@ -19,12 +19,12 @@ Bn3Monkey::SocketClient::~SocketClient()
 Bn3Monkey::SocketResult Bn3Monkey::SocketClient::open()
 {
 	SocketClientImpl* impl = static_cast<SocketClientImpl*>((void*)_container);
-	impl->open();
+	return impl->open();
 }	
 void Bn3Monkey::SocketClient::close()
 {
 	SocketClientImpl* impl = static_cast<SocketClientImpl*>((void*)_container);
-	impl->close();
+	return impl->close();
 }
 
 Bn3Monkey::SocketResult Bn3Monkey::SocketClient::connect()
@@ -44,24 +44,24 @@ Bn3Monkey::SocketResult Bn3Monkey::SocketClient::write(const void* buffer, size_
 }
 
 
-Bn3Monkey::SocketServer::SocketServer(const SocketConfiguration& configuration)
+Bn3Monkey::SocketRequestServer::SocketRequestServer(const SocketConfiguration& configuration)
 {
-	new (_container) SocketServerImpl(configuration);
+	new (_container) SocketReuqestServerImpl(configuration);
 }
 
-Bn3Monkey::SocketServer::~SocketServer()
+Bn3Monkey::SocketRequestServer::~SocketRequestServer()
 {
-	SocketServerImpl* impl = static_cast<SocketServerImpl*>((void*)_container);
-	impl->~SocketServerImpl();
+	SocketReuqestServerImpl* impl = static_cast<SocketReuqestServerImpl*>((void*)_container);
+	impl->~SocketReuqestServerImpl();
 }
 
-bool Bn3Monkey::SocketServer::open(SocketEventHandler& handler, size_t num_of_clients)
+SocketResult Bn3Monkey::SocketRequestServer::open(SocketRequestHandler& handler, size_t num_of_clients)
 {
-	SocketServerImpl* impl = static_cast<SocketServerImpl*>((void*)_container);
-	impl->open(handler, num_of_clients);
+	SocketReuqestServerImpl* impl = static_cast<SocketReuqestServerImpl*>((void*)_container);
+	return impl->open(handler, num_of_clients);
 }
-void Bn3Monkey::SocketServer::close()
+void Bn3Monkey::SocketRequestServer::close()
 {
-	SocketServerImpl* impl = static_cast<SocketServerImpl*>((void*)_container);
-	impl->close();
+	SocketReuqestServerImpl* impl = static_cast<SocketReuqestServerImpl*>((void*)_container);
+	return impl->close();
 }

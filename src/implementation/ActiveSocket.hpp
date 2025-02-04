@@ -69,6 +69,8 @@ namespace Bn3Monkey {
 		virtual int32_t write(int32_t client_socket, const void* buffer, size_t size) ;
 		
 		virtual void drop(int32_t client_socket);
+
+		virtual SocketResult isConnected(int32_t clinet_socket);
 	private:
 		SocketAddress _address;
 		int32_t _socket {-1};

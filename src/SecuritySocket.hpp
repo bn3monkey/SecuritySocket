@@ -126,13 +126,13 @@ namespace Bn3Monkey
         uint32_t _write_timeout;
     };
 
-    struct SocketEventHandler
+    struct SocketRequestHandler
     {
     public:        
         virtual void onConnected() = 0;
         virtual void onDisconnected() = 0;
         
-        virtual int onDataProcessed(const void* input_data, size_t input_size, void* output_data, size_t* output_size) = 0;
+        virtual int onRequestReceived(const void* input_data, size_t input_size, void* output_data, size_t* output_size) = 0;
         virtual void onError(const SocketResult& result) = 0;
     };
 
@@ -158,21 +158,33 @@ namespace Bn3Monkey
     };
 
 
-    class SocketServer
+    class SocketRequestServer
     {
     public:
         static constexpr size_t IMPLEMENTATION_SIZE = 2048;
 
-        explicit SocketServer(const SocketConfiguration& configuration);
-        virtual ~SocketServer();
+        explicit SocketRequestServer(const SocketConfiguration& configuration);
+        virtual ~SocketRequestServer();
 
-        bool open(SocketEventHandler& handler, size_t num_of_clients);
+        SocketResult open(SocketRequestHandler& handler, size_t num_of_clients);
         void close();
 
     private:
         char _container[IMPLEMENTATION_SIZE]{ 0 };
     };
 
+    class SocketEventServer
+    {
+    public:
+        static constexpr size_t IMPLEMENTATION_SIZE = 2048;
+
+        explicit SocketEventServer(const SocketConfiguration& configuration);
+        virtual ~SocketEventServer();
+
+        SocketResult open(size_t num_of_clients);
+        SocketResult write(const void* buffer, size_t size);
+        void close();
+    };
 }
 
 #endif

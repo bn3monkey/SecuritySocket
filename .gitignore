@@ -1,2 +1,4 @@
 .vs/
 script/path.json
+test/linux/out/
+test/windows/out/

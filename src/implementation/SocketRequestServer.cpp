@@ -1,13 +1,13 @@
-#include "SocketServer.hpp"
+#include "SocketRequestServer.hpp"
 #include "SocketResult.hpp"
 #include <vector>
 
-Bn3Monkey::SocketServerImpl::~SocketServerImpl()
+Bn3Monkey::SocketRequestServerImpl::~SocketRequestServerImpl()
 {
 	close();
 }
 
-Bn3Monkey::SocketResult Bn3Monkey::SocketServerImpl::open(SocketEventHandler& handler, size_t num_of_clients)
+Bn3Monkey::SocketResult Bn3Monkey::SocketRequestServerImpl::open(SocketRequestHandler& handler, size_t num_of_clients)
 {
 	if (_is_running)
 	{
@@ -50,7 +50,7 @@ Bn3Monkey::SocketResult Bn3Monkey::SocketServerImpl::open(SocketEventHandler& ha
 	return result;
 }
 
-void Bn3Monkey::SocketServerImpl::close()
+void Bn3Monkey::SocketRequestServerImpl::close()
 {
 	if (!_is_running)
 	{
@@ -64,7 +64,7 @@ void Bn3Monkey::SocketServerImpl::close()
 	}
 }
 
-void Bn3Monkey::SocketServerImpl::run(std::atomic<bool>& is_running, size_t num_of_clients, ActiveSocket& sock, SocketConfiguration& config, SocketEventHandler& handler)
+void Bn3Monkey::SocketRequestServerImpl::run(std::atomic<bool>& is_running, size_t num_of_clients, ActiveSocket& sock, SocketConfiguration& config, SocketRequestHandler& handler)
 {
 	sock.listen(num_of_clients);
 	handler.onConnected();
@@ -98,6 +98,7 @@ void Bn3Monkey::SocketServerImpl::run(std::atomic<bool>& is_running, size_t num_
 			case SocketEventType::READ:
 				{
 					// @Todo : Send Target Socket to the thread pool
+					processRequest(target_socket, sock, config, handler);
 				}
 				break;
 			}
@@ -109,7 +110,7 @@ void Bn3Monkey::SocketServerImpl::run(std::atomic<bool>& is_running, size_t num_
 	handler.onDisconnected();
 }
 
-inline void processData(int32_t target_socket, Bn3Monkey::ActiveSocket& sock, Bn3Monkey::SocketConfiguration& config, Bn3Monkey::SocketEventHandler& handler)
+inline void processRequest(int32_t target_socket, Bn3Monkey::ActiveSocket& sock, Bn3Monkey::SocketConfiguration& config, Bn3Monkey::SocketRequestHandler& handler)
 {
 	using namespace Bn3Monkey;
 
@@ -131,7 +132,7 @@ inline void processData(int32_t target_socket, Bn3Monkey::ActiveSocket& sock, Bn
 	
 
 	size_t output_length;
-	handler.onDataProcessed(input.data(), input_length, output.data(), &output_length);
+	handler.onRequestReceived(input.data(), input_length, output.data(), &output_length);
 
 	size_t written_size{ 0 };
 

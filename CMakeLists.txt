@@ -81,8 +81,8 @@ if (BUILD_SECURITYSOCKET_TEST)
     FetchContent_MakeAvailable(googletest)
     set(BUILD_SHARED_LIBS ON CACHE BOOL "Restore Google Test Static Libraries" FORCE)
 
-    set(SECURITY_TEST_DIR "${PROJECT_SOURCE_DIR}/test")
-    message(STATUS "SECURITY_TEST_DIR = ${SECURITY_TEST_DIR}")
+    set(SECURITYSOCKET_TEST_DIR "${PROJECT_SOURCE_DIR}/test")
+    message(STATUS "SECURITYSOCKET_TEST_DIR = ${SECURITYSOCKET_TEST_DIR}")
     file(GLOB SECURITYSOCKET_TEST_FILES
         "${SECURITYSOCKET_TEST_DIR}/*.h"
         "${SECURITYSOCKET_TEST_DIR}/*.hpp"
@@ -102,7 +102,7 @@ if (BUILD_SECURITYSOCKET_TEST)
 
     target_include_directories(securitysockettest
         PRIVATE
-        ${HSNULTRASOUND_INCLUDE_DIR}
+        ${source_dir}
         "${gtest_SOURCE_DIR}/include"
         "${gmock_SOURCE_DIR}/include")
 

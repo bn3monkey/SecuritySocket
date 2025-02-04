@@ -34,6 +34,8 @@ namespace Bn3Monkey
 	{
 	public:
 		PassiveSocket(const SocketAddress& address) : _address(address) {};
+		virtual ~PassiveSocket();
+
 		virtual SocketResult open();
 		virtual void close();
 
@@ -57,6 +59,7 @@ namespace Bn3Monkey
 	{
 	public:
 		TLSPassiveSocket(const SocketAddress& address) : PassiveSocket(address) {}
+		virtual ~TLSPassiveSocket();
 
 		virtual SocketResult open() override;
 		virtual void close() override;
