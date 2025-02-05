@@ -2,9 +2,6 @@
 #include "SocketEvent.hpp"
 using namespace Bn3Monkey;
 
-#include <winsock2.h>
-
-
 SocketResult SocketEventListener::open(int32_t sock, SocketEventType eventType)
 {
     SocketResult result;
