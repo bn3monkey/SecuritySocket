@@ -128,18 +128,6 @@ namespace Bn3Monkey
         uint32_t _write_timeout;
     };
 
-    struct SocketRequestHandler
-    {
-    public:        
-        virtual void onConnected() = 0;
-        virtual void onDisconnected() = 0;
-        
-        virtual int onRequestReceived(const void* input_data, size_t input_size, void* output_data, size_t* output_size) = 0;
-        virtual void onError(const SocketResult& result) = 0;
-    };
-
-
-
     class SocketClient
     {
     public:
@@ -159,6 +147,20 @@ namespace Bn3Monkey
         char _container[IMPLEMENTATION_SIZE]{ 0 };
     };
 
+
+    class SocketConnection
+    {
+    public:
+        virtual SocketResult read(void* buffer, size_t size) = 0;
+        virtual SocketResult write(const void* buffer, size_t size) = 0;
+    };
+
+    struct SocketRequestHandler
+    {
+    public:        
+        virtual void onProcessed(SocketConnection& connection) = 0;
+    };
+
     class SocketRequestServer
     {
     public:
@@ -167,7 +169,7 @@ namespace Bn3Monkey
         explicit SocketRequestServer(const SocketConfiguration& configuration);
         virtual ~SocketRequestServer();
 
-        SocketResult open(SocketRequestHandler& handler, size_t num_of_clients);
+        SocketResult open(SocketRequestHandler& handler);
         void close();
 
     private:
@@ -182,10 +184,28 @@ namespace Bn3Monkey
         explicit SocketBroadcastServer(const SocketConfiguration& configuration);
         virtual ~SocketBroadcastServer();
 
-        SocketResult open(size_t num_of_clients);
-        SocketResult write(const void* buffer, size_t size);
+        SocketResult open();
         void close();
+
+        SocketResult write(const void* buffer, size_t size);
     };
+
+    // @todo
+    // With epoll/iocp & ring buffer & worker threads
+    class MassiveSocketRequestServer
+    {
+    public:
+        static constexpr size_t IMPLEMENTATION_SIZE = 2048;
+
+        explicit MassiveSocketRequestServer(const SocketConfiguration& configuration);
+        virtual ~MassiveSocketRequestServer();
+
+        SocketResult open(SocketRequestHandler& handler);
+        void close();
+
+    private:
+        char _container[IMPLEMENTATION_SIZE]{ 0 };
+    }
 }
 
 #endif

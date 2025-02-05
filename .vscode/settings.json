@@ -71,6 +71,7 @@
         "ranges": "cpp",
         "span": "cpp",
         "*.tcc": "cpp",
-        "cassert": "cpp"
+        "cassert": "cpp",
+        "fstream": "cpp"
     }
 }

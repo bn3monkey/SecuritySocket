@@ -1,8 +1,10 @@
-#if !defined(__BN3MONKEY__PASSIVESOCKET__)
-#define __BN3MONKEY__PASSIVESOCKET__
+#if !defined(__BN3MONKEY__PassiveSocket__)
+#define __BN3MONKEY__PassiveSocket__
 
 #include "../SecuritySocket.hpp"
 #include "SocketAddress.hpp"
+#include "BaseSocket.hpp"
+#include "SocketConnection.hpp"
 
 #include <cstdint>
 #include <openssl/ssl.h>
@@ -12,6 +14,7 @@
 #pragma comment(lib, "Ws2_32.lib")
 #include <Winsock2.h>
 #include <WS2tcpip.h>
+#include <mswsock.h>
 #else
 #include <netdb.h>
 #include <sys/types.h>
@@ -22,36 +25,23 @@
 #include <netinet/in.h>
 #endif
 
-namespace Bn3Monkey
-{
-	enum class PassivePollType {
-		CONNECT,
-		READ,
-		WRITE
-	};
 
-	class PassiveSocket
-	{
+namespace Bn3Monkey {
+	
+	
+	class PassiveSocket  : public BaseSocket {
 	public:
-		PassiveSocket(const SocketAddress& address) : _address(address) {};
-		virtual ~PassiveSocket();
-
+		PassiveSocket(const SocketAddress& address) : _address(address) {}
 		virtual SocketResult open();
 		virtual void close();
 
-		virtual SocketResult poll(const PassivePollType& polltype, uint32_t timeout_ms);
+		virtual SocketResult listen(size_t num_of_clients);		
+		virtual SocketConnection accept();
 
-		virtual SocketResult connect();
-		virtual void disconnect(); 
-		virtual SocketResult isConnected();
-		virtual int read(void* buffer, size_t size);
-		virtual int write(const void* buffer, size_t size);
-
-	protected:
+	private:
 		SocketAddress _address;
-		int32_t _socket {0};
-		uint32_t _read_timeout {0};
-		uint32_t _write_timeout {0};
+		int32_t _socket {-1};
+		size_t _num_of_clients {0};
 
 	};
 
@@ -59,25 +49,13 @@ namespace Bn3Monkey
 	{
 	public:
 		TLSPassiveSocket(const SocketAddress& address) : PassiveSocket(address) {}
-		virtual ~TLSPassiveSocket();
+		virtual SocketResult open();
+		virtual void close();
 
-		virtual SocketResult open() override;
-		virtual void close() override;
-
-
-		SocketResult poll(const PassivePollType& polltype, uint32_t timeout_ms) override;
-
-		SocketResult connect() override;
-		void disconnect() override;
-		SocketResult isConnected() override;
-		int read(void* buffer, size_t size) override;
-		int write(const void* buffer, size_t size) override;
-
-	private:
-		SSL_CTX* _context{ nullptr };
-		SSL* _ssl{ nullptr };
+		virtual SocketResult listen(size_t num_of_clients);
+		virtual SocketConnection accept();
 	};
 
 }
 
-#endif // __BN3MONKEY__PASSIVESOCKET__
+#endif // __BN3MONKEY__PassiveSocket__
