@@ -57,7 +57,6 @@ void PassiveSocket::close()
 SocketResult PassiveSocket::listen(size_t num_of_clients)
 {
     SocketResult res;
-    _num_of_clients = num_of_clients;
 
     int ret = ::bind(_socket, _address.address(), _address.size());
     if (ret == SOCKET_ERROR)
@@ -74,24 +73,10 @@ SocketResult PassiveSocket::listen(size_t num_of_clients)
     return res;
 }
 
-SocketConnection PassiveSocket::accept()
+int32_t PassiveSocket::accept()
 {
-    SocketConnection result;
-
-    result.result = SocketResult(SocketCode::SUCCESS);
-
-    {
-        int sock = ::accept(_socket, NULL, NULL);
-        if (result.event.sock < 0)
-        {
-            result.result = createResult(result.event.sock);
-            if (result.result.code() != SocketCode::SOCKET_CONNECTION_IN_PROGRESS)
-                return result;
-        }
-        setNonBlockingMode(result.event.sock);
-    }
-
-    return result;
+    int sock = ::accept(_socket, NULL, NULL);
+    return sock;
 }
 
 
@@ -107,23 +92,7 @@ SocketResult TLSPassiveSocket::listen(size_t num_of_clients)
 {
     throw std::runtime_error("Not Implemented");
 }
-SocketEventListResult TLSPassiveSocket::poll(uint32_t timeout_ms)
-{
-    throw std::runtime_error("Not Implemented");
-}
-SocketEventResult TLSPassiveSocket::accept()
-{
-    throw std::runtime_error("Not Implemented");
-}
-int32_t TLSPassiveSocket::read(int32_t client_idx, void* buffer, size_t size)
-{
-    throw std::runtime_error("Not Implemented");
-}
-int32_t TLSPassiveSocket::write(int32_t client_idx, const void* buffer, size_t size) 
-{
-    throw std::runtime_error("Not Implemented");
-}
-void TLSPassiveSocket::drop(int32_t client_idx)
+int32_t TLSPassiveSocket::accept()
 {
     throw std::runtime_error("Not Implemented");
 }

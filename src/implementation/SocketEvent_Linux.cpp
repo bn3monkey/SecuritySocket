@@ -1,10 +1,9 @@
 #if defined(__linux__)
 #include "SocketEvent.hpp"
 
-SocketResult SocketEventListener::open(int32_t sock, SocketEventType eventType)
+void SocketEventListener::open(BaseSocket& sock,  SocketEventType eventType)
 {
-    SocketResult result;
-    _handle.fd = sock;
+    _handle.fd = sock.descriptor();
     switch(eventType)
     {
         case SocketEventType::ACCEPT:

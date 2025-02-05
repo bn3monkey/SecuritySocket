@@ -1,4 +1,4 @@
-#include "ActiveSocket.hpp"
+#include "ClientActiveSocket.hpp"
 
 #include "SocketResult.hpp"
 #include "SocketHelper.hpp"
@@ -9,13 +9,13 @@
 
 using namespace Bn3Monkey;
 
-Bn3Monkey::ActiveSocket::~ActiveSocket()
+Bn3Monkey::ClientActiveSocket::~ClientActiveSocket()
 {
 	disconnect();
 	close();
 }
 
-SocketResult ActiveSocket::open()
+SocketResult ClientActiveSocket::open()
 {
 	SocketResult result;
 
@@ -40,7 +40,7 @@ SocketResult ActiveSocket::open()
 	return result;
 }
 
-void ActiveSocket::close() {
+void ClientActiveSocket::close() {
 #ifdef _WIN32
 	::closesocket(_socket);
 #else
@@ -49,7 +49,7 @@ void ActiveSocket::close() {
 	_socket = -1;	
 }
 
-SocketResult ActiveSocket::connect()
+SocketResult ClientActiveSocket::connect()
 {
 	SocketResult result;
 	
@@ -73,7 +73,7 @@ SocketResult ActiveSocket::connect()
 
 
 
-void Bn3Monkey::ActiveSocket::disconnect()
+void Bn3Monkey::ClientActiveSocket::disconnect()
 {
 #ifdef _WIN32
 	shutdown(_socket, SD_BOTH);
@@ -83,7 +83,7 @@ void Bn3Monkey::ActiveSocket::disconnect()
 	_socket = -1;
 }
 
-SocketResult Bn3Monkey::ActiveSocket::isConnected()
+SocketResult Bn3Monkey::ClientActiveSocket::isConnected()
 {
 	int optval;
 	socklen_t optlen = sizeof(optval);
@@ -98,7 +98,7 @@ SocketResult Bn3Monkey::ActiveSocket::isConnected()
 	return SocketResult(SocketCode::SUCCESS);
 }
 
-int Bn3Monkey::ActiveSocket::write(const void* buffer, size_t size)
+int Bn3Monkey::ClientActiveSocket::write(const void* buffer, size_t size)
 {
 	int32_t ret{0};
 #ifdef __linux__
@@ -109,7 +109,7 @@ int Bn3Monkey::ActiveSocket::write(const void* buffer, size_t size)
 	return ret;
 }
 
-int Bn3Monkey::ActiveSocket::read(void* buffer, size_t size)
+int Bn3Monkey::ClientActiveSocket::read(void* buffer, size_t size)
 {
 	int32_t ret{ 0 };
 	ret = ::recv(_socket, static_cast<char*>(buffer), size, 0);
@@ -117,17 +117,15 @@ int Bn3Monkey::ActiveSocket::read(void* buffer, size_t size)
 }
 
 
-SocketResult Bn3Monkey::TLSActiveSocket::open()
+SocketResult Bn3Monkey::TLSClientActiveSocket::open()
 {
-	auto result = TLSActiveSocket::open();
+	auto result = TLSClientActiveSocket::open();
 	if (result.code() != SocketCode::SUCCESS)
 	{
 		return result;
 	}
 
-	SSL_library_init();
-	OpenSSL_add_all_algorithms();
-	SSL_load_error_strings();
+	initializeSSL();
 
 	auto client_method = TLSv1_2_client_method();
 
@@ -147,7 +145,7 @@ SocketResult Bn3Monkey::TLSActiveSocket::open()
 	return result;
 }
 
-Bn3Monkey::TLSActiveSocket::~TLSActiveSocket()
+Bn3Monkey::TLSClientActiveSocket::~TLSClientActiveSocket()
 {
 	if (_ssl) {
 		SSL_shutdown(_ssl);
@@ -156,12 +154,12 @@ Bn3Monkey::TLSActiveSocket::~TLSActiveSocket()
 	if (_context) {
 		SSL_CTX_free(_context);
 	}
-	ActiveSocket::~ActiveSocket();
+	ClientActiveSocket::~ClientActiveSocket();
 }
 
-SocketResult Bn3Monkey::TLSActiveSocket::connect()
+SocketResult Bn3Monkey::TLSClientActiveSocket::connect()
 {
-	SocketResult ret = TLSActiveSocket::connect();
+	SocketResult ret = TLSClientActiveSocket::connect();
 	if (ret.code() != SocketCode::SUCCESS)
 	{
 		return ret;
@@ -181,18 +179,18 @@ SocketResult Bn3Monkey::TLSActiveSocket::connect()
 	return ret;
 }
 
-void Bn3Monkey::TLSActiveSocket::disconnect()
+void Bn3Monkey::TLSClientActiveSocket::disconnect()
 {
-	TLSActiveSocket::disconnect();
+	TLSClientActiveSocket::disconnect();
 }
 
-int Bn3Monkey::TLSActiveSocket::write(const void* buffer, size_t size)
+int Bn3Monkey::TLSClientActiveSocket::write(const void* buffer, size_t size)
 {
 	int32_t ret = SSL_write(_ssl, buffer, size);
 	return ret;
 }
 
-int Bn3Monkey::TLSActiveSocket::read(void* buffer, size_t size)
+int Bn3Monkey::TLSClientActiveSocket::read(void* buffer, size_t size)
 {
 	int32_t ret = SSL_read(_ssl, buffer, size);
 	return ret;

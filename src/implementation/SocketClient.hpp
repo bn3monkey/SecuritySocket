@@ -2,7 +2,8 @@
 #define __BN3MONKEY__TCPCLIENT__
 
 #include "../SecuritySocket.hpp"
-#include "PassiveSocket.hpp"
+#include "ActiveSocket.hpp"
+#include "SocketEvent.hpp"
 
 #include <type_traits>
 #include <atomic>
@@ -42,11 +43,12 @@ namespace Bn3Monkey
 
 	private:
 		
-		PassiveSocket* _socket{ nullptr };
-		static constexpr size_t container_size = sizeof(PassiveSocket) > sizeof(TLSPassiveSocket) ? sizeof(PassiveSocket) : sizeof(TLSPassiveSocket);
+		ActiveSocket* _socket{ nullptr };
+		static constexpr size_t container_size = sizeof(ActiveSocket) > sizeof(TLSActiveSocket) ? sizeof(ActiveSocket) : sizeof(TLSActiveSocket);
 		char _container[container_size]{ 0 };
 
 		SocketConfiguration _configuration;
+
 	};
 }
 

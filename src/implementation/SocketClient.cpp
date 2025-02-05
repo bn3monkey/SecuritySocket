@@ -28,10 +28,10 @@ SocketResult SocketClientImpl::open()
 	}
 
 	if (_configuration.tls()) {
-		_socket = reinterpret_cast<PassiveSocket*>(new(_container) TLSPassiveSocket { address });
+		_socket = reinterpret_cast<ActiveSocket*>(new(_container) TLSActiveSocket { address });
 	}
 	else {
-		_socket = new (_container) PassiveSocket { address };
+		_socket = new (_container) ActiveSocket { address };
 	}
 
 	result = _socket->open();
@@ -40,7 +40,7 @@ SocketResult SocketClientImpl::open()
 		return result;
 	}
 
-
+	
 }
 void SocketClientImpl::close()
 {
@@ -56,9 +56,13 @@ SocketResult SocketClientImpl::connect()
 {
 	SocketResult result;
 
+	SocketEventListener event_listener;
+	event_listener.open(*_socket, SocketEventType::CONNECT);
+
 	for (size_t i = 0; i < _configuration.max_retries(); i++)
 	{
-		result = _socket->poll(PassivePollType::CONNECT, _configuration.write_timeout());
+		result = event_listener.wait(_configuration.read_timeout());
+
 		if (result.code() == SocketCode::SOCKET_TIMEOUT)
 		{
 			continue;
@@ -78,9 +82,12 @@ SocketResult SocketClientImpl::read(void* buffer, size_t size)
 	int read_size {0};
 	SocketResult result;
 
+	SocketEventListener event_listener;
+	event_listener.open(*_socket, SocketEventType::READ);
+
 	for (size_t i = 0; i < _configuration.max_retries(); i++)
 	{
-		result = _socket->poll(PassivePollType::READ, _configuration.read_timeout());
+		result = event_listener.wait(_configuration.read_timeout());
 		if (result.code() == SocketCode::SOCKET_TIMEOUT)
 		{
 			continue;
@@ -124,9 +131,12 @@ SocketResult SocketClientImpl::write(const void* buffer, size_t size)
 	size_t written_size{ 0 };
 	SocketResult result;
 
+	SocketEventListener event_listener;
+	event_listener.open(*_socket, SocketEventType::WRITE);
+
 	for (size_t i = 0; i < _configuration.max_retries(); )
 	{
-		result = _socket->poll(PassivePollType::WRITE, _configuration.write_timeout());
+		result = event_listener.wait(_configuration.write_timeout());
 		if (result.code() == SocketCode::SOCKET_TIMEOUT)
 		{
 			i++;

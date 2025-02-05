@@ -1,13 +1,13 @@
-#if !defined(__BN3MONKEY__PASSIVESOCKET__)
-#define __BN3MONKEY__PASSIVESOCKET__
+#if !defined(__BN3MONKEY__CLIENTACTIVESOCKET__)
+#define __BN3MONKEY__CLIENTACTIVESOCKET__
 
 #include "../SecuritySocket.hpp"
 #include "SocketAddress.hpp"
 #include "BaseSocket.hpp"
+#include "SocketHelper.hpp"
 
 #include <cstdint>
-#include <openssl/ssl.h>
-#include <openssl/err.h>
+
 
 #ifdef _WIN32
 #pragma comment(lib, "Ws2_32.lib")
@@ -26,11 +26,11 @@
 namespace Bn3Monkey
 {
 
-	class ActiveSocket : public BaseSocket
+	class ClientActiveSocket : public BaseSocket
 	{
 	public:
-		ActiveSocket(const SocketAddress& address) : _address(address) {};
-		virtual ~ActiveSocket();
+		ClientActiveSocket(const SocketAddress& address) : _address(address) {};
+		virtual ~ClientActiveSocket();
 
 		virtual SocketResult open();
 		virtual void close();
@@ -49,11 +49,11 @@ namespace Bn3Monkey
 
 	};
 
-	class TLSActiveSocket : public ActiveSocket
+	class TLSClientActiveSocket : public ClientActiveSocket
 	{
 	public:
-		TLSActiveSocket(const SocketAddress& address) : ActiveSocket(address) {}
-		virtual ~TLSActiveSocket();
+		TLSClientActiveSocket(const SocketAddress& address) : ClientActiveSocket(address) {}
+		virtual ~TLSClientActiveSocket();
 
 		virtual SocketResult open() override;
 		virtual void close() override;
@@ -71,4 +71,4 @@ namespace Bn3Monkey
 
 }
 
-#endif // __BN3MONKEY__PASSIVESOCKET__
+#endif // __BN3MONKEY__CLIENTACTIVESOCKET__

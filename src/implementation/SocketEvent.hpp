@@ -2,6 +2,7 @@
 #define __BN3MONKEY_SOCKETEVENTLISTENER__
 #include "../SecuritySocket.hpp"
 #include "SocketResult.hpp"
+#include "BaseSocket.hpp"
 
 #ifdef _WIN32
 #include <winsock2.h>
@@ -30,7 +31,7 @@ namespace Bn3Monkey
     class SocketEventListener
     {
     public:
-        SocketResult open(int32_t sock, SocketEventType eventType);
+        void open(BaseSocket& sock, SocketEventType eventType);
         SocketResult wait(uint32_t timeout_ms);
     private:
         pollfd _handle;

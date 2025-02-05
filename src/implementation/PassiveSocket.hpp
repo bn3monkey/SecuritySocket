@@ -1,10 +1,10 @@
-#if !defined(__BN3MONKEY__PassiveSocket__)
-#define __BN3MONKEY__PassiveSocket__
+#if !defined(__BN3MONKEY__PASSIVESOCKET__)
+#define __BN3MONKEY__PASSIVESOCKET__
 
 #include "../SecuritySocket.hpp"
 #include "SocketAddress.hpp"
 #include "BaseSocket.hpp"
-#include "SocketConnection.hpp"
+#include "ServerActiveSocket.hpp"
 
 #include <cstdint>
 #include <openssl/ssl.h>
@@ -36,12 +36,12 @@ namespace Bn3Monkey {
 		virtual void close();
 
 		virtual SocketResult listen(size_t num_of_clients);		
-		virtual SocketConnection accept();
+		virtual int32_t accept();
 
 	private:
 		SocketAddress _address;
 		int32_t _socket {-1};
-		size_t _num_of_clients {0};
+	
 
 	};
 
@@ -53,9 +53,9 @@ namespace Bn3Monkey {
 		virtual void close();
 
 		virtual SocketResult listen(size_t num_of_clients);
-		virtual SocketConnection accept();
+		virtual int32_t accept();
 	};
 
 }
 
-#endif // __BN3MONKEY__PassiveSocket__
+#endif // __BN3MONKEY__PASSIVESOCKET__
