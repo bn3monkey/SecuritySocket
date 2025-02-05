@@ -14,6 +14,7 @@ SocketResult SocketMultiEventListener::open(int32_t sock)
 SocketEventResult poll(uint32_t timeout_ms)
 {
     SocketEventResult result;
+    
 }
 SocketResult SocketMultiEventListener::addSocketEvent(int32_t sock, SocketEventType type)
 {

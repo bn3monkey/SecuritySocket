@@ -52,14 +52,12 @@ void ActiveSocket::close()
 #endif
 	_socket = -1;	
 }
+
+static inline createWindowsPollHandle()
 SocketResult ActiveSocket::createPollHandle()
 {
 #if defined(_WIN32)
-    window_pollhandle = CreateIoCompletionPort((HANDLE)_socket, NULL, (ULONG_PTR)_socket, 0);
-    if (window_pollhandle == nullptr)
-    {
-        return SocketResult(SocketCode::POLL_OBJECT_NOT_CREATED, "Poll object is not created");
-    }
+
 #else
     linux_pollhandle = epoll_create1(0);
     if (linux_pollhandle < 0)

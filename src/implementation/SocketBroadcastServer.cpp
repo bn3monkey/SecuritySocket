@@ -44,6 +44,7 @@ SocketResult SocketEventServerImpl::open(size_t num_of_clients)
 inline void removeDisconnectedSocket(int32_t (&connected_clients)[MAX_EVENTS])
 {
     int32_t connected_clients[MAX_EVENTS];
+    
 }
 inline void findNewSocket(int32_t (&connected_clients)[MAX_EVENTS])
 {
