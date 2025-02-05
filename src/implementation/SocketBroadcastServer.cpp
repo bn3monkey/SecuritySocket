@@ -40,10 +40,28 @@ SocketResult SocketEventServerImpl::open(size_t num_of_clients)
 		return result;
 	}
 }
-SocketResult SocketEventServerImpl::write(const void* buffer, size_t size)
+
+inline void removeDisconnectedSocket(int32_t (&connected_clients)[MAX_EVENTS])
+{
+    int32_t connected_clients[MAX_EVENTS];
+}
+inline void findNewSocket(int32_t (&connected_clients)[MAX_EVENTS])
 {
 
 }
+
+SocketResult SocketEventServerImpl::write(const void* buffer, size_t size)
+{
+    // 1. Remove disconnected socket
+    
+
+    // 2. Find New Socket
+
+    // 3. Send data to sockets
+
+
+}
+
 void SocketEventServerImpl::close()
 {
     _socket->close();

@@ -1,5 +1,6 @@
 #include "SecuritySocket.hpp"
-#include "implementation/SocketServer.hpp"
+#include "implementation/SocketBroadcastServer.hpp"
+#include "implementation/SocketRequestServer.hpp"
 #include "implementation/SocketClient.hpp"
 
 using namespace Bn3Monkey;
@@ -32,7 +33,7 @@ Bn3Monkey::SocketResult Bn3Monkey::SocketClient::connect()
 	SocketClientImpl* impl = static_cast<SocketClientImpl*>((void*)_container);
 	return impl->connect();
 }
-Bn3Monkey::SocketResult Bn3Monkey::SocketClient::read(void* buffer, size_t* size)
+Bn3Monkey::SocketResult Bn3Monkey::SocketClient::read(void* buffer, size_t size)
 {
 	SocketClientImpl* impl = static_cast<SocketClientImpl*>((void*)_container);
 	return impl->read(buffer, size);

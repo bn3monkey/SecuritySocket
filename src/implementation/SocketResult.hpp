@@ -9,7 +9,7 @@ using namespace Bn3Monkey;
 
 static inline SocketResult createResult(int operation_return)
 {
-	if (operation_return >= 0)
+	if (operation_return > 0)
 	{
 		return SocketResult(SocketCode::SUCCESS);
 	}
@@ -64,7 +64,8 @@ static inline SocketResult createResult(int operation_return)
 		return SocketResult(SocketCode::SOCKET_CONNECTION_IN_PROGRESS,
 			"");
 	case WSAEWOULDBLOCK:
-		return SocketResult(SocketCode::SOCKET_CONNECTION_IN_PROGRESS, "");
+	case WSATRY_AGAIN:
+		return SocketResult(SocketCode::SOCKET_HAS_NO_DATA, "Socket has no data. call the io function again");
 	}
 #else
 	int error = errno;

@@ -30,7 +30,8 @@ namespace Bn3Monkey {
 	enum class SocketEventType {
 		UNDEFINED,
 		ACCEPT,
-		READ
+		READ,
+		WRITE
 	};
 	struct SocketEvent {
 		SocketEventType type {SocketEventType::UNDEFINED};
@@ -54,6 +55,7 @@ namespace Bn3Monkey {
 		SocketEventList event_list;
 	};
 	
+	
 	class ActiveSocket {
 	public:
 		ActiveSocket(const SocketAddress& address) : _address(address) {}
@@ -63,14 +65,15 @@ namespace Bn3Monkey {
 		virtual SocketResult listen(size_t num_of_clients);
 		
 		virtual SocketEventListResult poll(uint32_t timeout_ms);
+		virtual void addPollEvent(int32_t client_socket, SocketEventType type);
+		virtual void removePollEvent(int32_t client_socket);
 
 		virtual SocketEventResult accept();
 		virtual int32_t read(int32_t client_socket, void* buffer, size_t size);
-		virtual int32_t write(int32_t client_socket, const void* buffer, size_t size) ;
-		
+		virtual int32_t write(int32_t client_socket, const void* buffer, size_t size);	
 		virtual void drop(int32_t client_socket);
 
-		virtual SocketResult isConnected(int32_t clinet_socket);
+		virtual SocketResult isConnected(int32_t client_socket);
 	private:
 		SocketAddress _address;
 		int32_t _socket {-1};
@@ -79,7 +82,7 @@ namespace Bn3Monkey {
 		
 		int32_t linux_pollhandle {0};
 		void* window_pollhandle {nullptr};
-		
+		SocketResult createPollHandle();		
 	};
 
 	class TLSActiveSocket : public ActiveSocket

@@ -39,6 +39,7 @@ namespace Bn3Monkey
         
         SOCKET_ALREADY_CONNECTED,
         SOCKET_CONNECTION_IN_PROGRESS,
+        SOCKET_HAS_NO_DATA,
 
         SOCKET_BIND_FAILED,
         SOCKET_LISTEN_FAILED,
@@ -51,11 +52,12 @@ namespace Bn3Monkey
         SOCKET_TIMEOUT,
         SOCKET_CLOSED,
 
-        POLL_ERROR,
-        POLL_OBJECT_NOT_CREATED,
-        POLL_EVENT_CANNOT_ADDED,
+        SOCKET_EVENT_ERROR,
+        SOCKET_EVENT_OBJECT_NOT_CREATED,
+        SOCKET_EVENT_CANNOT_ADDED,
 
         SOCKET_SERVER_ALREADY_RUNNING,
+        
 
         UNKNOWN_ERROR,
 
@@ -150,13 +152,12 @@ namespace Bn3Monkey
         void close();
 
         SocketResult connect();
-        SocketResult read(void* buffer, size_t* size);
+        SocketResult read(void* buffer, size_t size);
         SocketResult write(const void* buffer, size_t size);
 
     private:
         char _container[IMPLEMENTATION_SIZE]{ 0 };
     };
-
 
     class SocketRequestServer
     {
@@ -173,13 +174,13 @@ namespace Bn3Monkey
         char _container[IMPLEMENTATION_SIZE]{ 0 };
     };
 
-    class SocketEventServer
+    class SocketBroadcastServer
     {
     public:
         static constexpr size_t IMPLEMENTATION_SIZE = 2048;
 
-        explicit SocketEventServer(const SocketConfiguration& configuration);
-        virtual ~SocketEventServer();
+        explicit SocketBroadcastServer(const SocketConfiguration& configuration);
+        virtual ~SocketBroadcastServer();
 
         SocketResult open(size_t num_of_clients);
         SocketResult write(const void* buffer, size_t size);

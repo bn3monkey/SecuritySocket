@@ -52,22 +52,8 @@ void ActiveSocket::close()
 #endif
 	_socket = -1;	
 }
-SocketResult ActiveSocket::listen(size_t num_of_clients)
+SocketResult ActiveSocket::createPollHandle()
 {
-    _num_of_clients = num_of_clients;
-
-    int ret = ::bind(_socket, _address.address(), _address.size());
-    if (ret == SOCKET_ERROR)
-    {
-        return SocketResult(SocketCode::SOCKET_BIND_FAILED, "Bind Fail");
-    }
-
-    ret = ::listen(_socket, num_of_clients);
-    if (!ret)
-    {
-        return SocketResult(SocketCode::SOCKET_LISTEN_FAILED, "Listen Fail");
-    }
-
 #if defined(_WIN32)
     window_pollhandle = CreateIoCompletionPort((HANDLE)_socket, NULL, (ULONG_PTR)_socket, 0);
     if (window_pollhandle == nullptr)
@@ -90,8 +76,26 @@ SocketResult ActiveSocket::listen(size_t num_of_clients)
         return SocketResult(SocketCode::POLL_EVENT_CANNOT_ADDED, "Listening Event cannot be added");
     }
 #endif
-
     return SocketResult(SocketCode::SUCCESS);
+}
+
+SocketResult ActiveSocket::listen(size_t num_of_clients)
+{
+    _num_of_clients = num_of_clients;
+
+    int ret = ::bind(_socket, _address.address(), _address.size());
+    if (ret == SOCKET_ERROR)
+    {
+        return SocketResult(SocketCode::SOCKET_BIND_FAILED, "Bind Fail");
+    }
+
+    ret = ::listen(_socket, num_of_clients);
+    if (!ret)
+    {
+        return SocketResult(SocketCode::SOCKET_LISTEN_FAILED, "Listen Fail");
+    }
+
+    return createPollHandle();
 }
 SocketEventListResult ActiveSocket::poll(uint32_t timeout_ms)
 {

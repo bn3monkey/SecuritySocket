@@ -37,7 +37,7 @@ namespace Bn3Monkey
         void close();
 
 		SocketResult connect();
-		SocketResult read(void* buffer, size_t* size);
+		SocketResult read(void* buffer, size_t size);
 		SocketResult write(const void* buffer, size_t size);
 
 	private:
