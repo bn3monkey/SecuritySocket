@@ -4,15 +4,11 @@
 #include <cstdint>
 #if defined(_WIN32)
 #include <windows.h>
-#pragma comment(lib, "Ws2_32.lib")
-#include <Winsock2.h>
-#include <WS2tcpip.h>
 #else
 #include <fcntl.h>
 #endif
 
-#include <openssl/ssl.h>
-#include <openssl/err.h>
+
 
 inline void setNonBlockingMode(int32_t socket)
 {

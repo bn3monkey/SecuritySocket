@@ -99,7 +99,7 @@ void Bn3Monkey::SocketRequestServerImpl::run(std::atomic<bool>& is_running, size
 				break;
 			case SocketEventType::READ_WRITE:
 				{
-
+					// do process right here
 				}
 				break;
 			case SocketEventType::DISCONNECTED:
