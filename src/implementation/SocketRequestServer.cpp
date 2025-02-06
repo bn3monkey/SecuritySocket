@@ -97,6 +97,7 @@ void Bn3Monkey::SocketRequestServerImpl::run(
 					auto* sock = connection->socket();
 					connection->read_size = sock->read(connection->input_buffer.data(), connection->input_buffer.size());
 					
+					std::async sans{std::launch::async, [](){}};
 					// int32_t read_size = context->read(context->input_buffer.data(), context->read_size);
 					// async {
 					// 		bool isFinished = handler.onProcessed(target_socket->input_buffer(), read_size);
