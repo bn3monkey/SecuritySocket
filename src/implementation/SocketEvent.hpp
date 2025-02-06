@@ -7,10 +7,12 @@
 #ifdef _WIN32
 #include <winsock2.h>
 #include <ws2tcpip.h>
-#include <vector>
 #elif __linux__
 #include <poll.h>
 #endif
+
+#include <vector>
+#include <unordered_map>
 
 namespace Bn3Monkey
 {    
@@ -25,18 +27,6 @@ namespace Bn3Monkey
         READ_WRITE
     };
 
-    struct SocketEvent
-    {
-        int32_t sock {-1};
-        SocketEventType type {SocketEventType::READ};
-    };
-
-    struct SocketEventResult
-    {
-        SocketResult result;
-        std::vector<SocketEvent> events;
-    };
-
     class SocketEventListener
     {
     public:
@@ -46,19 +36,46 @@ namespace Bn3Monkey
         pollfd _handle;
     };
 
+
+    /*** MULTI-EVENT LISTENER  ***/
+
+    struct SocketEventContext
+    {
+    #ifdef _WIN32
+        OVERLAPPED overlapped;
+    #endif
+        SocketEventType type { SocketEventType::UNDEFINED };
+        
+        int32_t fd {-1};
+        std::vector<char> input_buffer {0, std::allocator<char>()};
+        size_t read_size {0};
+        std::vector<char> output_buffer {0, std::allocator<char>()};
+        size_t write_size {0};
+    };
+
+    struct SocketEventResult
+    {
+        SocketResult result;
+        std::vector<SocketEventContext*> contexts;
+    };
+
     class SocketMultiEventListener
     {
     public:
         SocketResult open();
         
-        SocketResult addEvent(BaseSocket& sock, SocketEventType eventType);
-        SocketResult removeEvent(BaseSocket& sock);
+        SocketResult addEvent(SocketEventContext* context, SocketEventType eventType);
+        SocketResult modifyEvent(SocketEventContext* context, SocketEventType eventType);
+        SocketResult removeEvent(SocketEventContext* context);
         SocketEventResult wait(uint32_t timeout_ms);
         void close(); 
     private:
         int32_t _server_socket {0};
+        std::unordered_map<int32_t, SocketEventContext*> _contexts;
+
     #if defined(_WIN32)
         std::vector<pollfd> _handle;
+        // void *_handle;
     #elif defined __linux__
         std::vector<pollfd> _handle;
         // int32_t _handle;

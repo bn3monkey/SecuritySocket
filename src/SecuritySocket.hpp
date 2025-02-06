@@ -147,18 +147,12 @@ namespace Bn3Monkey
     };
 
 
-    class SocketConnection
-    {
-    public:
-        virtual SocketResult read(void* buffer, size_t size) = 0;
-        virtual SocketResult write(const void* buffer, size_t size) = 0;
-    };
-
+    
     struct SocketRequestHandler
     {
     public:        
-        virtual bool onProcessed(SocketConnection& connection) = 0;
     };
+    
 
     class SocketRequestServer
     {

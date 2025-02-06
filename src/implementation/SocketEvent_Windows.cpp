@@ -63,16 +63,17 @@ SocketResult SocketMultiEventListener::open()
 {
     _handle.reserve(16);
 }
-SocketResult SocketMultiEventListener::addEvent(BaseSocket& sock, SocketEventType eventType)
+SocketResult SocketMultiEventListener::addEvent(SocketEventContext* context, SocketEventType eventType)
 {
     pollfd fd;
-    fd.fd = sock.descriptor();
+    fd.fd = context->fd;
+    
     switch(eventType)
     {
         case SocketEventType::ACCEPT:
             {
                 fd.events = POLLIN;
-                _server_socket = sock.descriptor();
+                _server_socket = context->fd;
             }
             break;
         case SocketEventType::CONNECT:
@@ -100,17 +101,28 @@ SocketResult SocketMultiEventListener::addEvent(BaseSocket& sock, SocketEventTyp
     }  
     _handle.push_back(fd);
     
+    _contexts[context->fd] = context;
+
     return SocketResult();
 }
-SocketResult SocketMultiEventListener::removeEvent(BaseSocket& socket)
+SocketResult SocketMultiEventListener::modifyEvent(SocketEventContext* context, SocketEventType eventType)
+{
+    removeEvent(context);
+    addEvent(context, eventType);
+}
+SocketResult SocketMultiEventListener::removeEvent(SocketEventContext* context)
 {
     for (auto iter = _handle.begin(); iter != _handle.end(); iter++)
     {
-        if (iter->fd == socket.descriptor())
+        if (iter->fd == context->fd)
         {
             _handle.erase(iter);
         }
     }
+
+    auto iter = _contexts.find(context->fd);
+    if (iter != _contexts.end())
+        _contexts.erase(iter);
 }
 SocketEventResult SocketMultiEventListener::wait(uint32_t timeout_ms)
 {
@@ -124,7 +136,7 @@ SocketEventResult SocketMultiEventListener::wait(uint32_t timeout_ms)
         res.result = SocketResult(SocketCode::SOCKET_EVENT_ERROR);
     }
     else {
-        res.events.reserve(ret);
+        res.contexts.reserve(ret);
         for (size_t i = 0; i < ret; i++)
         {
 
@@ -132,31 +144,30 @@ SocketEventResult SocketMultiEventListener::wait(uint32_t timeout_ms)
             auto& event_fd = event.fd;
             auto& event_type = event.revents;
 
-            SocketEvent revent;
-            revent.sock = event_fd;
+            SocketEventContext* context = _contexts[event_fd];
 
             if (event_type & POLLERR || event_type & POLLHUP)
             {
-                revent.type = SocketEventType::DISCONNECTED;
+                context->type = SocketEventType::DISCONNECTED;
             }
             else if (event_type & (POLLIN | POLLOUT))
             {
-                revent.type = SocketEventType::READ_WRITE;
+                context->type = SocketEventType::READ_WRITE;
             }
             else if (_server_socket == event_fd && event_type & POLLIN)
             {
-                revent.type = SocketEventType::ACCEPT;
+                context->type = SocketEventType::ACCEPT;
             }            
             else if (event_type & POLLIN)
             {
-                revent.type = SocketEventType::READ;
+                context->type = SocketEventType::READ;
             }                        
             else if (event_type & POLLOUT)
             {
-                revent.type = SocketEventType::WRITE;
+                context->type = SocketEventType::WRITE;
             }
 
-            res.events.push_back(revent);
+            res.contexts.push_back(context);
         }
 
     }

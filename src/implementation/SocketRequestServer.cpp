@@ -1,6 +1,7 @@
 #include "SocketRequestServer.hpp"
 #include "SocketResult.hpp"
 #include <vector>
+#include <future>
 
 Bn3Monkey::SocketRequestServerImpl::~SocketRequestServerImpl()
 {
@@ -53,16 +54,20 @@ void Bn3Monkey::SocketRequestServerImpl::close()
 	}
 }
 
-void Bn3Monkey::SocketRequestServerImpl::run(std::atomic<bool>& is_running, size_t num_of_clients, PassiveSocket& sock, SocketConfiguration& config, SocketRequestHandler& handler)
+void Bn3Monkey::SocketRequestServerImpl::run(
+	SocketRequestServerImpl* self)
 {
 	
 	SocketMultiEventListener listener;
 	listener.open();
-	listener.addEvent(sock, SocketEventType::ACCEPT);
 
-	while (is_running)
+	SocketEventContext server_context;
+	server_context.fd = self->_socket->descriptor();
+	listener.addEvent(&server_context, SocketEventType::ACCEPT);
+
+	while (self->_is_running)
 	{
-		auto eventlist = listener.wait(config.read_timeout());
+		auto eventlist = listener.wait(self->_configuration.read_timeout());
 	
 		if (eventlist.result.code() == SocketCode::SOCKET_TIMEOUT)
 		{
@@ -73,38 +78,58 @@ void Bn3Monkey::SocketRequestServerImpl::run(std::atomic<bool>& is_running, size
 			break;
 		}
 
-		for (auto& event : eventlist.events)
+		for (auto& context : eventlist.contexts)
 		{
-			auto& target_socket = event.sock;
-			auto& type = event.type;
+			auto& type = context->type;
 
 			switch (type)
 			{
 			case SocketEventType::ACCEPT:
 				{
-					auto container = sock.accept();
-					ServerActiveSocket* socket = container.get();
-					listener.addEvent(*socket, SocketEventType::READ_WRITE);
+					auto socket_container = self->_socket->accept();
+					SocketConnection* connection = self->_socket_connection_pool.acquire(socket_container);
+					listener.addEvent(connection, SocketEventType::READ);
 				}
 				break;
 			case SocketEventType::READ:
 				{
+					auto* connection = reinterpret_cast<SocketConnection*>(context);
+					auto* sock = connection->socket();
+					connection->read_size = sock->read(connection->input_buffer.data(), connection->input_buffer.size());
+					
+					// int32_t read_size = context->read(context->input_buffer.data(), context->read_size);
+					// async {
+					// 		bool isFinished = handler.onProcessed(target_socket->input_buffer(), read_size);
+					//		if (isFinished) {
+					//      	listener.modifyEvent(*socket, SocketEventType::WRITE); <- PostEvent
+					//		}
+					//   }
+
 					// launch process asnyc
 				}
 				break;
 			case SocketEventType::WRITE:
 				{
+					auto* connection = reinterpret_cast<SocketConnection*>(context);
 					// wait for process
-				}
-				break;
-			case SocketEventType::READ_WRITE:
-				{
-					// do process right here
+					// context = event.context;
+					// 
+					// int32_t written_size = context->written_size;
+					// int32_t send_size = context->send(context->output_buffer.data() + send_size, context->written_size - sent_size);
+					// if (send_size <= 0) break;
+					// context->sent_size += send_size;
+					// {
+					//    context->sent_size = 0;
+					//    context->written_size = 0;
+					// 	  listener.modifyEvent(*socket, SocketEventType::READ);
+					// }
 				}
 				break;
 			case SocketEventType::DISCONNECTED:
 				{
-
+					auto* connection = reinterpret_cast<SocketConnection*>(context);
+					listener.removeEvent(connection);
+					connection->close();			
 				}
 				break;
 			}

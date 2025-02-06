@@ -1,0 +1,14 @@
+    _handle = CreateIoCompletionPort(INVALID_HANDLE_VALUE, NULL, 0, 0);
+    if (!_handle) {
+        return SocketResult(SocketCode::SOCKET_EVENT_OBJECT_NOT_CREATED);
+    }
+}
+SocketResult SocketMultiEventListener::addEvent(SocketEventContext* context, SocketEventType eventType)
+{
+    context->type = eventType;
+
+    _handle = CreateIoCompletionPort((HANDLE)context->socket, _handle, (ULONG_PTR)context, 0);
+    if (!_handle) {
+        return SocketResult(SocketCode::SOCKET_EVENT_OBJECT_NOT_CREATED);
+    }
+}

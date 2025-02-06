@@ -3,23 +3,22 @@
 
 #include "../SecuritySocket.hpp"
 #include "ServerActiveSocket.hpp"
+#include "SocketEvent.hpp"
 
 namespace Bn3Monkey
 {
-    class SocketConnectionImpl : public SocketConnection
+    class SocketConnection : public SocketEventContext
     {
     public:
-        SocketConnectionImpl(SocketConfiguration& configuration, ServerActiveSocketContainer& container) : _configuration(configuration), _container(container) {
+        SocketConnection(ServerActiveSocketContainer& container) : 
+        _container(container) {
             _socket = _container.get();    
+            fd = _socket->descriptor();
         }
-        virtual ~SocketConnectionImpl() {}
+        virtual ~SocketConnection() {}
         
-		SocketResult read(void* buffer, size_t size);
-		SocketResult write(const void* buffer, size_t size);
-        void close();
-
+        inline ServerActiveSocket* socket() const {return _socket;}
     private:
-        SocketConfiguration& _configuration;
         ServerActiveSocketContainer _container;
         ServerActiveSocket* _socket;
     }
