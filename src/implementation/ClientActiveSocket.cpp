@@ -9,35 +9,32 @@
 
 using namespace Bn3Monkey;
 
-Bn3Monkey::ClientActiveSocket::~ClientActiveSocket()
+Bn3Monkey::ClientActiveSocket::ClientActiveSocket(bool is_unix_domain)
 {
-	disconnect();
-	close();
-}
-
-SocketResult ClientActiveSocket::open()
-{
-	SocketResult result;
-
 	if (_socket >= 0 )
 	{
-		result = SocketResult(SocketCode::SOCKET_ALREADY_CONNECTED, "Socket is already connected");
-		return result;
+		_result = SocketResult(SocketCode::SOCKET_ALREADY_CONNECTED);
+		return;
 	}	
 
-	if (_address.isUnixDomain())
+	if (is_unix_domain)
 		_socket = ::socket(AF_UNIX, SOCK_STREAM, 0);
 	else
 		_socket = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
 	if (_socket < 0)
 	{
-		result = createResult(_socket);
-		return result;
+		_result = createResult(_socket);
+		return;
 	}
 
 	setNonBlockingMode(_socket);
 
-	return result;
+	return;
+}
+Bn3Monkey::ClientActiveSocket::~ClientActiveSocket()
+{
+	disconnect();
+	close();
 }
 
 void ClientActiveSocket::close() {
@@ -49,12 +46,12 @@ void ClientActiveSocket::close() {
 	_socket = -1;	
 }
 
-SocketResult ClientActiveSocket::connect()
+SocketResult ClientActiveSocket::connect(const SocketAddress& address)
 {
 	SocketResult result;
 	
 	{
-		int32_t res = ::connect(_socket, _address.address(), _address.size());
+		int32_t res = ::connect(_socket, address.address(), address.size());
 		if (res < 0)
 		{
 			// ERROR
@@ -65,7 +62,7 @@ SocketResult ClientActiveSocket::connect()
 		else if (res == 0)
 		{
 			// TIMEOUT
-			return SocketResult(SocketCode::SOCKET_TIMEOUT, "");
+			return SocketResult(SocketCode::SOCKET_TIMEOUT);
 		}
 	}
 	return result;
@@ -89,11 +86,11 @@ SocketResult Bn3Monkey::ClientActiveSocket::isConnected()
 	socklen_t optlen = sizeof(optval);
 	if (getsockopt(_socket, SOL_SOCKET, SO_ERROR, reinterpret_cast<char*>(&optval), &optlen) < 0)
 	{
-		return SocketResult(SocketCode::SOCKET_OPTION_ERROR, "cannot get socket error");
+		return SocketResult(SocketCode::SOCKET_OPTION_ERROR);
 	}
 	if (optval != 0)
 	{
-		return SocketResult(SocketCode::SOCKET_CLOSED, "Socket closed");
+		return SocketResult(SocketCode::SOCKET_CLOSED);
 	}
 	return SocketResult(SocketCode::SUCCESS);
 }
@@ -117,32 +114,26 @@ int Bn3Monkey::ClientActiveSocket::read(void* buffer, size_t size)
 }
 
 
-SocketResult Bn3Monkey::TLSClientActiveSocket::open()
+Bn3Monkey::TLSClientActiveSocket::TLSClientActiveSocket(bool is_unix_domain) : ClientActiveSocket(is_unix_domain)
 {
-	auto result = TLSClientActiveSocket::open();
-	if (result.code() != SocketCode::SUCCESS)
+	if (_result.code() != SocketCode::SUCCESS)
 	{
-		return result;
+		return;
 	}
-
-	initializeSSL();
 
 	auto client_method = TLSv1_2_client_method();
 
 	_context = SSL_CTX_new(client_method);
 	if (!_context) {
-		result = SocketResult(SocketCode::TLS_CONTEXT_INITIALIZATION_FAIL, "TLS Context cannot be initialized");
-		return result;
+		_result = SocketResult(SocketCode::TLS_CONTEXT_INITIALIZATION_FAIL);
+		return;
 	}
 	_ssl = SSL_new(_context);
 	if (!_ssl) {
 		SSL_CTX_free(_context);
 		_context = nullptr;
-		result = SocketResult(SocketCode::TLS_INITIALIZATION_FAIL, "TLS Context cannot be initialized");
-		return result;
+		_result = SocketResult(SocketCode::TLS_INITIALIZATION_FAIL);
 	}
-
-	return result;
 }
 
 Bn3Monkey::TLSClientActiveSocket::~TLSClientActiveSocket()
@@ -157,9 +148,9 @@ Bn3Monkey::TLSClientActiveSocket::~TLSClientActiveSocket()
 	ClientActiveSocket::~ClientActiveSocket();
 }
 
-SocketResult Bn3Monkey::TLSClientActiveSocket::connect()
+SocketResult Bn3Monkey::TLSClientActiveSocket::connect(const SocketAddress& address)
 {
-	SocketResult ret = TLSClientActiveSocket::connect();
+	SocketResult ret = TLSClientActiveSocket::connect(address);
 	if (ret.code() != SocketCode::SUCCESS)
 	{
 		return ret;
@@ -167,7 +158,7 @@ SocketResult Bn3Monkey::TLSClientActiveSocket::connect()
 
 	if (SSL_set_fd(_ssl, _socket) == 0)
 	{
-		return SocketResult(SocketCode::TLS_SETFD_ERROR, "tls set fd error");
+		return SocketResult(SocketCode::TLS_SETFD_ERROR);
 	}
 	auto res = SSL_connect(_ssl);
 	if (res != 1)

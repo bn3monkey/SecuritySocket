@@ -2,9 +2,41 @@
 #include "implementation/SocketBroadcastServer.hpp"
 #include "implementation/SocketRequestServer.hpp"
 #include "implementation/SocketClient.hpp"
+#include "implementation/SocketResult.hpp"
+
+#include <openssl/ssl.h>
+#include <openssl/err.h>
+
+#pragma comment(lib, "Ws2_32.lib")
+#include <Winsock2.h>
+#include <WS2tcpip.h>
 
 using namespace Bn3Monkey;
 
+bool Bn3Monkey::initializeSecuritySocket()
+{
+	SSL_library_init();
+	OpenSSL_add_all_algorithms();
+	SSL_load_error_strings();
+	
+#ifdef _WIN32
+	WSADATA data;
+	int ret = WSAStartup(MAKEWORD(2, 2), &data);
+	if (ret != 0) {
+		return false;
+	}
+#endif
+	return true;
+}
+void Bn3Monkey::releaseSecuritySocket()
+{
+#ifdef _WIN32
+	WSACleaup();
+#endif
+}
+Bn3Monkey::SocketResult::message() {
+	return getMessage(_code);
+}
 
 Bn3Monkey::SocketClient::SocketClient(const SocketConfiguration& configuration)
 {

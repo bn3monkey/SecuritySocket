@@ -25,40 +25,37 @@
 
 namespace Bn3Monkey
 {
+	using ClientActiveSocketContainer = SocketContainer<ClientActiveSocket, TLSClientActiveSocket>;
 
 	class ClientActiveSocket : public BaseSocket
 	{
 	public:
-		ClientActiveSocket(const SocketAddress& address) : _address(address) {};
+		ClientActiveSocket(bool is_unix_domain = false);
 		virtual ~ClientActiveSocket();
 
-		virtual SocketResult open();
 		virtual void close();
 
-		virtual SocketResult connect();
+		virtual SocketResult connect(const SocketAddress& address);
 		virtual void disconnect(); 
 		virtual SocketResult isConnected();
 		virtual int read(void* buffer, size_t size);
 		virtual int write(const void* buffer, size_t size);
 
 	protected:
-		SocketAddress _address;
 		int32_t _socket {0};
 		uint32_t _read_timeout {0};
 		uint32_t _write_timeout {0};
-
 	};
 
 	class TLSClientActiveSocket : public ClientActiveSocket
 	{
 	public:
-		TLSClientActiveSocket(const SocketAddress& address) : ClientActiveSocket(address) {}
+		TLSClientActiveSocket(bool is_unix_domain = false);
 		virtual ~TLSClientActiveSocket();
 
-		virtual SocketResult open() override;
 		virtual void close() override;
 
-		SocketResult connect() override;
+		SocketResult connect(const SocketAddress& address) override;
 		void disconnect() override;
 		SocketResult isConnected() override;
 		int read(void* buffer, size_t size) override;

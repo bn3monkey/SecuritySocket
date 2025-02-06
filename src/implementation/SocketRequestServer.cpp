@@ -11,39 +11,31 @@ Bn3Monkey::SocketResult Bn3Monkey::SocketRequestServerImpl::open(SocketRequestHa
 {
 	if (_is_running)
 	{
-		return SocketResult(SocketCode::SOCKET_SERVER_ALREADY_RUNNING, "Socket server is already running");
+		return SocketResult(SocketCode::SOCKET_SERVER_ALREADY_RUNNING);
 	}
 
 	SocketResult result = SocketResult(SocketCode::SUCCESS);
-#ifdef _WIN32
-	WSADATA data;
-	int ret = WSAStartup(MAKEWORD(2, 2), &data);
-	if (ret != 0) {
-		result = SocketResult(SocketCode::WINDOWS_SOCKET_INITIALIZATION_FAIL, "Cannot start windows socket");
+
+	bool is_unix_domain = SocketAddress::checkUnixDomain(_configuration.ip());
+	_container = PassiveSocketContainer(_configuration.tls(), is_unix_domain);
+	_socket = _container.get();
+	result = _socket->valid();
+	if (result.code() != SocketCode::SUCCESS)
+	{
 		return result;
 	}
-#endif
-
 
 	SocketAddress address{ _configuration.ip(), _configuration.port(), false };
 	result = address;
 	if (result.code() != SocketCode::SUCCESS) {
 		return result;
 	}
-
-	if (_configuration.tls()) {
-		_socket = reinterpret_cast<ActiveSocket*>(new(_container) TLSActiveSocket{ address });
-	}
-	else {
-		_socket = new (_container) ActiveSocket{ address };
-	}
-
-	result = _socket->open();
+	
+	result = _socket->listen(address, num_of_clients);
 	if (result.code() != SocketCode::SUCCESS)
 	{
 		return result;
 	}
-
 
 	_is_running = true;
 	_routine = std::thread{ run, _is_running, *_socket, _configuration, handler };
@@ -58,56 +50,70 @@ void Bn3Monkey::SocketRequestServerImpl::close()
 		_routine.join();
 
 		_socket->close();
-#ifdef _WIN32
-		WSACleanup();
-#endif
 	}
 }
 
-void Bn3Monkey::SocketRequestServerImpl::run(std::atomic<bool>& is_running, size_t num_of_clients, ActiveSocket& sock, SocketConfiguration& config, SocketRequestHandler& handler)
+void Bn3Monkey::SocketRequestServerImpl::run(std::atomic<bool>& is_running, size_t num_of_clients, PassiveSocket& sock, SocketConfiguration& config, SocketRequestHandler& handler)
 {
-	sock.listen(num_of_clients);
-	handler.onConnected();
+	
+	SocketMultiEventListener listener;
+	listener.open();
+	listener.addEvent(sock, SocketEventType::ACCEPT);
 
 	while (is_running)
 	{
-		auto socketlist = sock.poll(config.read_timeout());
-		if (socketlist.result.code() == SocketCode::SOCKET_TIMEOUT)
+		auto eventlist = listener.wait(config.read_timeout());
+	
+		if (eventlist.result.code() == SocketCode::SOCKET_TIMEOUT)
 		{
 			continue;
 		}
-		else if (socketlist.result.code() != SocketCode::SUCCESS)
+		else if (eventlist.result.code() != SocketCode::SUCCESS)
 		{
-			handler.onError(socketlist.result);
+			break;
 		}
 
-		auto length = socketlist.event_list.length;
-		auto& events = socketlist.event_list.events;
-		for (size_t i = 0; i < length; i++)
+		for (auto& event : eventlist.events)
 		{
-			auto& type = events[i].type;
-			auto& target_socket = events[i].sock;
+			auto& target_socket = event.sock;
+			auto& type = event.type;
 
 			switch (type)
 			{
 			case SocketEventType::ACCEPT:
 				{
-					sock.accept();
+					auto container = sock.accept();
+					ServerActiveSocket* socket = container.get();
+					listener.addEvent(*socket, SocketEventType::READ_WRITE);
 				}
 				break;
 			case SocketEventType::READ:
 				{
-					// @Todo : Send Target Socket to the thread pool
-					processRequest(target_socket, sock, config, handler);
+					// launch process asnyc
+				}
+				break;
+			case SocketEventType::WRITE:
+				{
+					// wait for process
+				}
+				break;
+			case SocketEventType::READ_WRITE:
+				{
+
+				}
+				break;
+			case SocketEventType::DISCONNECTED:
+				{
+
 				}
 				break;
 			}
 		}
-
 		//@Todo : Reap the result from thread pool and send the result to the clients
 	}
 
-	handler.onDisconnected();
+	// handler.onDisconnected();
+	listener.close();
 }
 
 inline void processRequest(int32_t target_socket, Bn3Monkey::ActiveSocket& sock, Bn3Monkey::SocketConfiguration& config, Bn3Monkey::SocketRequestHandler& handler)

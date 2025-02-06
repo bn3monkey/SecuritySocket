@@ -11,30 +11,11 @@ SocketClientImpl::~SocketClientImpl()
 SocketResult SocketClientImpl::open()
 {
 	SocketResult result;
-#ifdef _WIN32
-	WSADATA data;
-	int ret = WSAStartup(MAKEWORD(2, 2), &data);
-	if (ret != 0) {
-		result = SocketResult(SocketCode::WINDOWS_SOCKET_INITIALIZATION_FAIL, "Cannot start windows socket");
-		return result;
-	}
-#endif
-
 	
-	SocketAddress address{ _configuration.ip(), _configuration.port(), false };
-	result = address;
-	if (result.code() != SocketCode::SUCCESS) {
-		return result;
-	}
-
-	if (_configuration.tls()) {
-		_socket = reinterpret_cast<ActiveSocket*>(new(_container) TLSActiveSocket { address });
-	}
-	else {
-		_socket = new (_container) ActiveSocket { address };
-	}
-
-	result = _socket->open();
+	bool is_unix_domain = SocketAddress::checkUnixDomain(_configuration.ip());
+	_container = SocketContainer<ClientActiveSocket, TLSClientActiveSocket>(_configuration.tls()), is_unix_domain;
+	_socket = _container.get();
+	result = _socket->valid();
 	if (result.code() != SocketCode::SUCCESS)
 	{
 		return result;
@@ -46,15 +27,16 @@ void SocketClientImpl::close()
 {
 	_socket->disconnect();
 	_socket->close();
-
-#ifdef _WIN32
-	WSACleanup();
-#endif
 }
 
 SocketResult SocketClientImpl::connect()
 {
 	SocketResult result;
+
+	SocketAddress address{_configuration.ip(), _configuration.port(), false};
+	if (result.code() != SocketCode::SUCCESS) {
+		return result;
+	}
 
 	SocketEventListener event_listener;
 	event_listener.open(*_socket, SocketEventType::CONNECT);
@@ -72,7 +54,7 @@ SocketResult SocketClientImpl::connect()
 			return result;
 		}
 
-		result = _socket->connect();
+		result = _socket->connect(address);
 		break;
 	}
 	return result;
@@ -98,7 +80,7 @@ SocketResult SocketClientImpl::read(void* buffer, size_t size)
 		int ret = _socket->read((char *)buffer + read_size, size - read_size);
 		if (ret == 0)
 		{
-			result = SocketResult(SocketCode::SOCKET_CLOSED, "Socket closed");
+			result = SocketResult(SocketCode::SOCKET_CLOSED);
 			break;
 		}
 

@@ -72,6 +72,15 @@
         "span": "cpp",
         "*.tcc": "cpp",
         "cassert": "cpp",
-        "fstream": "cpp"
+        "fstream": "cpp",
+        "functional": "cpp",
+        "variant": "cpp",
+        "xhash": "cpp",
+        "any": "cpp",
+        "iostream": "cpp",
+        "list": "cpp",
+        "set": "cpp",
+        "unordered_map": "cpp",
+        "unordered_set": "cpp"
     }
 }

@@ -24,29 +24,33 @@
 
 namespace Bn3Monkey
 {
+    using ServerActiveSocketContainer = SocketContainer<ServerActiveSocket, TLSServerActiveSocket>;
+
     class ServerActiveSocket : public BaseSocket
     {
     public:
-        inline bool isOpened() { return _is_opened; }
+        ServerActiveSocket(int32_t sock);
+        virtual ~ServerActiveSocket();
 
-        SocketResult open(int32_t sock);
-
+        inline SocketResult result() { return _result; }
         virtual void close();
 		virtual int read(void* buffer, size_t size);
         virtual int write(const void* buffer, size_t size);
-    private:
-        bool _is_opened {false};
+    
+    protected:
+        SocketResult _result;
     };
 
     class TLSServerActiveSocket : public ServerActiveSocket
     {
-        SocketResult open(SSL_CTX* ctx, int32_t sock);
+        TLSServerActiveSocket(SSL_CTX* ctx, int32_t sock);
+        virtual ~TLSServerActiveSocket();
         
         virtual void close();
 		virtual int read(void* buffer, size_t size);
         virtual int write(const void* buffer, size_t size);
     private:
-        SSL* ssl;
+        SSL* ssl {nullptr};
     };
 }
 

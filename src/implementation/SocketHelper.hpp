@@ -4,6 +4,9 @@
 #include <cstdint>
 #if defined(_WIN32)
 #include <windows.h>
+#pragma comment(lib, "Ws2_32.lib")
+#include <Winsock2.h>
+#include <WS2tcpip.h>
 #else
 #include <fcntl.h>
 #endif
@@ -22,16 +25,7 @@ inline void setNonBlockingMode(int32_t socket)
 #endif
 }
 
-inline void initializeSSL()
-{
-	static bool is_initialized {false};
-	if (!is_initialized)
-	{
-		SSL_library_init();
-		OpenSSL_add_all_algorithms();
-		SSL_load_error_strings();
-		is_initialized = true;
-	}
-}
+
+
 
 #endif // __BN3MONKEY_SOCKET_HELPER__

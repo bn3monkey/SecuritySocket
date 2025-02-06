@@ -1,10 +1,17 @@
 #include "SocketAddress.hpp"
 #include <cstring>
 
-static inline bool checkUnixDomain(const char* ip)
+bool Bn3Monkey::SocketAddress::checkUnixDomain(const char* ip)
 {
-	static constexpr char* unix_domain_prefix = "/tmp/";
-	return !strncmp(ip, unix_domain_prefix, strlen(unix_domain_prefix));
+	static constexpr char* domain_prefix =
+	#if defined(_WIN32)
+		"\\\\.\\pipe\\";
+	#elif defined(__linux__)
+		"/tmp/";
+	#else
+		"invalid";
+	#endif 
+	return !strncmp(ip, domain_prefix, strlen(domain_prefix));
 }
 
 Bn3Monkey::SocketAddress::SocketAddress(const char* ip, const char* port, bool is_server)
@@ -31,11 +38,6 @@ Bn3Monkey::SocketAddress::SocketAddress(const char* ip, const char* port, bool i
 	auto ret = getaddrinfo(ip, port, &hints, &address);
 	if (ret != 0)
 	{
-#if defined(_WIN32)
-		const char* error_description = gai_strerrorA(ret);
-#else
-		const char* error_description = gai_strerror(ret);
-#endif
 		switch (ret)
 		{
 		case EAI_AGAIN:
@@ -43,7 +45,7 @@ Bn3Monkey::SocketAddress::SocketAddress(const char* ip, const char* port, bool i
 		case EAI_MEMORY:
 		case EAI_NONAME:
 		case EAI_SERVICE:
-			_result = SocketResult{ SocketCode::ADDRESS_NOT_AVAILABLE, error_description };
+			_result = SocketResult{ SocketCode::ADDRESS_NOT_AVAILABLE };
 		}
 		return;
 	}

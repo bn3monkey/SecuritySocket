@@ -36,17 +36,17 @@ SocketResult SocketEventListener::wait(uint32_t timeout_ms)
     int ret = ::poll(&_handle, 1, timeout_ms);
     if (ret == 0)
     {
-        res = SocketResult(SocketCode::SOCKET_TIMEOUT, "Socket Timeout");
+        res = SocketResult(SocketCode::SOCKET_TIMEOUT);
     }
     else if (ret <0) {
-        res = SocketResult(SocketCode::SOCKET_EVENT_ERROR, "Socket Event Error");
+        res = SocketResult(SocketCode::SOCKET_EVENT_ERROR);
     }
     else {
         if (_handle.revents & POLLERR) {
-            res = SocketResult(SocketCode::SOCKET_CONNECTION_REFUSED, "Socket Connection Refused");
+            res = SocketResult(SocketCode::SOCKET_CONNECTION_REFUSED);
         }
         else if (_handle.revents & POLLHUP) {
-            res = SocketResult(SocketCode::SOCKET_CLOSED, "Socket Closed");
+            res = SocketResult(SocketCode::SOCKET_CLOSED);
         }
     }
     return res;
@@ -55,20 +55,106 @@ SocketResult SocketEventListener::wait(uint32_t timeout_ms)
 
 SocketResult SocketMultiEventListener::open()
 {
-    return SocketResult();
+    _handle.reserve(16);
 }
-SocketResult SocketMultiEventListener::addEvent(int32_t sock, SocketEventType eventType)
+SocketResult SocketMultiEventListener::addEvent(BaseSocket& sock, SocketEventType eventType)
 {
+    pollfd fd;
+    fd.fd = sock.descriptor();
+    switch(eventType)
+    {
+        case SocketEventType::ACCEPT:
+            {
+                fd.events = POLLIN;
+                _server_socket = sock.descriptor();
+            }
+            break;
+        case SocketEventType::CONNECT:
+            {
+                fd.events = POLLIN;                
+            }
+            break;
+        case SocketEventType::READ:
+            {
+                fd.events = POLLIN;                
+            }
+            break;
+        case SocketEventType::WRITE:
+            {
+                fd.events = POLLOUT;
+            }
+            break;
+        case SocketEventType::READ_WRITE:
+            {
+                fd.events = POLLIN | POLLOUT;
+            }
+            break;
+        default:
+            break;
+    }  
+    _handle.push_back(fd);
+    
     return SocketResult();
 }
-SocketResult SocketMultiEventListener::removeEvent()
+SocketResult SocketMultiEventListener::removeEvent(BaseSocket& socket)
 {
-    return SocketResult();
+    for (auto iter = _handle.begin(); iter != _handle.end(); iter++)
+    {
+        if (iter->fd == socket.descriptor())
+        {
+            _handle.erase(iter);
+        }
+    }
 }
-SocketResult SocketMultiEventListener::wait(SocketEvent* events, uint32_t timeout_ms)
+SocketEventResult SocketMultiEventListener::wait(uint32_t timeout_ms)
 {
-    return SocketResult();
-}
+    SocketEventResult res;
+    int ret = ::poll(_handle.data(), _handle.size(), timeout_ms);
+    if (ret == 0)
+    {
+        res.result = SocketResult(SocketCode::SOCKET_TIMEOUT);
+    }
+    else if (ret <0) {
+        res.result = SocketResult(SocketCode::SOCKET_EVENT_ERROR);
+    }
+    else {
+        res.events.reserve(ret);
+        for (size_t i = 0; i < ret; i++)
+        {
 
+            auto& event = _handle[i];
+            auto& event_fd = event.fd;
+            auto& event_type = event.revents;
+
+            SocketEvent revent;
+            revent.sock = event_fd;
+
+            if (event_type & POLLERR || event_type & POLLHUP)
+            {
+                revent.type = SocketEventType::DISCONNECTED;
+            }
+            else if (event_type & (POLLIN | POLLOUT))
+            {
+                revent.type = SocketEventType::READ_WRITE;
+            }
+            else if (_server_socket == event_fd && event_type & POLLIN)
+            {
+                revent.type = SocketEventType::ACCEPT;
+            }            
+            else if (event_type & POLLIN)
+            {
+                revent.type = SocketEventType::READ;
+            }                        
+            else if (event_type & POLLOUT)
+            {
+                revent.type = SocketEventType::WRITE;
+            }
+
+            res.events.push_back(revent);
+        }
+
+    }
+    return res;
+}
 
 #endif // __linux__

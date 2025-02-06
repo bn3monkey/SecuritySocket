@@ -22,6 +22,9 @@ namespace Bn3Monkey
 	class SocketAddress
 	{
 	public:
+		static bool checkUnixDomain(const char* ip);
+
+		explicit SocketAddress() {};
 		explicit SocketAddress(const char* ip, const char* port, bool is_server);
 		virtual ~SocketAddress();
 

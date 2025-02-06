@@ -2,8 +2,9 @@
 #define __BN3MONKEY__TCPCLIENT__
 
 #include "../SecuritySocket.hpp"
-#include "ActiveSocket.hpp"
+#include "ClientActiveSocket.hpp"
 #include "SocketEvent.hpp"
+#include "SocketHelper.hpp"
 
 #include <type_traits>
 #include <atomic>
@@ -31,7 +32,8 @@ namespace Bn3Monkey
 	class SocketClientImpl
 	{
 	public:
-		explicit SocketClientImpl(const SocketConfiguration& configuration) : _configuration(configuration) {};
+		explicit SocketClientImpl(const SocketConfiguration& configuration) 
+			: _configuration(configuration) {};
 		virtual ~SocketClientImpl();
 
 		SocketResult open();
@@ -42,13 +44,10 @@ namespace Bn3Monkey
 		SocketResult write(const void* buffer, size_t size);
 
 	private:
+		ClientActiveSocketContainer _container;
+		ClientActiveSocket* _socket;
 		
-		ActiveSocket* _socket{ nullptr };
-		static constexpr size_t container_size = sizeof(ActiveSocket) > sizeof(TLSActiveSocket) ? sizeof(ActiveSocket) : sizeof(TLSActiveSocket);
-		char _container[container_size]{ 0 };
-
 		SocketConfiguration _configuration;
-
 	};
 }
 

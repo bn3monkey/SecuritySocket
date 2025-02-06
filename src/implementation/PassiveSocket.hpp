@@ -28,32 +28,28 @@
 
 namespace Bn3Monkey {
 	
-	
+	using PassiveSocketContainer = SocketContainer<PassiveSocket, TLSPassiveSocket>;
+
 	class PassiveSocket  : public BaseSocket {
 	public:
-		PassiveSocket(const SocketAddress& address) : _address(address) {}
-		virtual SocketResult open();
+		PassiveSocket(bool is_unix_domain = false);
 		virtual void close();
 
-		virtual SocketResult listen(size_t num_of_clients);		
-		virtual int32_t accept();
+		virtual SocketResult listen(const SocketAddress& address, size_t num_of_clients);		
+		virtual ServerActiveSocketContainer accept();
 
 	private:
-		SocketAddress _address;
 		int32_t _socket {-1};
-	
-
 	};
 
 	class TLSPassiveSocket : public PassiveSocket
 	{
 	public:
-		TLSPassiveSocket(const SocketAddress& address) : PassiveSocket(address) {}
-		virtual SocketResult open();
+		TLSPassiveSocket(bool is_unix_domain = false);
 		virtual void close();
 
-		virtual SocketResult listen(size_t num_of_clients);
-		virtual int32_t accept();
+		virtual SocketResult listen(const SocketAddress& address, size_t num_of_clients);
+		virtual ServerActiveSocketContainer accept();
 	};
 
 }

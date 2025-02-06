@@ -7,6 +7,7 @@
 #ifdef _WIN32
 #include <winsock2.h>
 #include <ws2tcpip.h>
+#include <vector>
 #elif __linux__
 #include <poll.h>
 #endif
@@ -18,14 +19,22 @@ namespace Bn3Monkey
         UNDEFINED,
         ACCEPT,
         CONNECT,
+        DISCONNECTED,
         READ,
-        WRITE
+        WRITE,
+        READ_WRITE
     };
 
     struct SocketEvent
     {
         int32_t sock {-1};
         SocketEventType type {SocketEventType::READ};
+    };
+
+    struct SocketEventResult
+    {
+        SocketResult result;
+        std::vector<SocketEvent> events;
     };
 
     class SocketEventListener
@@ -41,10 +50,19 @@ namespace Bn3Monkey
     {
     public:
         SocketResult open();
-        SocketResult addEvent(int32_t sock, SocketEventType eventType);
-        SocketResult removeEvent();
-        SocketResult wait(SocketEvent* events, uint32_t timeout_ms);
+        
+        SocketResult addEvent(BaseSocket& sock, SocketEventType eventType);
+        SocketResult removeEvent(BaseSocket& sock);
+        SocketEventResult wait(uint32_t timeout_ms);
+        void close(); 
     private:
+        int32_t _server_socket {0};
+    #if defined(_WIN32)
+        std::vector<pollfd> _handle;
+    #elif defined __linux__
+        std::vector<pollfd> _handle;
+        // int32_t _handle;
+    #endif
     };
 
 }

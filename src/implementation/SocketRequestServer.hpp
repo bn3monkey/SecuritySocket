@@ -1,12 +1,15 @@
 #if !defined(__BN3MONKEY__SOCKETREQUESTSERVER__)
 #define __BN3MONKEY__SOCKETREQUESTSERVER__
 #include "../SecuritySocket.hpp"
-#include "ActiveSocket.hpp"
+#include "PassiveSocket.hpp"
+#include "ServerActiveSocket.hpp"
+#include "SocketEvent.hpp"
 
 #include <atomic>
 #include <mutex>
 #include <thread>
 #include <condition_variable>
+#include <list>
 
 namespace Bn3Monkey
 {
@@ -20,18 +23,36 @@ namespace Bn3Monkey
 		void close();
 
 	private:
-				
-		static constexpr size_t container_size = sizeof(ActiveSocket) > sizeof(TLSActiveSocket) ? sizeof(ActiveSocket) : sizeof(TLSActiveSocket);
-		char _container[container_size]{ 0 };
-		ActiveSocket* _socket{ nullptr };
+		PassiveSocketContainer _container;
+		PassiveSocket* _socket{ nullptr };
 
 		SocketConfiguration _configuration;
 
 		std::atomic<bool> _is_running{ false };
 		std::thread _routine;
 
-		static void run(std::atomic<bool>& is_running, size_t num_of_clients, ActiveSocket& sock, SocketConfiguration& config, SocketRequestHandler& handler);
+		static void run(std::atomic<bool>& is_running, size_t num_of_clients, PassiveSocket& sock, SocketConfiguration& config, SocketRequestHandler& handler);
 	};
+
+	// @Todo Limit the number of request workers to the number of core and distribute socket to limited workers
+
+	// SocketRequestWorkers -> add(SocketConnection)
+	//						                         -> onProcessed
+	//                                                                -> send
+	//                                                  true
+	//                                               -> onProcessed
+	//                                                                 -> send
+	//                                                  false
+	//                                                  removeRequest(this)
+	// receiveRequest
+	// remove()
+
+	class SocketRequestWorkers
+	{
+	public:
+
+		void remove();
+	}
 }
 
 

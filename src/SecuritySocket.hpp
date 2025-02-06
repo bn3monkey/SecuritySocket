@@ -66,24 +66,19 @@ namespace Bn3Monkey
     struct SocketResult
     {
         inline SocketCode code() { return _code; }
-        inline const char* message() { return _message; }
+        const char* message();
                 
         SocketResult(
-            const SocketCode& code = SocketCode::SUCCESS, 
-            const char* message = "") : _code(code) {
-                ::memcpy(_message, message, strlen(message));
+            const SocketCode& code = SocketCode::SUCCESS) : _code(code) {
             }
         SocketResult(const SocketResult& result) : _code(result._code) {
-            ::memcpy(_message, result._message, 256);
         }
         SocketResult operator=(const SocketResult& result) {
             _code = result._code;
-            ::memcpy(_message, result._message, 256);
         }
 
     private:
         SocketCode _code;
-        char _message[256] {0};
     };
 
 
@@ -91,13 +86,13 @@ namespace Bn3Monkey
     public:
         constexpr static size_t MAX_PDU_SIZE = 32768;
 
-        inline const char* ip() { return _ip; }
-        inline const char* port() {return _port;}
-        inline bool tls() { return _tls;}
-        inline size_t pdu_size() { return _pdu_size;}
-        inline const uint32_t max_retries() { return _max_retries; }
-        inline const uint32_t read_timeout() { return _read_timeout; }
-        inline const uint32_t write_timeout() { return _write_timeout; }
+        inline const char* ip() { return _ip; } const
+        inline const char* port() {return _port;} const
+        inline bool tls() { return _tls;} const
+        inline size_t pdu_size() { return _pdu_size;} const
+        inline const uint32_t max_retries() { return _max_retries; } const
+        inline const uint32_t read_timeout() { return _read_timeout; } const
+        inline const uint32_t write_timeout() { return _write_timeout; } const
 
 
         explicit SocketConfiguration(
@@ -116,6 +111,10 @@ namespace Bn3Monkey
         {
             ::memcpy(_ip, ip, strlen(ip));
             sprintf(_port, "%d", port);
+        }
+
+        inline bool isUnixDomain() {
+
         }
 
     private:
@@ -158,7 +157,7 @@ namespace Bn3Monkey
     struct SocketRequestHandler
     {
     public:        
-        virtual void onProcessed(SocketConnection& connection) = 0;
+        virtual bool onProcessed(SocketConnection& connection) = 0;
     };
 
     class SocketRequestServer
@@ -205,7 +204,10 @@ namespace Bn3Monkey
 
     private:
         char _container[IMPLEMENTATION_SIZE]{ 0 };
-    }
+    };
+
+    bool initializeSecuritySocket();
+    void releaseSecuritySocket();
 }
 
 #endif
