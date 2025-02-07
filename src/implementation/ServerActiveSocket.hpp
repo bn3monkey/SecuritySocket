@@ -6,10 +6,10 @@
 #include "SocketHelper.hpp"
 
 #include <cstdint>
-
+#include <openssl/ssl.h>
+#include <openssl/err.h>
 
 #ifdef _WIN32
-#pragma comment(lib, "Ws2_32.lib")
 #include <Winsock2.h>
 #include <WS2tcpip.h>
 #else
@@ -24,11 +24,11 @@
 
 namespace Bn3Monkey
 {
-    using ServerActiveSocketContainer = SocketContainer<ServerActiveSocket, TLSServerActiveSocket>;
-
+    
     class ServerActiveSocket : public BaseSocket
     {
     public:
+        ServerActiveSocket() {}
         ServerActiveSocket(int32_t sock);
         virtual ~ServerActiveSocket();
 
@@ -43,6 +43,9 @@ namespace Bn3Monkey
 
     class TLSServerActiveSocket : public ServerActiveSocket
     {
+    public:
+        TLSServerActiveSocket() {}
+        TLSServerActiveSocket(int32_t socket) {}
         TLSServerActiveSocket(SSL_CTX* ctx, int32_t sock);
         virtual ~TLSServerActiveSocket();
         
@@ -52,6 +55,10 @@ namespace Bn3Monkey
     private:
         SSL* ssl {nullptr};
     };
+
+    using ServerActiveSocketContainer = SocketContainer<ServerActiveSocket, TLSServerActiveSocket>;
+
 }
+
 
 #endif // __BN3MONKEY__SERVERACTIVESOCKET__

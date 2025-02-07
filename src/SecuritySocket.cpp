@@ -31,10 +31,11 @@ bool Bn3Monkey::initializeSecuritySocket()
 void Bn3Monkey::releaseSecuritySocket()
 {
 #ifdef _WIN32
-	WSACleaup();
+	WSACleanup();
 #endif
 }
-Bn3Monkey::SocketResult::message() {
+
+const char* Bn3Monkey::SocketResult::message() {
 	return getMessage(_code);
 }
 
@@ -79,22 +80,44 @@ Bn3Monkey::SocketResult Bn3Monkey::SocketClient::write(const void* buffer, size_
 
 Bn3Monkey::SocketRequestServer::SocketRequestServer(const SocketConfiguration& configuration)
 {
-	new (_container) SocketReuqestServerImpl(configuration);
+	new (_container) SocketRequestServerImpl(configuration);
 }
 
 Bn3Monkey::SocketRequestServer::~SocketRequestServer()
 {
-	SocketReuqestServerImpl* impl = static_cast<SocketReuqestServerImpl*>((void*)_container);
-	impl->~SocketReuqestServerImpl();
+	SocketRequestServerImpl* impl = static_cast<SocketRequestServerImpl*>((void*)_container);
+	impl->~SocketRequestServerImpl();
 }
 
-SocketResult Bn3Monkey::SocketRequestServer::open(SocketRequestHandler& handler, size_t num_of_clients)
+SocketResult Bn3Monkey::SocketRequestServer::open(SocketRequestHandler* handler, size_t num_of_clients)
 {
-	SocketReuqestServerImpl* impl = static_cast<SocketReuqestServerImpl*>((void*)_container);
+	SocketRequestServerImpl* impl = static_cast<SocketRequestServerImpl*>((void*)_container);
 	return impl->open(handler, num_of_clients);
 }
 void Bn3Monkey::SocketRequestServer::close()
 {
-	SocketReuqestServerImpl* impl = static_cast<SocketReuqestServerImpl*>((void*)_container);
+	SocketRequestServerImpl* impl = static_cast<SocketRequestServerImpl*>((void*)_container);
 	return impl->close();
+}
+
+Bn3Monkey::SocketBroadcastServer::SocketBroadcastServer(const SocketConfiguration& configuration)
+{
+
+}
+Bn3Monkey::SocketBroadcastServer::~SocketBroadcastServer()
+{
+
+}
+
+SocketResult Bn3Monkey::SocketBroadcastServer::open(size_t num_of_clients)
+{
+	return SocketResult(SocketCode::SUCCESS);
+}
+void Bn3Monkey::SocketBroadcastServer::close()
+{
+	return;
+}
+SocketResult Bn3Monkey::SocketBroadcastServer::write(const void* buffer, size_t size)
+{
+	return SocketResult(SocketCode::SUCCESS);
 }

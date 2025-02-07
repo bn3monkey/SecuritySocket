@@ -138,14 +138,16 @@ Bn3Monkey::TLSClientActiveSocket::TLSClientActiveSocket(bool is_unix_domain) : C
 
 Bn3Monkey::TLSClientActiveSocket::~TLSClientActiveSocket()
 {
-	if (_ssl) {
-		SSL_shutdown(_ssl);
-		SSL_free(_ssl);
-	}
+	disconnect();
+	close();
+}
+
+void Bn3Monkey::TLSClientActiveSocket::close()
+{
 	if (_context) {
 		SSL_CTX_free(_context);
 	}
-	ClientActiveSocket::~ClientActiveSocket();
+	close();
 }
 
 SocketResult Bn3Monkey::TLSClientActiveSocket::connect(const SocketAddress& address)
@@ -172,9 +174,16 @@ SocketResult Bn3Monkey::TLSClientActiveSocket::connect(const SocketAddress& addr
 
 void Bn3Monkey::TLSClientActiveSocket::disconnect()
 {
-	TLSClientActiveSocket::disconnect();
+	if (_ssl) {
+		SSL_shutdown(_ssl);
+		SSL_free(_ssl);
+	}
+	ClientActiveSocket::disconnect();
 }
-
+SocketResult Bn3Monkey::TLSClientActiveSocket::isConnected()
+{
+	return ClientActiveSocket::isConnected();
+}
 int Bn3Monkey::TLSClientActiveSocket::write(const void* buffer, size_t size)
 {
 	int32_t ret = SSL_write(_ssl, buffer, size);

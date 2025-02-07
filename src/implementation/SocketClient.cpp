@@ -20,8 +20,7 @@ SocketResult SocketClientImpl::open()
 	{
 		return result;
 	}
-
-	
+	return result;	
 }
 void SocketClientImpl::close()
 {

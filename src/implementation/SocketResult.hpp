@@ -3,6 +3,7 @@
 
 #include "../SecuritySocket.hpp"
 #include <windows.h>
+#include <WinSock2.h>
 #include <openssl/ssl.h>
 
 using namespace Bn3Monkey;
@@ -109,7 +110,7 @@ inline SocketResult createTLSResult(SSL* ssl, int operation_return)
 	return SocketResult(SocketCode::UNKNOWN_ERROR);
 }
 
-const char* getMessage(const SocketCode& code)
+inline const char* getMessage(const SocketCode& code)
 {
     switch (code)
     {

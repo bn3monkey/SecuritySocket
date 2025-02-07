@@ -13,6 +13,8 @@
 
 #include <vector>
 #include <unordered_map>
+#include <mutex>
+#include <condition_variable>
 
 namespace Bn3Monkey
 {    
@@ -25,6 +27,12 @@ namespace Bn3Monkey
         READ,
         WRITE,
         READ_WRITE
+    };
+    enum class SocketTaskType
+    {
+        PROCESSING,
+        SUCCESS,
+        FAIL,
     };
 
     class SocketEventListener
@@ -44,13 +52,50 @@ namespace Bn3Monkey
     #ifdef _WIN32
         OVERLAPPED overlapped;
     #endif
+        int32_t fd{ -1 };
         SocketEventType type { SocketEventType::UNDEFINED };
-        
-        int32_t fd {-1};
+
         std::vector<char> input_buffer {0, std::allocator<char>()};
-        size_t read_size {0};
+        size_t total_input_size {0};
         std::vector<char> output_buffer {0, std::allocator<char>()};
-        size_t write_size {0};
+        size_t total_output_size {0};
+        size_t written_size{ 0 };
+
+    public:
+        
+        inline void finishTask(bool result)
+        {
+            {
+                std::unique_lock<std::mutex> lock(_mtx);
+               _task_status = result ? SocketTaskType::SUCCESS : SocketTaskType::FAIL;
+            }
+        }
+
+        inline SocketTaskType waitTask() {
+            SocketTaskType ret;
+            {
+                std::unique_lock<std::mutex> lock(_mtx);
+                _cv.wait(lock, [&]() {
+                    return _task_status != SocketTaskType::PROCESSING;
+                    });
+                ret = _task_status;
+            }
+            return ret;
+        }
+
+        inline void flush() {
+            _task_status = SocketTaskType::PROCESSING;
+            memset(input_buffer.data(), 0, total_input_size);
+            total_input_size = 0;
+            memset(output_buffer.data(), 0, total_output_size);
+            total_output_size = 0;
+            written_size = 0;
+        }
+    
+    private:
+        SocketTaskType _task_status{ SocketTaskType::PROCESSING };
+        std::mutex _mtx;
+        std::condition_variable _cv;
     };
 
     struct SocketEventResult
@@ -63,12 +108,12 @@ namespace Bn3Monkey
     {
     public:
         SocketResult open();
-        
+        void close();        
         SocketResult addEvent(SocketEventContext* context, SocketEventType eventType);
         SocketResult modifyEvent(SocketEventContext* context, SocketEventType eventType);
         SocketResult removeEvent(SocketEventContext* context);
         SocketEventResult wait(uint32_t timeout_ms);
-        void close(); 
+
     private:
         int32_t _server_socket {0};
         std::unordered_map<int32_t, SocketEventContext*> _contexts;

@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <memory>
+#define WIN32_LEAN_AND_MEAN
 
 namespace Bn3Monkey
 {
@@ -150,12 +151,18 @@ namespace Bn3Monkey
     
     struct SocketRequestHandler
     {
-    public:
+        enum class ProcessState
+        {
+            INCOMPLETE,
+            READY
+        };
+
+        virtual ProcessState onDataReceived(const void* input_buffer, size_t offset, size_t read_size) = 0;
         virtual bool onProcessed(
             const void* input_buffer, 
             size_t intput_size,
             void* output_buffer,
-            size_t& output_size);
+            size_t& output_size) = 0;
     };
     
 
@@ -167,7 +174,7 @@ namespace Bn3Monkey
         explicit SocketRequestServer(const SocketConfiguration& configuration);
         virtual ~SocketRequestServer();
 
-        SocketResult open(SocketRequestHandler& handler);
+        SocketResult open(SocketRequestHandler* handler, size_t num_of_clients);
         void close();
 
     private:
@@ -182,28 +189,12 @@ namespace Bn3Monkey
         explicit SocketBroadcastServer(const SocketConfiguration& configuration);
         virtual ~SocketBroadcastServer();
 
-        SocketResult open();
+        SocketResult open(size_t num_of_clients);
         void close();
 
         SocketResult write(const void* buffer, size_t size);
     };
-
-    // @todo
-    // With epoll/iocp & ring buffer & worker threads
-    class MassiveSocketRequestServer
-    {
-    public:
-        static constexpr size_t IMPLEMENTATION_SIZE = 2048;
-
-        explicit MassiveSocketRequestServer(const SocketConfiguration& configuration);
-        virtual ~MassiveSocketRequestServer();
-
-        SocketResult open(SocketRequestHandler& handler);
-        void close();
-
-    private:
-        char _container[IMPLEMENTATION_SIZE]{ 0 };
-    };
+       
 
     bool initializeSecuritySocket();
     void releaseSecuritySocket();

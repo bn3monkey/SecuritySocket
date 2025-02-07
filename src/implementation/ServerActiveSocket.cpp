@@ -1,6 +1,7 @@
 #include "ServerActiveSocket.hpp"
 #include "SocketResult.hpp"
 #include "SocketHelper.hpp"
+#include <stdexcept>
 using namespace Bn3Monkey;
 
 ServerActiveSocket::ServerActiveSocket(int32_t sock)
@@ -42,4 +43,26 @@ int ServerActiveSocket::write(const void* buffer, size_t size)
 	ret = send(_socket, static_cast<const char*>(buffer), size, 0);
 #endif
 	return ret;
+}
+
+TLSServerActiveSocket::TLSServerActiveSocket(SSL_CTX* ctx, int32_t sock)
+{
+	throw std::runtime_error("Not Implemented");
+}
+TLSServerActiveSocket::TLSServerActiveSocket::~TLSServerActiveSocket()
+{
+	throw std::runtime_error("Not Implemented");
+}
+
+void TLSServerActiveSocket::close()
+{
+	throw std::runtime_error("Not Implemented");
+}
+int TLSServerActiveSocket::read(void* buffer, size_t size)
+{
+	throw std::runtime_error("Not Implemented");
+}
+int TLSServerActiveSocket::write(const void* buffer, size_t size)
+{
+	throw std::runtime_error("Not Implemented");
 }

@@ -1,6 +1,9 @@
 #ifndef __BN3MONKEY_OBJECT_POOL__
 #define __BN3MONKEY_OBJECT_POOL__
 
+#include <vector>
+#include <queue>
+
 namespace Bn3Monkey
 {
     template<typename ObjectType>

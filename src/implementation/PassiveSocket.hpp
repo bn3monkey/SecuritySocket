@@ -11,7 +11,6 @@
 #include <openssl/err.h>
 
 #ifdef _WIN32
-#pragma comment(lib, "Ws2_32.lib")
 #include <Winsock2.h>
 #include <WS2tcpip.h>
 #include <mswsock.h>
@@ -28,8 +27,6 @@
 
 namespace Bn3Monkey {
 	
-	using PassiveSocketContainer = SocketContainer<PassiveSocket, TLSPassiveSocket>;
-
 	class PassiveSocket  : public BaseSocket {
 	public:
 		PassiveSocket(bool is_unix_domain = false);
@@ -52,6 +49,7 @@ namespace Bn3Monkey {
 		virtual ServerActiveSocketContainer accept();
 	};
 
+	using PassiveSocketContainer = SocketContainer<PassiveSocket, TLSPassiveSocket>;
 }
 
 #endif // __BN3MONKEY__PASSIVESOCKET__

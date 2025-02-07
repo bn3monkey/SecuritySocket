@@ -10,18 +10,18 @@ namespace Bn3Monkey
     class SocketConnection : public SocketEventContext
     {
     public:
-        SocketConnection(ServerActiveSocketContainer& container) : 
-        _container(container) {
-            _socket = _container.get();    
+        SocketConnection(ServerActiveSocketContainer& container) :
+            _container(container) {
+            _socket = _container.get();
             fd = _socket->descriptor();
         }
         virtual ~SocketConnection() {}
-        
-        inline ServerActiveSocket* socket() const {return _socket;}
+
+        inline ServerActiveSocket* socket() const { return _socket; }
     private:
         ServerActiveSocketContainer _container;
         ServerActiveSocket* _socket;
-    }
+    };
 }
 
 #endif // __BN3MONKEY_SOCKET_CONNECTION__

@@ -33,7 +33,7 @@ void SocketEventListener::open(BaseSocket& sock, SocketEventType eventType)
             }
             break;
         default:
-
+            break;
     }  
 }
 SocketResult SocketEventListener::wait(uint32_t timeout_ms)
@@ -62,6 +62,11 @@ SocketResult SocketEventListener::wait(uint32_t timeout_ms)
 SocketResult SocketMultiEventListener::open()
 {
     _handle.reserve(16);
+    return SocketResult();
+}
+void SocketMultiEventListener::close()
+{
+    // Do nothing
 }
 SocketResult SocketMultiEventListener::addEvent(SocketEventContext* context, SocketEventType eventType)
 {
@@ -109,6 +114,7 @@ SocketResult SocketMultiEventListener::modifyEvent(SocketEventContext* context, 
 {
     removeEvent(context);
     addEvent(context, eventType);
+    return SocketResult();
 }
 SocketResult SocketMultiEventListener::removeEvent(SocketEventContext* context)
 {
@@ -123,6 +129,7 @@ SocketResult SocketMultiEventListener::removeEvent(SocketEventContext* context)
     auto iter = _contexts.find(context->fd);
     if (iter != _contexts.end())
         _contexts.erase(iter);
+    return SocketResult();
 }
 SocketEventResult SocketMultiEventListener::wait(uint32_t timeout_ms)
 {

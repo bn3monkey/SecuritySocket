@@ -30,16 +30,17 @@ namespace Bn3Monkey
         SocketContainer(bool tls, Args&& ...args) {
             if (tls)
             {
-                new (buffer) TLSSocket (std::forward(args)...);
+                new (buffer) TLSSocket(std::forward<Args>(args)...);
             }
             else {
-                new (buffer) PlainSocket (std::forward(args)...);                
+                new (buffer) PlainSocket(std::forward<Args>(args)...);
             }
             _is_initialized = true;
         }
 
         SocketContainer(const SocketContainer& container) {
-            memset()
+            _is_initialized = container._is_initialized;
+            memcpy(buffer, container.buffer, size);
         }
 
         ~SocketContainer() {
@@ -49,20 +50,19 @@ namespace Bn3Monkey
             }
         }
 
-        inline PlainSocket* get() { 
+        inline PlainSocket* get() {
             if (!_is_initialized)
-                return nullptr;    
-            return reinterpret_cast<PlainSocket*>(buffer); 
+                return nullptr;
+            return reinterpret_cast<PlainSocket*>(buffer);
         }
 
     private:
-        bool _is_initialized {false};
-        static const size_t size = sizeof(PlainSocket) > sizeof(TLSSocket) ? sizeof(PlainSocket) : sizeof(TLSSocket);
+        bool _is_initialized{ false };
+        static constexpr size_t size = sizeof(PlainSocket) > sizeof(TLSSocket) ? sizeof(PlainSocket) : sizeof(TLSSocket);
         static_assert(sizeof(PlainSocket) <= 64);
         static_assert(sizeof(TLSSocket) <= 64);
-        char buffer[size] {0};
-    } 
-
+        char buffer[size]{ 0 };
+    };
 }
 
 #endif // __BN3MONKEY_BASESOCKET__

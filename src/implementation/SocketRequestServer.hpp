@@ -1,6 +1,8 @@
 #if !defined(__BN3MONKEY__SOCKETREQUESTSERVER__)
 #define __BN3MONKEY__SOCKETREQUESTSERVER__
+
 #include "../SecuritySocket.hpp"
+
 #include "PassiveSocket.hpp"
 #include "ServerActiveSocket.hpp"
 #include "SocketEvent.hpp"
@@ -21,7 +23,7 @@ namespace Bn3Monkey
 		SocketRequestServerImpl(const SocketConfiguration& configuration) : _configuration(configuration) {}
 		virtual ~SocketRequestServerImpl();
 
-		SocketResult open(SocketRequestHandler& handler, size_t num_of_clients);
+		SocketResult open(SocketRequestHandler* handler, size_t num_of_clients);
 		void close();
 
 	private:
@@ -34,6 +36,8 @@ namespace Bn3Monkey
 		std::thread _routine;
 			
 		ObjectPool<SocketConnection> _socket_connection_pool {32};
+
+		void run(SocketRequestHandler* handler);
 	};
 
 	// @Todo Limit the number of request workers to the number of core and distribute socket to limited workers
@@ -49,12 +53,6 @@ namespace Bn3Monkey
 	// receiveRequest
 	// remove()
 
-	class SocketRequestWorkers
-	{
-	public:
-
-		void remove();
-	}
 }
 
 
