@@ -150,7 +150,12 @@ namespace Bn3Monkey
     
     struct SocketRequestHandler
     {
-    public:        
+    public:
+        virtual bool onProcessed(
+            const void* input_buffer, 
+            size_t intput_size,
+            void* output_buffer,
+            size_t& output_size);
     };
     
 

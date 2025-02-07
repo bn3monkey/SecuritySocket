@@ -32,9 +32,7 @@ namespace Bn3Monkey
 
 		std::atomic<bool> _is_running{ false };
 		std::thread _routine;
-
-		static void run(SocketRequestServerImpl* self);
-	
+			
 		ObjectPool<SocketConnection> _socket_connection_pool {32};
 	};
 

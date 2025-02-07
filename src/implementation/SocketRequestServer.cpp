@@ -1,7 +1,7 @@
 #include "SocketRequestServer.hpp"
 #include "SocketResult.hpp"
 #include <vector>
-#include <future>
+#include <queue>
 
 Bn3Monkey::SocketRequestServerImpl::~SocketRequestServerImpl()
 {
@@ -54,20 +54,85 @@ void Bn3Monkey::SocketRequestServerImpl::close()
 	}
 }
 
+class SocketRequestWorker
+{
+public:
+	SocketRequestWorker(SocketMultiEventListener& listener, SocketRequestHandler& handler)
+		: _handler(handler)
+	{
+	}
+	bool start()
+	{
+
+	}
+	void stop()
+	{
+
+	}
+
+	bool push(const SocketConnection* connection)
+	{
+
+	}
+private:
+	void run()
+	{
+		while (true)
+		{
+			SocketConnection* connection{ nullptr };
+			
+			{
+				std::unique_lock<std::mutex> lock(_mtx);
+				_cv.wait(lock, [&]() {
+					return !_is_running && !_queue.empty();
+					});
+
+				if (!_is_running) return;
+
+				connection = _queue.front();
+				_queue.pop();
+			}
+			
+			bool is_finished = _handler.onProcessed(
+				connection->input_buffer.data(),
+				connection->read_size,
+				connection->output_buffer.data(),
+				connection->write_size);
+
+			if (is_finished) {
+				_listener.modifyEvent(connection, SocketEventType::WRITE);
+			}
+		}
+	}
+
+	std::thread _routine;
+	SocketMultiEventListener& _listener;
+	SocketRequestHandler& _handler;
+
+	std::atomic_bool _is_running;
+	std::queue<SocketConnection*> _queue;
+	std::mutex _mtx;
+	std::condition_variable _cv;
+};
+
 void Bn3Monkey::SocketRequestServerImpl::run(
-	SocketRequestServerImpl* self)
+	std::atomic_bool& is_running, 
+	SocketConfiguration& config,
+	PassiveSocket* socket,
+	ObjectPool<SocketConnection>& socket_connection_pool,
+	SocketRequestHandler& handler)
 {
 	
 	SocketMultiEventListener listener;
 	listener.open();
 
 	SocketEventContext server_context;
-	server_context.fd = self->_socket->descriptor();
+	server_context.fd = socket->descriptor();
 	listener.addEvent(&server_context, SocketEventType::ACCEPT);
 
-	while (self->_is_running)
+	while (is_running)
 	{
-		auto eventlist = listener.wait(self->_configuration.read_timeout());
+		auto eventlist = listener.wait(config.read_timeout());
 	
 		if (eventlist.result.code() == SocketCode::SOCKET_TIMEOUT)
 		{
@@ -86,8 +151,8 @@ void Bn3Monkey::SocketRequestServerImpl::run(
 			{
 			case SocketEventType::ACCEPT:
 				{
-					auto socket_container = self->_socket->accept();
-					SocketConnection* connection = self->_socket_connection_pool.acquire(socket_container);
+					auto socket_container = socket->accept();
+					SocketConnection* connection = socket_connection_pool.acquire(socket_container);
 					listener.addEvent(connection, SocketEventType::READ);
 				}
 				break;
@@ -97,7 +162,7 @@ void Bn3Monkey::SocketRequestServerImpl::run(
 					auto* sock = connection->socket();
 					connection->read_size = sock->read(connection->input_buffer.data(), connection->input_buffer.size());
 					
-					std::async sans{std::launch::async, [](){}};
+					
 					// int32_t read_size = context->read(context->input_buffer.data(), context->read_size);
 					// async {
 					// 		bool isFinished = handler.onProcessed(target_socket->input_buffer(), read_size);
