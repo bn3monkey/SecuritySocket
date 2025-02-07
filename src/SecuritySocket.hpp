@@ -1,6 +1,24 @@
 #if !defined(__BN3MONKEY_SECURITY_SOCKET__)
 #define __BN3MONKEY_SECURITY_SOCKET__
 
+#if defined(_WIN32) || defined(_WIN64) // Windows
+#ifdef SECURITYSOCKET_EXPORTS
+#define SECURITYSOCKET_API __declspec(dllexport)
+#else
+#define SECURITYSOCKET_API __declspec(dllimport)
+#endif
+#elif defined(__linux__) || defined(__unix__) || defined(__ANDROID__) // Linux / Android
+#ifdef SECURITYSOCKET_EXPORTS
+#define SECURITYSOCKET_API __attribute__((visibility("default")))
+#else
+#define SECURITYSOCKET_API
+#endif
+#else 
+#define SECURITYSOCKET_API
+#pragma warning Unknown dynamic link import/export semantics.
+#endif
+
+
 #include <string>
 #include <cstdint>
 #include <cstdio>
@@ -9,7 +27,7 @@
 
 namespace Bn3Monkey
 {
-    enum class SocketCode
+    enum class SECURITYSOCKET_API SocketCode
     {
         SUCCESS,
 
@@ -64,7 +82,7 @@ namespace Bn3Monkey
 
         LENGTH,
     };
-    struct SocketResult
+    struct SECURITYSOCKET_API SocketResult
     {
         inline SocketCode code() { return _code; }
         const char* message();
@@ -74,26 +92,23 @@ namespace Bn3Monkey
             }
         SocketResult(const SocketResult& result) : _code(result._code) {
         }
-        SocketResult operator=(const SocketResult& result) {
-            _code = result._code;
-        }
 
     private:
         SocketCode _code;
     };
 
 
-    class SocketConfiguration {
+    class SECURITYSOCKET_API SocketConfiguration {
     public:
         constexpr static size_t MAX_PDU_SIZE = 32768;
 
-        inline const char* ip() { return _ip; } const
-        inline const char* port() {return _port;} const
-        inline bool tls() { return _tls;} const
-        inline size_t pdu_size() { return _pdu_size;} const
-        inline const uint32_t max_retries() { return _max_retries; } const
-        inline const uint32_t read_timeout() { return _read_timeout; } const
-        inline const uint32_t write_timeout() { return _write_timeout; } const
+        inline char* ip() { return _ip; } 
+        inline char* port() {return _port;} 
+        inline bool tls() { return _tls;} 
+        inline size_t pdu_size() { return _pdu_size;} 
+        inline uint32_t max_retries() { return _max_retries; } 
+        inline uint32_t read_timeout() { return _read_timeout; } 
+        inline uint32_t write_timeout() { return _write_timeout; } 
 
 
         explicit SocketConfiguration(
@@ -114,21 +129,18 @@ namespace Bn3Monkey
             sprintf(_port, "%d", port);
         }
 
-        inline bool isUnixDomain() {
-
-        }
 
     private:
         char _ip[128] {0};
         char _port[16] {0};
         bool _tls {false};
         size_t _pdu_size { MAX_PDU_SIZE};
-        uint32_t _max_retries;
-        uint32_t _read_timeout;
-        uint32_t _write_timeout;
+        uint32_t _max_retries{ 0 };
+        uint32_t _read_timeout{ 0 };
+        uint32_t _write_timeout{ 0 };
     };
 
-    class SocketClient
+    class SECURITYSOCKET_API SocketClient
     {
     public:
         static constexpr size_t IMPLEMENTATION_SIZE = 2048;
@@ -149,7 +161,7 @@ namespace Bn3Monkey
 
 
     
-    struct SocketRequestHandler
+    struct SECURITYSOCKET_API SocketRequestHandler
     {
         enum class ProcessState
         {
@@ -166,7 +178,7 @@ namespace Bn3Monkey
     };
     
 
-    class SocketRequestServer
+    class SECURITYSOCKET_API SocketRequestServer
     {
     public:
         static constexpr size_t IMPLEMENTATION_SIZE = 2048;
@@ -181,7 +193,7 @@ namespace Bn3Monkey
         char _container[IMPLEMENTATION_SIZE]{ 0 };
     };
 
-    class SocketBroadcastServer
+    class SECURITYSOCKET_API SocketBroadcastServer
     {
     public:
         static constexpr size_t IMPLEMENTATION_SIZE = 2048;
@@ -196,8 +208,8 @@ namespace Bn3Monkey
     };
        
 
-    bool initializeSecuritySocket();
-    void releaseSecuritySocket();
+    bool SECURITYSOCKET_API initializeSecuritySocket();
+    void SECURITYSOCKET_API releaseSecuritySocket();
 }
 
 #endif

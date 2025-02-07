@@ -49,8 +49,7 @@ void PassiveSocket::close()
 	_socket = -1;	
 }
 
-
-SocketResult PassiveSocket::listen(const SocketAddress& address, size_t num_of_clients)
+SocketResult PassiveSocket::bind(const SocketAddress& address)
 {
     SocketResult res;
 
@@ -59,9 +58,14 @@ SocketResult PassiveSocket::listen(const SocketAddress& address, size_t num_of_c
     {
         res = SocketResult(SocketCode::SOCKET_BIND_FAILED);
     }
+    return res;
+}
+SocketResult PassiveSocket::listen()
+{
+    SocketResult res;
 
-    ret = ::listen(_socket, num_of_clients);
-    if (!ret)
+    auto ret = ::listen(_socket, SOMAXCONN);
+    if (ret)
     {
         res = SocketResult(SocketCode::SOCKET_LISTEN_FAILED);
     }
@@ -85,7 +89,11 @@ void TLSPassiveSocket::close()
 {
     throw std::runtime_error("Not Implemented");
 }
-SocketResult TLSPassiveSocket::listen(const SocketAddress& address, size_t num_of_clients)
+SocketResult TLSPassiveSocket::bind(const SocketAddress& address)
+{
+    throw std::runtime_error("Not Implemented");
+}
+SocketResult TLSPassiveSocket::listen()
 {
     throw std::runtime_error("Not Implemented");
 }

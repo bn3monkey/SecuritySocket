@@ -32,9 +32,8 @@ Bn3Monkey::SocketResult Bn3Monkey::SocketRequestServerImpl::open(SocketRequestHa
 		return result;
 	}
 	
-	result = _socket->listen(address, num_of_clients);
-	if (result.code() != SocketCode::SUCCESS)
-	{
+	result = _socket->bind(address);
+	if (result.code() != SocketCode::SUCCESS) {
 		return result;
 	}
 
@@ -125,7 +124,13 @@ private:
 
 void Bn3Monkey::SocketRequestServerImpl::run(SocketRequestHandler* handler)
 {
-	
+
+	auto result = _socket->listen();
+	if (result.code() != SocketCode::SUCCESS)
+	{
+		return;
+	}
+
 	SocketMultiEventListener listener;
 	listener.open();
 

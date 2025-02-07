@@ -42,19 +42,30 @@ SocketResult SocketClientImpl::connect()
 
 	for (size_t i = 0; i < _configuration.max_retries(); i++)
 	{
-		result = event_listener.wait(_configuration.read_timeout());
-
-		if (result.code() == SocketCode::SOCKET_TIMEOUT)
-		{
-			continue;
-		}
-		else if (result.code() != SocketCode::SUCCESS)
-		{
-			return result;
-		}
-
 		result = _socket->connect(address);
-		break;
+		if (result.code() == SocketCode::SUCCESS)
+		{
+			break;
+		}
+		else if (result.code() == SocketCode::SOCKET_HAS_NO_DATA)
+		{
+			result = event_listener.wait(_configuration.read_timeout());
+			if (result.code() == SocketCode::SOCKET_TIMEOUT)
+			{
+				continue;
+			}
+			else if (result.code() == SocketCode::SOCKET_HAS_NO_DATA)
+			{
+				continue;
+			}
+			else if (result.code() != SocketCode::SUCCESS)
+			{
+				return result;
+			}
+			else {
+				break;
+			}
+		}
 	}
 	return result;
 }

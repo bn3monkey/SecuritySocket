@@ -42,7 +42,6 @@ namespace Bn3Monkey
 		virtual int write(const void* buffer, size_t size);
 
 	protected:
-		int32_t _socket {0};
 		uint32_t _read_timeout {0};
 		uint32_t _write_timeout {0};
 	};

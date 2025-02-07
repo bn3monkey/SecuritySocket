@@ -11,12 +11,7 @@ using namespace Bn3Monkey;
 
 Bn3Monkey::ClientActiveSocket::ClientActiveSocket(bool is_unix_domain)
 {
-	if (_socket >= 0 )
-	{
-		_result = SocketResult(SocketCode::SOCKET_ALREADY_CONNECTED);
-		return;
-	}	
-
+	
 	if (is_unix_domain)
 		_socket = ::socket(AF_UNIX, SOCK_STREAM, 0);
 	else
@@ -152,7 +147,7 @@ void Bn3Monkey::TLSClientActiveSocket::close()
 
 SocketResult Bn3Monkey::TLSClientActiveSocket::connect(const SocketAddress& address)
 {
-	SocketResult ret = TLSClientActiveSocket::connect(address);
+	SocketResult ret = ClientActiveSocket::connect(address);
 	if (ret.code() != SocketCode::SUCCESS)
 	{
 		return ret;

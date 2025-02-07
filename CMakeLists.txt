@@ -14,19 +14,21 @@ message("Security Socket Source Dir : ${source_dir}")
 option(BUILD_SECURITYSOCKET_SHARED "Build Security Socket Library as shared library" ON)
 message("BUILD_SECURITYSOCKET_SHARED = ${BUILD_SECURITYSOCKET_SHARED}")
 option(BUILD_SECURITYSOCKET_TEST "Build Tests of Security Socket Library" on)
-message("BUILD_SECURITYSOCKET_SHARED = ${BUILD_SECURITYSOCKET_SHARED}")
+message("BUILD_SECURITYSOCKET_TEST = ${BUILD_SECURITYSOCKET_TEST}")
 
 ## OpenSSL
 
 message("-- OpenSSL CMake Initialization --")
 include(FetchContent)
+
+
+set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build OpenSSL Static Libraries" FORCE)
 FetchContent_Declare(OpenSSL
     GIT_REPOSITORY https://github.com/janbar/openssl-cmake
     GIT_TAG 1.1.1w-20231130)
 FetchContent_MakeAvailable(OpenSSL)
+set(BUILD_SHARED_LIBS ON CACHE BOOL "Build OpenSSL Static Libraries" FORCE)
 
-add_library(OpenSSL::SSL ALIAS ssl)
-add_library(OpenSSL::Crypto ALIAS crypto)
 message("OpenSSL BINARY DIR is ${openssl_BINARY_DIR}")
 set(openssl_include_dir "${openssl_BINARY_DIR}/include")
 
@@ -47,11 +49,12 @@ else()
     add_library(securitysocket STATIC ${securitysocket_source_files})
 endif()
 
+target_compile_definitions(securitysocket PRIVATE SECURITYSOCKET_EXPORTS)
 target_include_directories(
     securitysocket PRIVATE "${openssl_include_dir}"
 )
-add_dependencies(securitysocket OpenSSL::SSL OpenSSL::Crypto)
-target_sources(securitysocket PRIVATE $<TARGET_OBJECTS:crypto> $<TARGET_OBJECTS:ssl>)
+add_dependencies(securitysocket ssl crypto)
+target_link_libraries(securitysocket ssl crypto)
 
 # PROPERTIES 
 
@@ -95,7 +98,7 @@ if (BUILD_SECURITYSOCKET_TEST)
         ${SECURITYSOCKET_TEST_FILES}
         ${SECURITYSOCKET_UTILS_FILES})
 
-    target_compile_definitions(securitysockettest PRIVATE SECURITYSOCKET_EXPORTS)
+    target_compile_definitions(securitysockettest PRIVATE SECURITYSOCKETTEST_EXPORTS)
 
     message(STATUS "GTEST_SOURCE_DIR = ${gtest_SOURCE_DIR}")
     message(STATUS "GMOCK_SOURCE_DIR = ${gmock_SOURCE_DIR}")

@@ -32,11 +32,11 @@ namespace Bn3Monkey {
 		PassiveSocket(bool is_unix_domain = false);
 		virtual void close();
 
-		virtual SocketResult listen(const SocketAddress& address, size_t num_of_clients);		
+		virtual SocketResult bind(const SocketAddress& address);
+		virtual SocketResult listen();
 		virtual ServerActiveSocketContainer accept();
 
 	private:
-		int32_t _socket {-1};
 	};
 
 	class TLSPassiveSocket : public PassiveSocket
@@ -45,7 +45,8 @@ namespace Bn3Monkey {
 		TLSPassiveSocket(bool is_unix_domain = false);
 		virtual void close();
 
-		virtual SocketResult listen(const SocketAddress& address, size_t num_of_clients);
+		virtual SocketResult bind(const SocketAddress& address);
+		virtual SocketResult listen();
 		virtual ServerActiveSocketContainer accept();
 	};
 

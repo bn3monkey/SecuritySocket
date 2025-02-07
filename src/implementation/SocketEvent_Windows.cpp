@@ -14,7 +14,7 @@ void SocketEventListener::open(BaseSocket& sock, SocketEventType eventType)
             break;
         case SocketEventType::CONNECT:
             {
-                _handle.events = POLLIN;                
+                _handle.events = POLLOUT;                
             }
             break;
         case SocketEventType::READ:
@@ -49,7 +49,12 @@ SocketResult SocketEventListener::wait(uint32_t timeout_ms)
     }
     else {
         if (_handle.revents & POLLERR) {
-            res = SocketResult(SocketCode::SOCKET_CONNECTION_REFUSED);
+            char buffer[256]{ 0 };
+            int buffer_length = 256;
+            int ret = getsockopt(_handle.fd, SOL_SOCKET, SO_ERROR, buffer, &buffer_length);
+            if (ret == SOCKET_ERROR)
+                 res = createResult(ret);
+
         }
         else if (_handle.revents & POLLHUP) {
             res = SocketResult(SocketCode::SOCKET_CLOSED);
