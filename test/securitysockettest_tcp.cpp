@@ -60,7 +60,7 @@ static void echoClientRoutine(int idx)
 
     SocketConfiguration config{
         "127.0.0.1",
-        2000,
+        20000,
         false,
         5,
         5000,
@@ -73,10 +73,23 @@ static void echoClientRoutine(int idx)
         auto result = client.open();
         ASSERT_EQ(SocketCode::SUCCESS, result.code());
     }
+
+    auto result = client.connect();
+    ASSERT_EQ(SocketCode::SUCCESS, result.code());
+
+    /*
     {
-        auto result = client.connect();
+        SocketResult result;
+        for (size_t i = 0; i < 10; i++)
+        {
+            result = client.connect();
+            if (result.code() == SocketCode::SUCCESS)
+                break;
+        }
         ASSERT_EQ(SocketCode::SUCCESS, result.code());
     }
+    */
+
 
     char input_buffer[256]{ 0 };
     char output_buffer[256]{ 0 };
@@ -96,11 +109,11 @@ static void echoClientRoutine(int idx)
 
 
                 client.read(output_buffer, prefix_size);
-                ASSERT_EQ(output_buffer, "echo) ");
+                ASSERT_STREQ(output_buffer, "echo) ");
                 printf("[Client %d] Received Data : %s (%d)\n", idx, output_buffer, prefix_size);
 
                 client.read(output_buffer + prefix_size, input_length);
-                ASSERT_EQ(output_buffer + prefix_size, input_data);
+                ASSERT_STREQ(output_buffer + prefix_size, input_data);
                 printf("[Client %d] Received Data : %s (%d)\n", idx, output_buffer, input_length);
 
                 memset(input_buffer, 0, 256);
@@ -120,7 +133,7 @@ static void echoClientRoutine(int idx)
 
 
                 client.read(output_buffer, expected_output_data_size);
-                ASSERT_EQ(output_buffer, expected_output_data);
+                ASSERT_STREQ(output_buffer, expected_output_data);
                 printf("[Client %d] Received Data : %s (%llu)\n", idx, output_buffer, expected_output_data_size);
 
                 memset(input_buffer, 0, 256);
@@ -146,7 +159,87 @@ static void echoClientRoutine(int idx)
     }
 }
 
+TEST(SecuritySocket, EchoClient)
+{
+    return;
 
+    using namespace Bn3Monkey;
+
+    Bn3Monkey::initializeSecuritySocket();
+
+    SocketConfiguration config{
+        "127.0.0.1",
+        3000,
+        false,
+        3,
+        3000,
+        3000,
+        8192
+    };
+
+    SocketClient client{ config };
+    {
+        auto result = client.open();
+        ASSERT_EQ(SocketCode::SUCCESS, result.code());
+    }
+    {
+        auto result = client.connect();
+        ASSERT_EQ(SocketCode::SUCCESS, result.code());
+    }
+     
+    char input_buffer[256]{ 0 };
+    char output_buffer[256]{ 0 };
+
+    {
+        constexpr char* input_data = "Do you know kimchi?";
+
+
+        auto input_length = sprintf(input_buffer, input_data);
+        printf("[Client %d] Sent Data : %s (%d)\n", 1, input_data, input_length);
+        client.write(input_buffer, input_length);
+
+
+        client.read(output_buffer, input_length);
+        printf("[Client %d] Received Data : %s (%d)\n", 1, output_buffer, input_length);
+        ASSERT_STREQ(output_buffer, input_data);
+        memset(input_buffer, 0, 256);
+        memset(output_buffer, 0, 256);
+    }
+
+    {
+        constexpr char* input_data = "Do you know psy?";
+
+
+        auto input_length = sprintf(input_buffer, input_data);
+        printf("[Client %d] Sent Data : %s (%d)\n", 1, input_data, input_length);
+        client.write(input_buffer, input_length);
+
+
+        client.read(output_buffer, input_length);
+        printf("[Client %d] Received Data : %s (%d)\n", 1, output_buffer, input_length);
+        ASSERT_STREQ(output_buffer, input_data);
+        memset(input_buffer, 0, 256);
+        memset(output_buffer, 0, 256);
+    }
+
+    {
+        constexpr char* input_data = "Can you speak english";
+
+
+        auto input_length = sprintf(input_buffer, input_data);
+        printf("[Client %d] Sent Data : %s (%d)\n", 1, input_data, input_length);
+        client.write(input_buffer, input_length);
+
+
+        client.read(output_buffer, input_length);
+        printf("[Client %d] Received Data : %s (%d)\n", 1, output_buffer, input_length);
+        ASSERT_STREQ(output_buffer, input_data);
+        memset(input_buffer, 0, 256);
+        memset(output_buffer, 0, 256);
+    }
+
+    Bn3Monkey::releaseSecuritySocket();
+}
 
 TEST(SecuritySocket, EchoTest)
 {
@@ -154,10 +247,10 @@ TEST(SecuritySocket, EchoTest)
 
     Bn3Monkey::initializeSecuritySocket();
 
+    std::thread server_thread{ echoServerRoutine, &event_obj };
+    std::thread client_thread1{ echoClientRoutine, 1 };
 
-    std::thread server_thread { echoServerRoutine, &event_obj };
 
-    std::thread client_thread1 { echoClientRoutine, 1 };
     // std::thread client_thread2 { echoClientRoutine, 2 };
     // std::thread client_thread3 { echoClientRoutine, 3 };
     // std::thread client_thread4{ echoClientRoutine, 4 };

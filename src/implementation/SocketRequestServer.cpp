@@ -26,7 +26,7 @@ Bn3Monkey::SocketResult Bn3Monkey::SocketRequestServerImpl::open(SocketRequestHa
 		return result;
 	}
 
-	SocketAddress address{ _configuration.ip(), _configuration.port(), false };
+	SocketAddress address{ _configuration.ip(), _configuration.port(), true };
 	result = address;
 	if (result.code() != SocketCode::SUCCESS) {
 		return result;
@@ -34,6 +34,12 @@ Bn3Monkey::SocketResult Bn3Monkey::SocketRequestServerImpl::open(SocketRequestHa
 	
 	result = _socket->bind(address);
 	if (result.code() != SocketCode::SUCCESS) {
+		return result;
+	}
+
+	result = _socket->listen();
+	if (result.code() != SocketCode::SUCCESS)
+	{
 		return result;
 	}
 
@@ -122,15 +128,9 @@ private:
 	std::condition_variable _cv;
 };
 
+
 void Bn3Monkey::SocketRequestServerImpl::run(SocketRequestHandler* handler)
 {
-
-	auto result = _socket->listen();
-	if (result.code() != SocketCode::SUCCESS)
-	{
-		return;
-	}
-
 	SocketMultiEventListener listener;
 	listener.open();
 
@@ -142,9 +142,8 @@ void Bn3Monkey::SocketRequestServerImpl::run(SocketRequestHandler* handler)
 	worker.start();
 
 	while (_is_running)
-	{
+	{		
 		auto eventlist = listener.wait(_configuration.read_timeout());
-	
 		if (eventlist.result.code() == SocketCode::SOCKET_TIMEOUT)
 		{
 			continue;
@@ -153,6 +152,7 @@ void Bn3Monkey::SocketRequestServerImpl::run(SocketRequestHandler* handler)
 		{
 			break;
 		}
+		
 
 		for (auto& context : eventlist.contexts)
 		{
@@ -226,8 +226,8 @@ void Bn3Monkey::SocketRequestServerImpl::run(SocketRequestHandler* handler)
 			}
 		}
 
-		worker.stop();
 	}
 
+	worker.stop();
 	listener.close();
 }

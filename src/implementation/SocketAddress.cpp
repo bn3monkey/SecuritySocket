@@ -33,9 +33,10 @@ Bn3Monkey::SocketAddress::SocketAddress(const char* ip, const char* port, bool i
 	hints.ai_family = AF_INET;
 	hints.ai_protocol = IPPROTO_TCP;
 	hints.ai_flags = is_server ? AI_PASSIVE : 0; // ACTIVTE
+	const char* input_ip = is_server ? nullptr : ip;
 
 	addrinfo* address{ nullptr };
-	auto ret = getaddrinfo(ip, port, &hints, &address);
+	auto ret = getaddrinfo(input_ip, port, &hints, &address);
 	if (ret != 0)
 	{
 		switch (ret)
@@ -53,6 +54,26 @@ Bn3Monkey::SocketAddress::SocketAddress(const char* ip, const char* port, bool i
 	_socket_address_size = address->ai_addrlen;
 	::memcpy(_socket_address, address->ai_addr, address->ai_addrlen);
 	freeaddrinfo(address);
+
+
+	for (struct addrinfo* p = address; p != NULL; p = p->ai_next) {
+		char ipStr[INET6_ADDRSTRLEN];
+
+		if (p->ai_family == AF_INET) {
+			struct sockaddr_in* ipv4 = (struct sockaddr_in*)p->ai_addr;
+			inet_ntop(AF_INET, &(ipv4->sin_addr), ipStr, sizeof(ipStr));
+		}
+		else if (p->ai_family == AF_INET6) {
+			struct sockaddr_in6* ipv6 = (struct sockaddr_in6*)p->ai_addr;
+			inet_ntop(AF_INET6, &(ipv6->sin6_addr), ipStr, sizeof(ipStr));
+		}
+		else {
+			continue;
+		}
+
+		printf("Resolved Address: %s\n", ipStr);
+	}
+
 }
 Bn3Monkey::SocketAddress::~SocketAddress()
 {

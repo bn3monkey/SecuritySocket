@@ -32,4 +32,4 @@ def echo_server(host, port):
     server_socket.close()  # 서버 소켓 닫기
 
 # 에코 서버 실행
-echo_server('192.168.0.98', 3000)
+echo_server('127.0.0.1', 3000)

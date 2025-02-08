@@ -38,7 +38,6 @@ namespace Bn3Monkey
         virtual int write(const void* buffer, size_t size);
     
     protected:
-        SocketResult _result;
     };
 
     class TLSServerActiveSocket : public ServerActiveSocket

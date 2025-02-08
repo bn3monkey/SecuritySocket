@@ -37,6 +37,8 @@ PassiveSocket::PassiveSocket(bool is_unix_domain)
 		return;
 	}
     
+    printf("Passive Socket : %d\n", _socket);
+
 	setNonBlockingMode(_socket);
 }
 void PassiveSocket::close()
@@ -58,6 +60,7 @@ SocketResult PassiveSocket::bind(const SocketAddress& address)
     {
         res = SocketResult(SocketCode::SOCKET_BIND_FAILED);
     }
+    printf("Passive Socket Bind : %d\n", _socket);
     return res;
 }
 SocketResult PassiveSocket::listen()
@@ -65,17 +68,30 @@ SocketResult PassiveSocket::listen()
     SocketResult res;
 
     auto ret = ::listen(_socket, SOMAXCONN);
-    if (ret)
+    if (ret == SOCKET_ERROR)
     {
         res = SocketResult(SocketCode::SOCKET_LISTEN_FAILED);
     }
-
+    printf("Passive Socket Listen : %d\n", _socket);
     return res;
 }
 
+
+
 ServerActiveSocketContainer PassiveSocket::accept()
 {
-    int sock = ::accept(_socket, NULL, NULL);
+    struct sockaddr_in client_addr;
+    socklen_t client_len = sizeof(client_addr);
+
+    int sock = ::accept(_socket, (struct sockaddr*)&client_addr, &client_len);
+
+    if (sock >= 0) {
+        char client_ip[INET_ADDRSTRLEN];
+        inet_ntop(AF_INET, &client_addr.sin_addr, client_ip, sizeof(client_ip));
+        int client_port = ntohs(client_addr.sin_port);
+        printf("Connected client ip : %s port : %d\n", client_ip, client_port);
+    }
+
     ServerActiveSocketContainer container{false, sock};
     return container;   
 }

@@ -51,7 +51,7 @@ inline SocketResult createResult(int operation_return)
 		return SocketResult(SocketCode::SOCKET_CONNECTION_IN_PROGRESS);
 	case WSAEWOULDBLOCK:
 	case WSATRY_AGAIN:
-		return SocketResult(SocketCode::SOCKET_HAS_NO_DATA);
+		return SocketResult(SocketCode::SOCKET_CONNECTION_NEED_TO_BE_BLOCKED);
 	}
 #else
 	int error = errno;
@@ -86,6 +86,8 @@ inline SocketResult createResult(int operation_return)
 		return SocketResult(SocketCode::SOCKET_CONNECTION_ALREADY);
 	case EINPROGRESS:
 		return SocketResult(SocketCode::SOCKET_CONNECTION_IN_PROGRESS);
+	case EWOULDBLOCK:
+		return SocketResult(SocketCode::SOCKET_CONNECTION_NEED_TO_BE_BLOCKED);
 	}
 #endif
 	return SocketResult(SocketCode::UNKNOWN_ERROR);
@@ -140,7 +142,7 @@ inline const char* getMessage(const SocketCode& code)
 
         case SocketCode::SOCKET_ALREADY_CONNECTED: return "Socket is already connected";
         case SocketCode::SOCKET_CONNECTION_IN_PROGRESS: return "Socket connection in progress";
-        case SocketCode::SOCKET_HAS_NO_DATA: return "Socket has no data. call the io function again";
+        case SocketCode::SOCKET_CONNECTION_NEED_TO_BE_BLOCKED: return "Socket has no data. Call select or poll function for waiting data";
 
         case SocketCode::SOCKET_BIND_FAILED: return "Socket binding failed";
         case SocketCode::SOCKET_LISTEN_FAILED: return "Socket listen failed";

@@ -28,6 +28,21 @@ void SocketClientImpl::close()
 	_socket->close();
 }
 
+inline void checkConenctedServer(int sock)
+{
+	struct sockaddr_in peer_addr;
+	socklen_t peer_addr_len = sizeof(peer_addr);
+
+	if (getpeername(sock, (struct sockaddr*)&peer_addr, &peer_addr_len) == 0) {
+		char ip_str[INET_ADDRSTRLEN];
+		inet_ntop(AF_INET, &peer_addr.sin_addr, ip_str, sizeof(ip_str));
+		printf("Connected to Server IP: %s, Port: %d\n", ip_str, ntohs(peer_addr.sin_port));
+	}
+	else {
+		printf("getpeername failed\n");
+	}
+}
+
 SocketResult SocketClientImpl::connect()
 {
 	SocketResult result;
@@ -47,14 +62,14 @@ SocketResult SocketClientImpl::connect()
 		{
 			break;
 		}
-		else if (result.code() == SocketCode::SOCKET_HAS_NO_DATA)
+		else if (result.code() == SocketCode::SOCKET_CONNECTION_IN_PROGRESS)
+		{
+
+		}
+		else if (result.code() == SocketCode::SOCKET_CONNECTION_NEED_TO_BE_BLOCKED)
 		{
 			result = event_listener.wait(_configuration.read_timeout());
 			if (result.code() == SocketCode::SOCKET_TIMEOUT)
-			{
-				continue;
-			}
-			else if (result.code() == SocketCode::SOCKET_HAS_NO_DATA)
 			{
 				continue;
 			}
@@ -63,10 +78,13 @@ SocketResult SocketClientImpl::connect()
 				return result;
 			}
 			else {
+				checkConenctedServer(_socket->descriptor());
 				break;
 			}
 		}
 	}
+
+	std::this_thread::sleep_for(std::chrono::milliseconds(3000));
 	return result;
 }
 SocketResult SocketClientImpl::read(void* buffer, size_t size)

@@ -14,7 +14,7 @@ void SocketEventListener::open(BaseSocket& sock, SocketEventType eventType)
             break;
         case SocketEventType::CONNECT:
             {
-                _handle.events = POLLOUT;                
+                _handle.events = POLLIN | POLLOUT;
             }
             break;
         case SocketEventType::READ:
@@ -49,12 +49,17 @@ SocketResult SocketEventListener::wait(uint32_t timeout_ms)
     }
     else {
         if (_handle.revents & POLLERR) {
-            char buffer[256]{ 0 };
-            int buffer_length = 256;
-            int ret = getsockopt(_handle.fd, SOL_SOCKET, SO_ERROR, buffer, &buffer_length);
-            if (ret == SOCKET_ERROR)
-                 res = createResult(ret);
-
+            int error{ 0 };
+            socklen_t len = sizeof(error);
+            getsockopt(_handle.fd, SOL_SOCKET, SO_ERROR, (char*) & error, &len);
+            if (error == 0)
+            {
+                res = SocketResult(SocketCode::SUCCESS);
+            }
+            else {
+                printf("async connection error : %s\n", strerror(error));
+                res = SocketResult(SocketCode::UNKNOWN_ERROR);
+            }
         }
         else if (_handle.revents & POLLHUP) {
             res = SocketResult(SocketCode::SOCKET_CLOSED);
@@ -88,7 +93,7 @@ SocketResult SocketMultiEventListener::addEvent(SocketEventContext* context, Soc
             break;
         case SocketEventType::CONNECT:
             {
-                fd.events = POLLIN;                
+                fd.events = POLLIN | POLLOUT;                
             }
             break;
         case SocketEventType::READ:
@@ -110,6 +115,51 @@ SocketResult SocketMultiEventListener::addEvent(SocketEventContext* context, Soc
             break;
     }  
     _handle.push_back(fd);
+
+    printf("Poll (Server fd : %d)\n", _server_socket);
+    for (auto& handle : _handle)
+    {
+        printf("- fd : %d events : ", handle.fd);
+        if (handle.events & POLLIN)
+            printf("POLLIN ");
+        if (handle.events & POLLOUT)
+            printf("POLLOUT");
+        printf("\n");
+    }
+
+    char* typestr = "";
+    switch (eventType)
+    {
+    case SocketEventType::ACCEPT:
+    {
+        typestr = "accept";
+    }
+    break;
+    case SocketEventType::CONNECT:
+    {
+        typestr = "connect";
+    }
+    break;
+    case SocketEventType::READ:
+    {
+        typestr = "read";
+    }
+    break;
+    case SocketEventType::WRITE:
+    {
+        typestr = "write";
+    }
+    break;
+    case SocketEventType::READ_WRITE:
+    {
+        typestr = "READ_WRITE";
+    }
+    break;
+    default:
+        break;
+    }
+    printf("Added Event : fd - %d %s\n", context->fd, typestr);
+    
     
     _contexts[context->fd] = context;
 
@@ -139,6 +189,17 @@ SocketResult SocketMultiEventListener::removeEvent(SocketEventContext* context)
 SocketEventResult SocketMultiEventListener::wait(uint32_t timeout_ms)
 {
     SocketEventResult res;
+    printf("Wait / handle size : %llu\n", _handle.size());
+    for (auto& handle : _handle)
+    {
+        printf("- fd : %d events : ", handle.fd);
+        if (handle.events & POLLIN)
+            printf("POLLIN ");
+        if (handle.events & POLLOUT)
+            printf("POLLOUT");
+        printf("\n");
+    }
+
     int ret = WSAPoll(_handle.data(), _handle.size(), timeout_ms);
     if (ret == 0)
     {
@@ -161,10 +222,6 @@ SocketEventResult SocketMultiEventListener::wait(uint32_t timeout_ms)
             if (event_type & POLLERR || event_type & POLLHUP)
             {
                 context->type = SocketEventType::DISCONNECTED;
-            }
-            else if (event_type & (POLLIN | POLLOUT))
-            {
-                context->type = SocketEventType::READ_WRITE;
             }
             else if (_server_socket == event_fd && event_type & POLLIN)
             {
