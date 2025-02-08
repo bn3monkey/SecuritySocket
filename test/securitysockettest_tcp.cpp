@@ -33,9 +33,9 @@ static void echoServerRoutine(SimpleEvent* event_obj)
             size_t& output_size) override
         {
 
-            printf("[Server] Received Data : %s (%llu)", (char *)input_buffer, input_size);
+            printf("[Server] Received Data : %s (%llu)\n", (char *)input_buffer, input_size);
             
-            output_size = snprintf((char *)output_buffer, 4096, "echo : %s", (char*)input_buffer);
+            output_size = snprintf((char*)output_buffer, 8192, "echo) %s", (char*)input_buffer);
             return true;
         }
     };
@@ -56,7 +56,7 @@ static void echoClientRoutine(int idx)
 {
     using namespace Bn3Monkey;
 
-    std::this_thread::sleep_for(std::chrono::seconds(5));
+    std::this_thread::sleep_for(std::chrono::seconds(1));
 
     SocketConfiguration config{
         "127.0.0.1",
@@ -77,22 +77,8 @@ static void echoClientRoutine(int idx)
     auto result = client.connect();
     ASSERT_EQ(SocketCode::SUCCESS, result.code());
 
-    /*
-    {
-        SocketResult result;
-        for (size_t i = 0; i < 10; i++)
-        {
-            result = client.connect();
-            if (result.code() == SocketCode::SUCCESS)
-                break;
-        }
-        ASSERT_EQ(SocketCode::SUCCESS, result.code());
-    }
-    */
-
-
-    char input_buffer[256]{ 0 };
-    char output_buffer[256]{ 0 };
+    char input_buffer[8192]{ 0 };
+    char output_buffer[8192]{ 0 };
     switch (idx)
     {
         case 1:
@@ -143,17 +129,95 @@ static void echoClientRoutine(int idx)
         break;
         case 2:
         {
-        
+            {
+                constexpr char* input_data = "Do you know kimchi?";
+                constexpr char* expected_output_data = "echo) Do you know kimchi?";
+                const size_t output_data_size = strlen(expected_output_data);
+
+
+                auto input_length = sprintf(input_buffer, input_data);
+                printf("[Client %d] Sent Data : %s (%d)\n", idx, input_data, input_length);
+                client.write(input_buffer, input_length);
+
+                client.read(output_buffer, output_data_size);
+                ASSERT_STREQ(output_buffer, expected_output_data);
+                printf("[Client %d] Received Data : %s (%d)\n", idx, output_buffer, input_length);
+
+                memset(input_buffer, 0, 256);
+                memset(output_buffer, 0, 256);
+            }
+
+            {
+                char input_data[4097]{ 0 };
+                for (size_t i = 0; i < 4096; i++)
+                {
+                    input_data[i] = 'A' + i % 16;
+                }
+                constexpr char* prefix = "echo) ";
+                size_t prefix_length = strlen(prefix);
+
+
+                auto input_length = sprintf(input_buffer, input_data);
+                printf("[Client %d] Sent Data : %s (%d)\n", idx, input_data, input_length);
+                client.write(input_buffer, input_length);
+
+                client.read(output_buffer, prefix_length);
+                ASSERT_STREQ(output_buffer, "echo) ");
+                printf("[Client %d] Received Data : %s (%d)\n", idx, output_buffer, prefix_length);
+
+                client.read(output_buffer + prefix_length, 4096);
+                ASSERT_STREQ(output_buffer + prefix_length, input_buffer);
+                printf("[Client %d] Received Data : %s (%d)\n", idx, output_buffer, prefix_length + 4096);
+
+                memset(input_buffer, 0, 256);
+                memset(output_buffer, 0, 256);
+            }
         }
         break;
         case 3:
         {
+            for (int i=0;i<30;i++)
+            {
+                constexpr char* input_data = "Do you know kimchi?";
+                constexpr char* expected_output_data = "echo) Do you know kimchi?";
+                const size_t output_data_size = strlen(expected_output_data);
 
+
+                auto input_length = sprintf(input_buffer, input_data);
+                printf("[Client %d] Sent Data : %s (%d)\n", idx, input_data, input_length);
+                client.write(input_buffer, input_length);
+
+                client.read(output_buffer, output_data_size);
+                ASSERT_STREQ(output_buffer, expected_output_data);
+                printf("[Client %d] Received Data : %s (%d)\n", idx, output_buffer, input_length);
+
+                memset(input_buffer, 0, 256);
+                memset(output_buffer, 0, 256);
+            }
         }
         break;
         case 4:
         {
+            for (int i=0;i<20;i++)
+            {
+                constexpr char* input_data = "Do you know heungmin Son?";
+                constexpr char* expected_output_data = "echo) Do you know heungmin Son?";
+                const size_t expected_output_data_size = strlen(expected_output_data);
+                const size_t prefix_size = sizeof("echo) ") - 1;
 
+
+                auto input_length = sprintf(input_buffer, input_data);
+                printf("[Client %d] Sent Data : %s (%llu)\n", idx, input_data, input_length);
+                client.write(input_buffer, input_length);
+
+
+                client.read(output_buffer, expected_output_data_size);
+                ASSERT_STREQ(output_buffer, expected_output_data);
+                printf("[Client %d] Received Data : %s (%llu)\n", idx, output_buffer, expected_output_data_size);
+
+                memset(input_buffer, 0, 256);
+                memset(output_buffer, 0, 256);
+            }
         }
         break;
     }
@@ -249,16 +313,14 @@ TEST(SecuritySocket, EchoTest)
 
     std::thread server_thread{ echoServerRoutine, &event_obj };
     std::thread client_thread1{ echoClientRoutine, 1 };
-
-
-    // std::thread client_thread2 { echoClientRoutine, 2 };
-    // std::thread client_thread3 { echoClientRoutine, 3 };
-    // std::thread client_thread4{ echoClientRoutine, 4 };
+    std::thread client_thread2 { echoClientRoutine, 2 };
+    std::thread client_thread3 { echoClientRoutine, 3 };
+    std::thread client_thread4{ echoClientRoutine, 4 };
 
     client_thread1.join();
-    // client_thread2.join();
-    // client_thread3.join();
-    // client_thread4.join();
+    client_thread2.join();
+    client_thread3.join();
+    client_thread4.join();
 
     event_obj.wake();
     server_thread.join();

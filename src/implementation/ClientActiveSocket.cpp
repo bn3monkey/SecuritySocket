@@ -24,8 +24,6 @@ Bn3Monkey::ClientActiveSocket::ClientActiveSocket(bool is_unix_domain)
 
 	setNonBlockingMode(_socket);
 
-	printf("Client Active Socket : %d\n", _socket);
-
 	return;
 }
 Bn3Monkey::ClientActiveSocket::~ClientActiveSocket()
@@ -53,6 +51,7 @@ SocketResult ClientActiveSocket::connect(const SocketAddress& address)
 			// ERROR
 			result = createResult(res);
 		}
+
 	}
 	return result;
 }

@@ -100,7 +100,7 @@ private:
 			{
 				std::unique_lock<std::mutex> lock(_mtx);
 				_cv.wait(lock, [&]() {
-					return !_is_running && !_queue.empty();
+					return !_is_running || !_queue.empty();
 					});
 
 				if (!_is_running) return;
@@ -164,12 +164,14 @@ void Bn3Monkey::SocketRequestServerImpl::run(SocketRequestHandler* handler)
 				{
 					auto socket_container = _socket->accept();
 					SocketConnection* connection = _socket_connection_pool.acquire(socket_container);
+					connection->input_buffer.resize(_configuration.pdu_size());
+					connection->output_buffer.resize(_configuration.pdu_size());
 					listener.addEvent(connection, SocketEventType::READ);
 				}
 				break;
 			case SocketEventType::READ:
 				{
-					auto* connection = reinterpret_cast<SocketConnection*>(context);
+					auto* connection = static_cast<SocketConnection*>(context);
 					auto* sock = connection->socket();
 					int32_t read_size = sock->read(connection->input_buffer.data() + connection->total_input_size, connection->input_buffer.size());
 					if (read_size > 0)
@@ -191,7 +193,7 @@ void Bn3Monkey::SocketRequestServerImpl::run(SocketRequestHandler* handler)
 				break;
 			case SocketEventType::WRITE:
 				{
-					auto* connection = reinterpret_cast<SocketConnection*>(context);
+					auto* connection = static_cast<SocketConnection*>(context);
 					SocketTaskType state = worker.await(connection);
 
 					if (state == SocketTaskType::SUCCESS)
@@ -218,7 +220,7 @@ void Bn3Monkey::SocketRequestServerImpl::run(SocketRequestHandler* handler)
 				break;
 			case SocketEventType::DISCONNECTED:
 				{
-					auto* connection = reinterpret_cast<SocketConnection*>(context);
+					auto* connection = static_cast<SocketConnection*>(context);
 					listener.removeEvent(connection);
 					connection->socket()->close();			
 				}

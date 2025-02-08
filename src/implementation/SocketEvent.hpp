@@ -68,6 +68,7 @@ namespace Bn3Monkey
             {
                 std::unique_lock<std::mutex> lock(_mtx);
                _task_status = result ? SocketTaskType::SUCCESS : SocketTaskType::FAIL;
+               _cv.notify_one();
             }
         }
 

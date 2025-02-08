@@ -17,7 +17,7 @@ ServerActiveSocket::ServerActiveSocket(int32_t sock)
 }
 ServerActiveSocket::~ServerActiveSocket()
 {
-    close();
+    // close();
 }
 void ServerActiveSocket::close()
 {

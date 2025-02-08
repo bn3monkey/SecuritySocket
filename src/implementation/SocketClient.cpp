@@ -28,20 +28,7 @@ void SocketClientImpl::close()
 	_socket->close();
 }
 
-inline void checkConenctedServer(int sock)
-{
-	struct sockaddr_in peer_addr;
-	socklen_t peer_addr_len = sizeof(peer_addr);
 
-	if (getpeername(sock, (struct sockaddr*)&peer_addr, &peer_addr_len) == 0) {
-		char ip_str[INET_ADDRSTRLEN];
-		inet_ntop(AF_INET, &peer_addr.sin_addr, ip_str, sizeof(ip_str));
-		printf("Connected to Server IP: %s, Port: %d\n", ip_str, ntohs(peer_addr.sin_port));
-	}
-	else {
-		printf("getpeername failed\n");
-	}
-}
 
 SocketResult SocketClientImpl::connect()
 {
@@ -78,7 +65,6 @@ SocketResult SocketClientImpl::connect()
 				return result;
 			}
 			else {
-				checkConenctedServer(_socket->descriptor());
 				break;
 			}
 		}
@@ -117,15 +103,14 @@ SocketResult SocketClientImpl::read(void* buffer, size_t size)
 		{
 			continue;
 		}
-		else if (result.code() == SocketCode::SUCCESS)
-		{
-			read_size += ret;
-			if (read_size == size) {
-				break;
-			}
-		}
-		else
+		else if (result.code() != SocketCode::SUCCESS)
 			break;
+
+
+		read_size += ret;
+		if (read_size == size) {
+			break;
+		}
 	}
 
 	// Check if connection is available when timeout occurs max_trial_time
@@ -162,7 +147,7 @@ SocketResult SocketClientImpl::write(const void* buffer, size_t size)
 			i++;
 			continue;
 		}
-		else
+		else if (result.code() != SocketCode::SUCCESS)
 			break;
 
 		written_size += (size_t)ret;

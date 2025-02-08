@@ -37,8 +37,6 @@ PassiveSocket::PassiveSocket(bool is_unix_domain)
 		return;
 	}
     
-    printf("Passive Socket : %d\n", _socket);
-
 	setNonBlockingMode(_socket);
 }
 void PassiveSocket::close()
@@ -60,7 +58,6 @@ SocketResult PassiveSocket::bind(const SocketAddress& address)
     {
         res = SocketResult(SocketCode::SOCKET_BIND_FAILED);
     }
-    printf("Passive Socket Bind : %d\n", _socket);
     return res;
 }
 SocketResult PassiveSocket::listen()
@@ -72,7 +69,6 @@ SocketResult PassiveSocket::listen()
     {
         res = SocketResult(SocketCode::SOCKET_LISTEN_FAILED);
     }
-    printf("Passive Socket Listen : %d\n", _socket);
     return res;
 }
 

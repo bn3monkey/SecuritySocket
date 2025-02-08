@@ -55,7 +55,7 @@ Bn3Monkey::SocketAddress::SocketAddress(const char* ip, const char* port, bool i
 	::memcpy(_socket_address, address->ai_addr, address->ai_addrlen);
 	freeaddrinfo(address);
 
-
+	/*
 	for (struct addrinfo* p = address; p != NULL; p = p->ai_next) {
 		char ipStr[INET6_ADDRSTRLEN];
 
@@ -70,9 +70,9 @@ Bn3Monkey::SocketAddress::SocketAddress(const char* ip, const char* port, bool i
 		else {
 			continue;
 		}
-
 		printf("Resolved Address: %s\n", ipStr);
 	}
+	*/
 
 }
 Bn3Monkey::SocketAddress::~SocketAddress()
