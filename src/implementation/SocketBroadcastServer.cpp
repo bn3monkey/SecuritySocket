@@ -78,7 +78,7 @@ SocketResult SocketBroadcastServerImpl::write(const void* buffer, size_t size)
 		listener.open(*sock, SocketEventType::WRITE);
 		size_t written_size = 0;
 
-		for (auto i = 0; i < _configuration.max_retries(); i++)
+		for (auto i = 0; i < _configuration.max_retries(); )
 		{
 			auto result = listener.wait(_configuration.write_timeout());
 			if (result.code() == SocketCode::SOCKET_TIMEOUT)
@@ -102,11 +102,13 @@ SocketResult SocketBroadcastServerImpl::write(const void* buffer, size_t size)
 			else if (result.code() != SocketCode::SUCCESS)
 			{
 				_back_client_containers->push_back(client_container);
+				break;
 			}
 			written_size += (size_t)ret;
 			if (written_size == size)
 			{
 				_back_client_containers->push_back(client_container);
+				break;
 			}
 		}
 	}

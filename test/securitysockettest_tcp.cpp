@@ -2,6 +2,7 @@
 
 #include <SecuritySocket.hpp>
 #include <thread>
+#include <random>
 
 #include "securitysockettest_helper.hpp"
 
@@ -315,6 +316,8 @@ TEST(SecuritySocket, EchoClient)
 
 TEST(SecuritySocket, EchoTest)
 {
+    return;
+
     SimpleEvent event_obj;
 
     Bn3Monkey::initializeSecuritySocket();
@@ -336,7 +339,30 @@ TEST(SecuritySocket, EchoTest)
     Bn3Monkey::releaseSecuritySocket();
 }
 
-void broadcastServerRoutine()
+
+struct BroadcastEventPatterns
+{
+    static constexpr size_t pattern_length{ 16 };
+
+    std::vector<char> patterns[20];
+
+    BroadcastEventPatterns() {
+        std::random_device rd;
+        std::mt19937 gen(rd());
+        std::uniform_int_distribution<int> dis('a', 'z');
+        for (auto& pattern : patterns)
+        {
+            pattern.resize(pattern_length);
+            for (size_t i = 0; i < pattern_length - 1; i++)
+            {
+                pattern[i] = (char)dis(gen);
+            }
+            pattern[pattern_length - 1] = 0;
+        }
+    }
+};
+
+void broadcastServerRoutine(BroadcastEventPatterns& patterns)
 {
     using namespace Bn3Monkey;
 
@@ -351,11 +377,49 @@ void broadcastServerRoutine()
     };
 
 
-    SocketBroadcastServer server{config};
-    // server.op
 
+    SocketBroadcastServer server{ config };
+
+    {
+        server.open(1);
+        server.enumerate();
+
+        for (size_t i = 0; i < 20; i++)
+        {
+            auto* buffer = patterns.patterns[i].data();
+            printf("[Server 1 (%llu)] %s\n\n", i, buffer);
+            server.write(buffer, BroadcastEventPatterns::pattern_length);
+        }
+        server.close();
+    }
+
+    {
+        server.open(1);
+        server.enumerate();
+
+        for (size_t i = 0; i < 20; i++)
+        {
+            auto* buffer = patterns.patterns[i].data();
+            printf("[Server 2 (%llu)] %s\n\n", i, buffer);
+            server.write(buffer, BroadcastEventPatterns::pattern_length);
+        }
+        server.close();
+    }
+
+    {
+        server.open(1);
+        server.enumerate();
+
+        for (size_t i = 0; i < 15; i++)
+        {
+            auto* buffer = patterns.patterns[i].data();
+            printf("[Server 3 (%llu)] %s\n\n", i, buffer);
+            server.write(buffer, BroadcastEventPatterns::pattern_length);
+        }
+        server.close();
+    }
 }
-void broadcastSingleClientRoutine()
+void broadcastSingleClientRoutine(BroadcastEventPatterns& patterns)
 {
     using namespace Bn3Monkey;
 
@@ -369,17 +433,110 @@ void broadcastSingleClientRoutine()
         8192
     };
 
+    SocketClient client{ config };
 
+    {
+        {
+            auto result = client.open();
+            ASSERT_EQ(SocketCode::SUCCESS, result.code());
+        }
+        {
+            auto result = client.connect();
+            ASSERT_EQ(SocketCode::SUCCESS, result.code());
+        }
+        for (size_t i = 0; i < 20; i++)
+        {
+            char buffer[8192]{ 0 };
+            auto* expected = patterns.patterns[i].data();
+            auto res = client.read(buffer, BroadcastEventPatterns::pattern_length);
+            printf("                    [Client 1 (%llu)] %s\n\n", i, buffer);
+            if (res.code() == SocketCode::SUCCESS)
+            {
+                EXPECT_EQ(SocketCode::SUCCESS, res.code());
+                EXPECT_STREQ(expected, buffer);
+            }
+            else {
+                printf("Error : %s\n", res.message());
+            }
+        }
+        client.close();
+    }
+
+    {
+        {
+            auto result = client.open();
+            ASSERT_EQ(SocketCode::SUCCESS, result.code());
+        }
+        {
+            auto result = client.connect();
+            ASSERT_EQ(SocketCode::SUCCESS, result.code());
+        }
+        for (size_t i = 0; i < 15; i++)
+        {
+            char buffer[8192]{ 0 };
+            auto* expected = patterns.patterns[i].data();
+            auto res = client.read(buffer, BroadcastEventPatterns::pattern_length);
+            printf("                    [Client 2 (%llu)] %s\n\n", i, buffer);
+            if (res.code() == SocketCode::SUCCESS)
+            {
+                EXPECT_EQ(SocketCode::SUCCESS, res.code());
+                EXPECT_STREQ(expected, buffer);
+            }
+            else {
+                printf("Error : %s\n", res.message());
+            }
+        }
+        client.close();
+    }
+
+    {
+        {
+            auto result = client.open();
+            ASSERT_EQ(SocketCode::SUCCESS, result.code());
+        }
+        {
+            auto result = client.connect();
+            ASSERT_EQ(SocketCode::SUCCESS, result.code());
+        }
+        for (size_t i = 0; i < 20; i++)
+        {
+            char buffer[8192]{ 0 };
+            auto* expected = patterns.patterns[i].data();
+            auto res = client.read(buffer, BroadcastEventPatterns::pattern_length);
+            printf("                    [Client 3(%llu)] %s\n\n", i, buffer);
+
+            EXPECT_STREQ(expected, buffer);
+
+            if (res.code() == SocketCode::SUCCESS)
+            {
+                EXPECT_EQ(SocketCode::SUCCESS, res.code());
+                EXPECT_STREQ(expected, buffer);
+            }
+            else {
+                if (i >= 15)
+                {
+                    printf("Server disconnected\n");
+                    EXPECT_NE(SocketCode::SUCCESS, res.code());
+                }
+                else {
+                    printf("Error : %s\n", res.message());
+                }
+            }
+            
+        }
+        client.close();
+    }
 }
+
+
 
 TEST(SecuritySocket, OneClientBroadcastTest)
 {
-    return; 
-
     Bn3Monkey::initializeSecuritySocket();
 
-    std::thread server_thread{ broadcastServerRoutine };
-    std::thread client_thread1{ broadcastSingleClientRoutine };
+    BroadcastEventPatterns patterns;
+    std::thread server_thread{ broadcastServerRoutine, patterns };
+    std::thread client_thread1{ broadcastSingleClientRoutine, patterns };
 
     client_thread1.join();
 

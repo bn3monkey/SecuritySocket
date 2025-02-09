@@ -102,22 +102,31 @@ void Bn3Monkey::SocketRequestServer::close()
 
 Bn3Monkey::SocketBroadcastServer::SocketBroadcastServer(const SocketConfiguration& configuration)
 {
-
+	new (_container) SocketBroadcastServerImpl(configuration);
 }
 Bn3Monkey::SocketBroadcastServer::~SocketBroadcastServer()
 {
-
+	SocketBroadcastServerImpl* impl = static_cast<SocketBroadcastServerImpl*>((void*)_container);
+	impl->~SocketBroadcastServerImpl();
 }
 
 SocketResult Bn3Monkey::SocketBroadcastServer::open(size_t num_of_clients)
 {
-	return SocketResult(SocketCode::SUCCESS);
+	SocketBroadcastServerImpl* impl = static_cast<SocketBroadcastServerImpl*>((void*)_container);
+	return impl->open(num_of_clients);
 }
 void Bn3Monkey::SocketBroadcastServer::close()
 {
-	return;
+	SocketBroadcastServerImpl* impl = static_cast<SocketBroadcastServerImpl*>((void*)_container);
+	return impl->close();
+}
+SocketResult Bn3Monkey::SocketBroadcastServer::enumerate()
+{
+	SocketBroadcastServerImpl* impl = static_cast<SocketBroadcastServerImpl*>((void*)_container);
+	return impl->enumerate();
 }
 SocketResult Bn3Monkey::SocketBroadcastServer::write(const void* buffer, size_t size)
 {
-	return SocketResult(SocketCode::SUCCESS);
+	SocketBroadcastServerImpl* impl = static_cast<SocketBroadcastServerImpl*>((void*)_container);
+	return impl->write(buffer, size);
 }

@@ -207,7 +207,10 @@ namespace Bn3Monkey
         SocketResult open(size_t num_of_clients);
         void close();
 
+        SocketResult enumerate();
         SocketResult write(const void* buffer, size_t size);
+    private:
+        char _container[IMPLEMENTATION_SIZE]{ 0 };
     };
        
 
