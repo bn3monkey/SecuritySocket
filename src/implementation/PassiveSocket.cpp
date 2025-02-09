@@ -42,6 +42,11 @@ PassiveSocket::PassiveSocket(bool is_unix_domain)
 void PassiveSocket::close()
 {
 #ifdef _WIN32
+    shutdown(_socket, SD_BOTH);
+#else
+    shutdown(_socket, SHUT_RDWR);
+#endif
+#ifdef _WIN32
 	::closesocket(_socket);
 #else
 	::close(_socket);

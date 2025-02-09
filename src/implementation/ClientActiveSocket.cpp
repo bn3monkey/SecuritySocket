@@ -67,17 +67,12 @@ void Bn3Monkey::ClientActiveSocket::disconnect()
 
 SocketResult Bn3Monkey::ClientActiveSocket::isConnected()
 {
-	int optval;
-	socklen_t optlen = sizeof(optval);
-	if (getsockopt(_socket, SOL_SOCKET, SO_ERROR, reinterpret_cast<char*>(&optval), &optlen) < 0)
-	{
-		return SocketResult(SocketCode::SOCKET_OPTION_ERROR);
+	char buf[1];
+	int bytes_read = recv(_socket, buf, 1, MSG_PEEK);
+	if (bytes_read > 0) {
+		return SocketResult(SocketCode::SUCCESS);
 	}
-	if (optval != 0)
-	{
-		return SocketResult(SocketCode::SOCKET_CLOSED);
-	}
-	return SocketResult(SocketCode::SUCCESS);
+	return SocketResult(SocketCode::SOCKET_CLOSED);
 }
 
 int Bn3Monkey::ClientActiveSocket::write(const void* buffer, size_t size)

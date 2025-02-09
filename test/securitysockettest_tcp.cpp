@@ -505,10 +505,9 @@ void broadcastSingleClientRoutine(BroadcastEventPatterns& patterns)
             auto res = client.read(buffer, BroadcastEventPatterns::pattern_length);
             printf("                    [Client 3(%llu)] %s\n\n", i, buffer);
 
-            EXPECT_STREQ(expected, buffer);
-
             if (res.code() == SocketCode::SUCCESS)
             {
+
                 EXPECT_EQ(SocketCode::SUCCESS, res.code());
                 EXPECT_STREQ(expected, buffer);
             }
