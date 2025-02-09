@@ -166,6 +166,9 @@ void Bn3Monkey::SocketRequestServerImpl::run(SocketRequestHandler* handler)
 					SocketConnection* connection = _socket_connection_pool.acquire(socket_container);
 					connection->input_buffer.resize(_configuration.pdu_size());
 					connection->output_buffer.resize(_configuration.pdu_size());
+
+					auto* sock = connection->socket();
+					handler->onClientConnected(sock->ip(), sock->port());
 					listener.addEvent(connection, SocketEventType::READ);
 				}
 				break;
@@ -212,6 +215,8 @@ void Bn3Monkey::SocketRequestServerImpl::run(SocketRequestHandler* handler)
 					}
 					else if (state == SocketTaskType::FAIL)
 					{
+						auto* sock = connection->socket();
+						handler->onClientConnected(sock->ip(), sock->port());
 						connection->flush();
 						listener.modifyEvent(connection, SocketEventType::READ);
 					}

@@ -80,15 +80,7 @@ ServerActiveSocketContainer PassiveSocket::accept()
     socklen_t client_len = sizeof(client_addr);
 
     int sock = ::accept(_socket, (struct sockaddr*)&client_addr, &client_len);
-
-    if (sock >= 0) {
-        char client_ip[INET_ADDRSTRLEN];
-        inet_ntop(AF_INET, &client_addr.sin_addr, client_ip, sizeof(client_ip));
-        int client_port = ntohs(client_addr.sin_port);
-        printf("Connected client ip : %s port : %d\n", client_ip, client_port);
-    }
-
-    ServerActiveSocketContainer container{false, sock};
+    ServerActiveSocketContainer container{false, sock, &client_addr};
     return container;   
 }
 

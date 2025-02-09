@@ -22,6 +22,12 @@ static void echoServerRoutine(SimpleEvent* event_obj)
 
     class EchoRequestHandler : public SocketRequestHandler
     {
+        virtual void onClientConnected(const char* ip, int port) override {
+            printf("[Sever] Client connected (%s, %d)\n", ip, port);
+        }
+        virtual void onClientDisconnected(const char* ip, int port) override {
+            printf("[Sever] Client disconnected (%s, %d)\n", ip, port);
+        }
         virtual ProcessState onDataReceived(const void* input_buffer, size_t offset, size_t read_size) override
         {            
             return ProcessState::READY;
@@ -326,4 +332,9 @@ TEST(SecuritySocket, EchoTest)
     server_thread.join();
 
     Bn3Monkey::releaseSecuritySocket();
+}
+
+TEST(SecuritySocket, EchoTest)
+{
+
 }

@@ -169,6 +169,9 @@ namespace Bn3Monkey
             READY
         };
 
+        virtual void onClientConnected(const char* ip, int port) = 0;
+        virtual void onClientDisconnected(const char* ip, int port) = 0;
+
         virtual ProcessState onDataReceived(const void* input_buffer, size_t offset, size_t read_size) = 0;
         virtual bool onProcessed(
             const void* input_buffer, 

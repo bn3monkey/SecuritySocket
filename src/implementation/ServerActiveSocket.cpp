@@ -4,7 +4,7 @@
 #include <stdexcept>
 using namespace Bn3Monkey;
 
-ServerActiveSocket::ServerActiveSocket(int32_t sock)
+ServerActiveSocket::ServerActiveSocket(int32_t sock, struct sockaddr_in* addr)
 {
     _socket = sock;
     _result = createResult(_socket);
@@ -12,6 +12,13 @@ ServerActiveSocket::ServerActiveSocket(int32_t sock)
     {
         return;
     }
+
+	if (sock >= 0) {
+		
+		inet_ntop(AF_INET, &(addr->sin_addr), _client_ip, sizeof(_client_ip));
+		_client_port = ntohs(addr->sin_port);
+		// printf("Connected client ip : %s port : %d\n", _client_ip, _client_port);
+	}
 
     setNonBlockingMode(_socket);
 }

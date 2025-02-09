@@ -4,6 +4,12 @@
 
 #include "ServerActiveSocket.hpp"
 
+#include "PassiveSocket.hpp"
+#include "ServerActiveSocket.hpp"
+#include "SocketEvent.hpp"
+#include "SocketConnection.hpp"
+#include "ObjectPool.hpp"
+
 namespace Bn3Monkey
 {
     class SocketBroadcastServerImpl
@@ -13,12 +19,19 @@ namespace Bn3Monkey
 		virtual ~SocketBroadcastServerImpl();
 
 		SocketResult open(size_t num_of_clients);
+
+        SocketResult enumerate();
         SocketResult write(const void* buffer, size_t size);
         void close();
 
 	private:
-		SocketConfiguration _configuration;
-        size_t _num_of_clients;
+        SocketConfiguration _configuration;
+
+        PassiveSocketContainer _container;
+        PassiveSocket* _socket{ nullptr };
+
+        // Need to be vector with stack pool.
+        std::vector<ServerActiveSocketContainer> _client_containers;
     };
 }
 
