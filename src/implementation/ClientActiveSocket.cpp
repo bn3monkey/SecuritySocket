@@ -28,8 +28,6 @@ Bn3Monkey::ClientActiveSocket::ClientActiveSocket(bool is_unix_domain)
 }
 Bn3Monkey::ClientActiveSocket::~ClientActiveSocket()
 {
-	disconnect();
-	close();
 }
 
 void ClientActiveSocket::close() {
@@ -65,7 +63,6 @@ void Bn3Monkey::ClientActiveSocket::disconnect()
 #else
 	shutdown(_socket, SHUT_RDWR);
 #endif
-	_socket = -1;
 }
 
 SocketResult Bn3Monkey::ClientActiveSocket::isConnected()

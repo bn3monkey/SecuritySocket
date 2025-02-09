@@ -228,8 +228,12 @@ void Bn3Monkey::SocketRequestServerImpl::run(SocketRequestHandler* handler)
 			case SocketEventType::DISCONNECTED:
 				{
 					auto* connection = static_cast<SocketConnection*>(context);
+					auto* sock = connection->socket();
+					handler->onClientDisconnected(sock->ip(), sock->port());
+					sock->close();
+
 					listener.removeEvent(connection);
-					connection->socket()->close();			
+
 				}
 				break;
 			}

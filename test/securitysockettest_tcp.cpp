@@ -227,6 +227,8 @@ static void echoClientRoutine(int idx)
         }
         break;
     }
+
+    client.close();
 }
 
 TEST(SecuritySocket, EchoClient)
@@ -334,7 +336,54 @@ TEST(SecuritySocket, EchoTest)
     Bn3Monkey::releaseSecuritySocket();
 }
 
-TEST(SecuritySocket, BroadcastTest)
+void broadcastServerRoutine()
 {
+    using namespace Bn3Monkey;
 
+    SocketConfiguration config{
+        "127.0.0.1",
+        20000,
+        false,
+        5,
+        1000,
+        1000,
+        8192
+    };
+
+
+    SocketBroadcastServer server{config};
+    // server.op
+
+}
+void broadcastSingleClientRoutine()
+{
+    using namespace Bn3Monkey;
+
+    SocketConfiguration config{
+        "127.0.0.1",
+        20000,
+        false,
+        5,
+        1000,
+        1000,
+        8192
+    };
+
+
+}
+
+TEST(SecuritySocket, OneClientBroadcastTest)
+{
+    return; 
+
+    Bn3Monkey::initializeSecuritySocket();
+
+    std::thread server_thread{ broadcastServerRoutine };
+    std::thread client_thread1{ broadcastSingleClientRoutine };
+
+    client_thread1.join();
+
+    server_thread.join();
+
+    Bn3Monkey::releaseSecuritySocket();
 }
