@@ -65,23 +65,11 @@ namespace Bn3Monkey
         
         inline void finishTask(bool result)
         {
-            {
-                std::unique_lock<std::mutex> lock(_mtx);
-               _task_status = result ? SocketTaskType::SUCCESS : SocketTaskType::FAIL;
-               _cv.notify_one();
-            }
+            _task_status = result ? SocketTaskType::SUCCESS : SocketTaskType::FAIL;
         }
 
-        inline SocketTaskType waitTask() {
-            SocketTaskType ret;
-            {
-                std::unique_lock<std::mutex> lock(_mtx);
-                _cv.wait(lock, [&]() {
-                    return _task_status != SocketTaskType::PROCESSING;
-                    });
-                ret = _task_status;
-            }
-            return ret;
+        inline SocketTaskType taskResult() {
+              return _task_status;
         }
 
         inline void flush() {
@@ -95,8 +83,6 @@ namespace Bn3Monkey
     
     private:
         SocketTaskType _task_status{ SocketTaskType::PROCESSING };
-        std::mutex _mtx;
-        std::condition_variable _cv;
     };
 
     struct SocketEventResult
@@ -117,9 +103,10 @@ namespace Bn3Monkey
 
     private:
         int32_t _server_socket {0};
-        std::unordered_map<int32_t, SocketEventContext*> _contexts;
-
-    #if defined(_WIN32)
+        std::mutex _mtx;
+        std::vector<SocketEventContext*> _contexts;
+    
+#if defined(_WIN32)
         std::vector<pollfd> _handle;
         // void *_handle;
     #elif defined __linux__

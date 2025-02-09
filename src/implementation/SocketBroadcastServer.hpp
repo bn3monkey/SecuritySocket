@@ -31,7 +31,9 @@ namespace Bn3Monkey
         PassiveSocket* _socket{ nullptr };
 
         // Need to be vector with stack pool.
-        std::vector<ServerActiveSocketContainer> _client_containers;
+        std::vector<ServerActiveSocketContainer> _client_containers[2];
+        std::vector<ServerActiveSocketContainer>* _front_client_containers{ &_client_containers[0]};
+        std::vector<ServerActiveSocketContainer>* _back_client_containers{ &_client_containers[1] };
     };
 }
 

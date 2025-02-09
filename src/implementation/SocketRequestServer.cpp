@@ -62,8 +62,8 @@ void Bn3Monkey::SocketRequestServerImpl::close()
 class SocketRequestWorker
 {
 public:
-	SocketRequestWorker(SocketRequestHandler* handler)
-		: _handler(handler)
+	SocketRequestWorker(SocketRequestHandler* handler, SocketMultiEventListener& event_listener)
+		: _handler(handler), _event_listener(event_listener)
 	{
 	}
 	void start()
@@ -87,7 +87,7 @@ public:
 	}
 	SocketTaskType await(SocketConnection* connection)
 	{
-		return connection->waitTask();
+		return connection->taskResult();
 	}
 
 private:
@@ -116,11 +116,13 @@ private:
 				connection->total_output_size);
 
 			connection->finishTask(is_finished);
+			_event_listener.addEvent(connection, SocketEventType::WRITE);
 		}
 	}
 
 	std::thread _routine;
 	SocketRequestHandler* _handler;
+	SocketMultiEventListener& _event_listener;
 
 	std::atomic_bool _is_running;
 	std::queue<SocketConnection*> _queue;
@@ -138,7 +140,7 @@ void Bn3Monkey::SocketRequestServerImpl::run(SocketRequestHandler* handler)
 	server_context.fd = _socket->descriptor();
 	listener.addEvent(&server_context, SocketEventType::ACCEPT);
 
-	SocketRequestWorker worker{ handler };
+	SocketRequestWorker worker{ handler, listener };
 	worker.start();
 
 	while (_is_running)
@@ -188,7 +190,7 @@ void Bn3Monkey::SocketRequestServerImpl::run(SocketRequestHandler* handler)
 
 						if (state == SocketRequestHandler::ProcessState::READY)
 						{
-							listener.modifyEvent(connection, SocketEventType::WRITE);
+							listener.removeEvent(connection);
 							worker.async(connection);
 						}
 					}

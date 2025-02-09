@@ -1,5 +1,6 @@
 #if defined(_WIN32)
 #include "SocketEvent.hpp"
+#include <algorithm>
 using namespace Bn3Monkey;
 
 void SocketEventListener::open(BaseSocket& sock, SocketEventType eventType)
@@ -113,43 +114,61 @@ SocketResult SocketMultiEventListener::addEvent(SocketEventContext* context, Soc
         default:
             break;
     }  
-    _handle.push_back(fd);
-      
-    
-    _contexts[context->fd] = context;
+
+    {
+        std::lock_guard<std::mutex> lock(_mtx);
+        _handle.push_back(fd);
+        _contexts.push_back(context);
+    }
 
     return SocketResult();
 }
 SocketResult SocketMultiEventListener::modifyEvent(SocketEventContext* context, SocketEventType eventType)
 {
+    // @Todo Need to change
     removeEvent(context);
     addEvent(context, eventType);
     return SocketResult();
 }
 SocketResult SocketMultiEventListener::removeEvent(SocketEventContext* context)
 {
-    for (auto iter = _handle.begin(); iter != _handle.end(); iter++)
     {
-        if (iter->fd == context->fd)
+        std::lock_guard<std::mutex> lock(_mtx);
         {
-            _handle.erase(iter);
-            break;
+            auto iter = std::find_if(_handle.begin(), _handle.end(),
+                [&context](pollfd& fds)
+                {
+                    return fds.fd == context->fd;
+                });
+
+            if (iter != _handle.end())
+                _handle.erase(iter);
+        }
+        {
+            auto iter = std::find(_contexts.begin(), _contexts.end(),
+                context
+            );
+            if (iter != _contexts.end())
+                _contexts.erase(iter);
         }
     }
-
-    auto iter = _contexts.find(context->fd);
-    if (iter != _contexts.end())
-        _contexts.erase(iter);
     return SocketResult();
 }
 SocketEventResult SocketMultiEventListener::wait(uint32_t timeout_ms)
 {
     SocketEventResult res;
+    
+    std::vector<SocketEventContext*> contexts;
+    std::vector<pollfd> handle;
 
-    for (auto& handle : _handle) {
-        handle.revents = 0;
+    {
+        std::lock_guard<std::mutex> lock(_mtx);
+        contexts = _contexts;
+        handle = _handle;
     }
-    int ret = WSAPoll(_handle.data(), _handle.size(), timeout_ms);
+
+
+    int ret = WSAPoll(handle.data(), handle.size(), timeout_ms);
     if (ret == 0)
     {
         res.result = SocketResult(SocketCode::SOCKET_TIMEOUT);
@@ -159,18 +178,24 @@ SocketEventResult SocketMultiEventListener::wait(uint32_t timeout_ms)
     }
     else {
         res.contexts.reserve(ret);
-        for (size_t i = 0; i < _handle.size(); i++)
+        for (size_t i = 0; i < handle.size(); i++)
         {
-            auto& event = _handle[i];
+            auto& event = handle[i];
             auto& event_type = event.revents;
             if (event_type == 0)
                 continue;
 
             auto& event_fd = event.fd;
-            
 
+            SocketEventContext* context = nullptr;
+            auto iter = std::find_if(contexts.begin(), contexts.end(), [event_fd](SocketEventContext* context) {
+                return context->fd == event_fd;
+                });
+            if (iter != contexts.end())
+            {
+                context = *iter;
+            }
 
-            SocketEventContext* context = _contexts[event_fd];
 
             if (event_type & POLLERR || event_type & POLLHUP)
             {

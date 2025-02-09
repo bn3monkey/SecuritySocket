@@ -334,7 +334,7 @@ TEST(SecuritySocket, EchoTest)
     Bn3Monkey::releaseSecuritySocket();
 }
 
-TEST(SecuritySocket, EchoTest)
+TEST(SecuritySocket, BroadcastTest)
 {
 
 }

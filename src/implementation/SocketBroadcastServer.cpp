@@ -42,12 +42,14 @@ SocketResult SocketBroadcastServerImpl::open(size_t num_of_clients)
 
 SocketResult Bn3Monkey::SocketBroadcastServerImpl::enumerate()
 {
+	SocketResult result;
+
 	SocketEventListener listener;
 	listener.open(*_socket, SocketEventType::ACCEPT);
 
 	for (int i = 0; i < _configuration.max_retries();)
 	{
-		auto result = listener.wait(_configuration.read_timeout());
+		result = listener.wait(_configuration.read_timeout());
 		if (result.code() == SocketCode::SOCKET_TIMEOUT)
 		{
 			i++;
@@ -57,15 +59,20 @@ SocketResult Bn3Monkey::SocketBroadcastServerImpl::enumerate()
 			break;
 		else {
 			auto client_container = _socket->accept();
-			_client_containers.push_back(client_container);
+			_front_client_containers->push_back(client_container);
 		}
 	}
+
+	return result;
 }
 
 SocketResult SocketBroadcastServerImpl::write(const void* buffer, size_t size)
 {
+	SocketResult result;
+
 	SocketEventListener listener;
-	for (auto& client_container : _client_containers)
+	_back_client_containers->clear();
+	for (auto& client_container : *_front_client_containers)
 	{
 		auto* sock = client_container.get();
 		listener.open(*sock, SocketEventType::WRITE);
@@ -91,16 +98,24 @@ SocketResult SocketBroadcastServerImpl::write(const void* buffer, size_t size)
 			if (result.code() == SocketCode::SOCKET_TIMEOUT)
 			{
 				i++;
-				continue;
 			}
 			else if (result.code() != SocketCode::SUCCESS)
-				break;
-
+			{
+				_back_client_containers->push_back(client_container);
+			}
 			written_size += (size_t)ret;
 			if (written_size == size)
-				break;
+			{
+				_back_client_containers->push_back(client_container);
+			}
 		}
 	}
+
+	auto* temp = _front_client_containers;
+	_front_client_containers = _back_client_containers;
+	_back_client_containers = temp;
+
+	return result;
 }
 
 void SocketBroadcastServerImpl::close()
