@@ -166,8 +166,7 @@ void Bn3Monkey::SocketRequestServerImpl::run(SocketRequestHandler* handler)
 				{
 					auto socket_container = _socket->accept();
 					SocketConnection* connection = _socket_connection_pool.acquire(socket_container);
-					connection->input_buffer.resize(_configuration.pdu_size());
-					connection->output_buffer.resize(_configuration.pdu_size());
+					connection->initialize(_configuration.pdu_size());
 
 					auto* sock = connection->socket();
 					handler->onClientConnected(sock->ip(), sock->port());
@@ -191,6 +190,7 @@ void Bn3Monkey::SocketRequestServerImpl::run(SocketRequestHandler* handler)
 						if (state == SocketRequestHandler::ProcessState::READY)
 						{
 							listener.removeEvent(connection);
+
 							worker.async(connection);
 						}
 					}
@@ -211,6 +211,7 @@ void Bn3Monkey::SocketRequestServerImpl::run(SocketRequestHandler* handler)
 							if (connection->total_output_size == connection->written_size)
 							{
 								connection->flush();
+
 								listener.modifyEvent(connection, SocketEventType::READ);
 							}
 						}
@@ -220,6 +221,7 @@ void Bn3Monkey::SocketRequestServerImpl::run(SocketRequestHandler* handler)
 						auto* sock = connection->socket();
 						handler->onClientConnected(sock->ip(), sock->port());
 						connection->flush();
+
 						listener.modifyEvent(connection, SocketEventType::READ);
 					}
 

@@ -62,7 +62,11 @@ namespace Bn3Monkey
         size_t written_size{ 0 };
 
     public:
-        
+        inline void initialize(size_t pdu_size)
+        {
+            input_buffer.resize(pdu_size);
+            output_buffer.resize(pdu_size);
+        }
         inline void finishTask(bool result)
         {
             _task_status = result ? SocketTaskType::SUCCESS : SocketTaskType::FAIL;
