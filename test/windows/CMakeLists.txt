@@ -8,7 +8,7 @@ message(STATUS "SECURITYSOCKET_BINARY_DIR = ${SECURITYSOCKET_BINARY_DIR}")
 
 add_subdirectory("${SECURITYSOCKET_SOURCE_DIR}" "${SECURITYSOCKET_BINARY_DIR}")
 
-set(HSNULTRASOUND_TEST_DIR "${SECURITYSOCKET_SOURCE_DIR}/test")
+set(SECURITY_SOCKET_TEST_DIR "${SECURITYSOCKET_SOURCE_DIR}/test")
 
 add_executable(
 	SecuritySocketWindowsTest
@@ -18,7 +18,7 @@ add_executable(
 target_include_directories(
 	SecuritySocketWindowsTest
 	PUBLIC
-	${HSNULTRASOUND_TEST_DIR}
+	${SECURITY_SOCKET_TEST_DIR}
 )
 
 target_link_libraries(

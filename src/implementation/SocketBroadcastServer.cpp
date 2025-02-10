@@ -60,6 +60,7 @@ SocketResult Bn3Monkey::SocketBroadcastServerImpl::enumerate()
 		else {
 			auto client_container = _socket->accept();
 			_front_client_containers->push_back(client_container);
+			break;
 		}
 	}
 

@@ -1,9 +1,13 @@
 #include "SocketAddress.hpp"
 #include <cstring>
 
+#ifdef __linux__
+#include <netinet/in.h>
+#endif
+
 bool Bn3Monkey::SocketAddress::checkUnixDomain(const char* ip)
 {
-	static constexpr char* domain_prefix =
+	static constexpr const char* domain_prefix =
 	#if defined(_WIN32)
 		"\\\\.\\pipe\\";
 	#elif defined(__linux__)

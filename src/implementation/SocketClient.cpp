@@ -13,7 +13,7 @@ SocketResult SocketClientImpl::open()
 	SocketResult result;
 	
 	bool is_unix_domain = SocketAddress::checkUnixDomain(_configuration.ip());
-	_container = SocketContainer<ClientActiveSocket, TLSClientActiveSocket>(_configuration.tls()), is_unix_domain;
+	_container = SocketContainer<ClientActiveSocket, TLSClientActiveSocket>(_configuration.tls(), is_unix_domain);
 	_socket = _container.get();
 	result = _socket->valid();
 	if (result.code() != SocketCode::SUCCESS)
@@ -51,7 +51,18 @@ SocketResult SocketClientImpl::connect()
 		}
 		else if (result.code() == SocketCode::SOCKET_CONNECTION_IN_PROGRESS)
 		{
-
+            result = event_listener.wait(_configuration.read_timeout());
+            if (result.code() == SocketCode::SOCKET_TIMEOUT)
+            {
+                continue;
+            }
+            else if (result.code() != SocketCode::SUCCESS)
+            {
+                return result;
+            }
+            else {
+                break;
+            }
 		}
 		else if (result.code() == SocketCode::SOCKET_CONNECTION_NEED_TO_BE_BLOCKED)
 		{

@@ -2,23 +2,20 @@
 #define __BN3MONKEY_SOCKETRESULT__
 
 #include "../SecuritySocket.hpp"
+
+#if defined _WIN32
 #include <windows.h>
 #include <WinSock2.h>
+#endif // _WIN32
+
 #include <openssl/ssl.h>
 
 using namespace Bn3Monkey;
 
-inline SocketResult createResult(int operation_return)
+inline SocketResult createResultFromSocketError(int error)
 {
-	if (operation_return > 0)
-	{
-		return SocketResult(SocketCode::SUCCESS);
-	}
-
 #ifdef _WIN32
-	int error = WSAGetLastError();
-	
-	switch (error)
+    switch (error)
 	{
 		// Socket initialization error
 	case WSAEACCES:
@@ -54,44 +51,60 @@ inline SocketResult createResult(int operation_return)
 		return SocketResult(SocketCode::SOCKET_CONNECTION_NEED_TO_BE_BLOCKED);
 	}
 #else
-	int error = errno;
-	switch (error)
-	{
-		// Socket initialization error
-	case EACCES:
-		return SocketResult(SocketCode::SOCKET_PERMISSION_DENIED);
-	case EAFNOSUPPORT:
-		return SocketResult(SocketCode::SOCKET_ADDRESS_FAMILY_NOT_SUPPORTED);
-	case EINVAL:
-		return SocketResult(SocketCode::SOCKET_INVALID_ARGUMENT);
-	case EMFILE:
-		return SocketResult(SocketCode::SOCKET_CANNOT_CREATED);
-	case ENOBUFS:
-		return SocketResult(SocketCode::SOCKET_CANNOT_ALLOC);
-	case ETIMEDOUT:
-		return SocketResult(SocketCode::SOCKET_CONNECTION_NOT_RESPOND);
-	case EADDRINUSE:
-		return SocketResult(SocketCode::SOCKET_CONNECTION_ADDRESS_IN_USE);
-	case EBADF:
-		return SocketResult(SocketCode::SOCKET_CONNECTION_BAD_DESCRIPTOR);
-	case ECONNREFUSED:
-		return SocketResult(SocketCode::SOCKET_CONNECTION_REFUSED);
-	case EFAULT:
-		return SocketResult(SocketCode::SOCKET_CONNECTION_BAD_ADDRESS);
-	case ENETUNREACH:
-		return SocketResult(SocketCode::SOCKET_CONNECTION_UNREACHED);
-	case EINTR:
-		return SocketResult(SocketCode::SOCKET_CONNECTION_INTERRUPTED);
-	case EALREADY:
-		return SocketResult(SocketCode::SOCKET_CONNECTION_ALREADY);
-	case EINPROGRESS:
-		return SocketResult(SocketCode::SOCKET_CONNECTION_IN_PROGRESS);
-	case EWOULDBLOCK:
-		return SocketResult(SocketCode::SOCKET_CONNECTION_NEED_TO_BE_BLOCKED);
-	}
+    switch (error)
+    {
+        // Socket initialization error
+        case EACCES:
+            return SocketResult(SocketCode::SOCKET_PERMISSION_DENIED);
+        case EAFNOSUPPORT:
+            return SocketResult(SocketCode::SOCKET_ADDRESS_FAMILY_NOT_SUPPORTED);
+        case EINVAL:
+            return SocketResult(SocketCode::SOCKET_INVALID_ARGUMENT);
+        case EMFILE:
+            return SocketResult(SocketCode::SOCKET_CANNOT_CREATED);
+        case ENOBUFS:
+            return SocketResult(SocketCode::SOCKET_CANNOT_ALLOC);
+        case ETIMEDOUT:
+            return SocketResult(SocketCode::SOCKET_CONNECTION_NOT_RESPOND);
+        case EADDRINUSE:
+            return SocketResult(SocketCode::SOCKET_CONNECTION_ADDRESS_IN_USE);
+        case EBADF:
+            return SocketResult(SocketCode::SOCKET_CONNECTION_BAD_DESCRIPTOR);
+        case ECONNREFUSED:
+            return SocketResult(SocketCode::SOCKET_CONNECTION_REFUSED);
+        case EFAULT:
+            return SocketResult(SocketCode::SOCKET_CONNECTION_BAD_ADDRESS);
+        case ENETUNREACH:
+            return SocketResult(SocketCode::SOCKET_CONNECTION_UNREACHED);
+        case EINTR:
+            return SocketResult(SocketCode::SOCKET_CONNECTION_INTERRUPTED);
+        case EALREADY:
+            return SocketResult(SocketCode::SOCKET_ALREADY_CONNECTED);
+        case EINPROGRESS:
+            return SocketResult(SocketCode::SOCKET_CONNECTION_IN_PROGRESS);
+        case EWOULDBLOCK:
+            return SocketResult(SocketCode::SOCKET_CONNECTION_NEED_TO_BE_BLOCKED);
+    }
 #endif
-	return SocketResult(SocketCode::UNKNOWN_ERROR);
+    return SocketResult(SocketCode::UNKNOWN_ERROR);
 }
+
+inline SocketResult createResult(int operation_return)
+{
+	if (operation_return > 0)
+	{
+		return SocketResult(SocketCode::SUCCESS);
+	}
+#ifdef _WIN32
+	int error = WSAGetLastError();
+#else
+	int error = errno;
+#endif
+
+	return createResultFromSocketError(error);
+}
+
+
 
 inline SocketResult createTLSResult(SSL* ssl, int operation_return)
 {

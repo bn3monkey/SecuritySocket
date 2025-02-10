@@ -44,7 +44,7 @@ SocketResult ClientActiveSocket::connect(const SocketAddress& address)
 	SocketResult result;
 	{
 		int32_t res = ::connect(_socket, address.address(), address.size());
-		if (res == SOCKET_ERROR)
+		if (res < 0)
 		{
 			// ERROR
 			result = createResult(res);

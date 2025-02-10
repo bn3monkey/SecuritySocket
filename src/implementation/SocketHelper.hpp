@@ -17,7 +17,7 @@ inline void setNonBlockingMode(int32_t socket)
 	unsigned long mode{ 1 };
 	ioctlsocket(socket, FIONBIO, &mode);
 #else
-	_flags = fcntl(socket, F_GETFL, 0);
+	int _flags = fcntl(socket, F_GETFL, 0);
 	fcntl(socket, F_SETFL, _flags | O_NONBLOCK);
 #endif
 }

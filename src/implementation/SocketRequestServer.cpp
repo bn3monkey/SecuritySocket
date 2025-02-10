@@ -50,7 +50,7 @@ Bn3Monkey::SocketResult Bn3Monkey::SocketRequestServerImpl::open(SocketRequestHa
 
 void Bn3Monkey::SocketRequestServerImpl::close()
 {
-	if (!_is_running)
+	if (_is_running)
 	{
 		_is_running = false;
 		_routine.join();
@@ -68,12 +68,19 @@ public:
 	}
 	void start()
 	{
-		_is_running = true;
+		{
+			std::unique_lock<std::mutex> lock(_mtx);
+			_is_running = true;
+		}
 		_routine = std::thread(&SocketRequestWorker::run, this);
 	}
 	void stop()
 	{
-		_is_running = false;
+		{
+			std::unique_lock<std::mutex> lock(_mtx);
+			_is_running = false;
+			_cv.notify_all();
+		}
 		_routine.join();
 	}
 
@@ -238,6 +245,9 @@ void Bn3Monkey::SocketRequestServerImpl::run(SocketRequestHandler* handler)
 
 				}
 				break;
+
+                default:
+                    break;
 			}
 		}
 

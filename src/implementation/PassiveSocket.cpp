@@ -58,10 +58,12 @@ SocketResult PassiveSocket::bind(const SocketAddress& address)
 {
     SocketResult res;
 
+
+    int opt = 1;
+    setsockopt(_socket, SOL_SOCKET, SO_REUSEADDR, (const char*)&opt, sizeof(opt));
     int ret = ::bind(_socket, address.address(), address.size());
-    if (ret == SOCKET_ERROR)
-    {
-        res = SocketResult(SocketCode::SOCKET_BIND_FAILED);
+    if (ret < 0) {
+        res = createResult(ret);
     }
     return res;
 }
@@ -70,9 +72,9 @@ SocketResult PassiveSocket::listen()
     SocketResult res;
 
     auto ret = ::listen(_socket, SOMAXCONN);
-    if (ret == SOCKET_ERROR)
+    if (ret < 0)
     {
-        res = SocketResult(SocketCode::SOCKET_LISTEN_FAILED);
+        res = createResult(ret);
     }
     return res;
 }

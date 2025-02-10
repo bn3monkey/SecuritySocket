@@ -2,6 +2,11 @@
 #include "SocketResult.hpp"
 #include "SocketHelper.hpp"
 #include <stdexcept>
+
+#if defined __linux__
+#include <arpa/inet.h> // inet_ntop
+#endif // __linux__
+
 using namespace Bn3Monkey;
 
 ServerActiveSocket::ServerActiveSocket(int32_t sock, struct sockaddr_in* addr)
@@ -58,7 +63,7 @@ TLSServerActiveSocket::TLSServerActiveSocket(SSL_CTX* ctx, int32_t sock)
 }
 TLSServerActiveSocket::TLSServerActiveSocket::~TLSServerActiveSocket()
 {
-	throw std::runtime_error("Not Implemented");
+	printf("Not Implemeneted\n");
 }
 
 void TLSServerActiveSocket::close()
