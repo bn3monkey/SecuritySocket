@@ -5,7 +5,7 @@
 #ifdef SECURITYSOCKET_EXPORTS
 #define SECURITYSOCKET_API __declspec(dllexport)
 #else
-#define SECURITYSOCKET_API __declspec(dllimport)
+#define SECURITYSOCKET_API /*__declspec(dllimport)*/
 #endif
 #elif defined(__linux__) || defined(__unix__) || defined(__ANDROID__) // Linux / Android
 #ifdef SECURITYSOCKET_EXPORTS
