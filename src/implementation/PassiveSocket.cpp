@@ -5,6 +5,20 @@
 
 #include <stdexcept>
 
+#ifdef _WIN32
+#include <Winsock2.h>
+#include <WS2tcpip.h>
+#include <mswsock.h>
+#else
+#include <netdb.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <poll.h>
+#include <netinet/in.h>
+#endif
+
 using namespace Bn3Monkey;
 
 #if defined(_WIN32)

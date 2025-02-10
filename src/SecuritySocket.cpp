@@ -3,9 +3,7 @@
 #include "implementation/SocketRequestServer.hpp"
 #include "implementation/SocketClient.hpp"
 #include "implementation/SocketResult.hpp"
-
-#include <openssl/ssl.h>
-#include <openssl/err.h>
+#include "implementation/TLSHelper.hpp"
 
 #if defined _WIN32
 #pragma comment(lib, "Ws2_32.lib")
@@ -17,9 +15,7 @@ using namespace Bn3Monkey;
 
 bool Bn3Monkey::initializeSecuritySocket()
 {
-	SSL_library_init();
-	OpenSSL_add_all_algorithms();
-	SSL_load_error_strings();
+	initializeTLS();
 	
 #ifdef _WIN32
 	WSADATA data;

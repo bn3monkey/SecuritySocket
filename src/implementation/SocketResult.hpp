@@ -8,7 +8,7 @@
 #include <WinSock2.h>
 #endif // _WIN32
 
-#include <openssl/ssl.h>
+#include "TLSHelper.hpp"
 
 using namespace Bn3Monkey;
 
@@ -103,7 +103,6 @@ inline SocketResult createResult(int operation_return)
 
 	return createResultFromSocketError(error);
 }
-
 
 
 inline SocketResult createTLSResult(SSL* ssl, int operation_return)

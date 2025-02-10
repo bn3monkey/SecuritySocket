@@ -3,8 +3,18 @@
 #include "SocketResult.hpp"
 #include "SocketHelper.hpp"
 
-#ifndef _WIN32
+#ifdef _WIN32
+#include <Winsock2.h>
+#include <WS2tcpip.h>
 #include <ctime>
+#else
+#include <netdb.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <poll.h>
+#include <netinet/in.h>
 #endif
 
 using namespace Bn3Monkey;
