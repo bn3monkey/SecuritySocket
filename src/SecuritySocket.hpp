@@ -19,7 +19,7 @@
 #endif
 
 
-#include <string>
+#include <cstring>
 #include <cstdint>
 #include <cstdio>
 #include <memory>

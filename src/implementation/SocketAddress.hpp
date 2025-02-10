@@ -6,7 +6,6 @@
 #if defined(_WIN32)
 #include <Winsock2.h>
 #include <WS2tcpip.h>
-#include <afunix.h>
 #else
 #include <netdb.h>
 #include <sys/un.h>
@@ -15,6 +14,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 #endif
+
 
 namespace Bn3Monkey
 {

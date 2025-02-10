@@ -50,11 +50,17 @@ else()
 endif()
 
 target_compile_definitions(securitysocket PRIVATE SECURITYSOCKET_EXPORTS)
+if (MINGW)
+    target_compile_definitions(securitysocket PRIVATE -D_WIN32_WINNT=0x600)
+endif()
+
 target_include_directories(
     securitysocket PRIVATE "${openssl_include_dir}"
 )
 add_dependencies(securitysocket ssl crypto)
 target_link_libraries(securitysocket ssl crypto)
+
+
 
 # PROPERTIES 
 

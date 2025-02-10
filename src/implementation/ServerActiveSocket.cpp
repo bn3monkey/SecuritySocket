@@ -5,6 +5,8 @@
 
 #if defined __linux__
 #include <arpa/inet.h> // inet_ntop
+#elif defined _WIN32
+#include <ws2tcpip.h>
 #endif // __linux__
 
 using namespace Bn3Monkey;

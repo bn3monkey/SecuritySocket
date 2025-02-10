@@ -5,6 +5,23 @@
 #include <netinet/in.h>
 #endif
 
+#ifdef _WIN32
+	#if defined(__MINGW32__) || defined(__MINGW64__)
+	#define UNIX_PATH_MAX 108
+	typedef struct sockaddr_un
+	{
+		ADDRESS_FAMILY sun_family;     /* AF_UNIX */
+		char sun_path[UNIX_PATH_MAX];  /* pathname */
+	} SOCKADDR_UN, *PSOCKADDR_UN;
+
+	#define SIO_AF_UNIX_GETPEERPID _WSAIOR(IOC_VENDOR, 256) // Returns ULONG PID of the connected peer process
+	
+	#else
+#include <afunix.h>
+	#endif
+#endif
+
+
 bool Bn3Monkey::SocketAddress::checkUnixDomain(const char* ip)
 {
 	static constexpr const char* domain_prefix =
