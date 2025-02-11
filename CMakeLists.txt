@@ -64,11 +64,15 @@ target_include_directories(
     securitysocket PRIVATE "${openssl_include_dir}"
 )
 
+
 if (USING_TLS)
     add_dependencies(securitysocket ssl crypto)
     target_link_libraries(securitysocket ssl crypto) 
 endif()
 
+if (WIN32)
+    target_link_libraries(securitysocket ws2_32)
+endif()
 
 # PROPERTIES 
 

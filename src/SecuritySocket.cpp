@@ -6,7 +6,6 @@
 #include "implementation/TLSHelper.hpp"
 
 #if defined _WIN32
-#pragma comment(lib, "Ws2_32.lib")
 #include <Winsock2.h>
 #include <WS2tcpip.h>
 #endif // _WIN32
