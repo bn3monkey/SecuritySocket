@@ -19,8 +19,9 @@
 
 using namespace Bn3Monkey;
 
-ServerActiveSocket::ServerActiveSocket(int32_t sock, struct sockaddr_in* addr)
+ServerActiveSocket::ServerActiveSocket(int32_t sock, void* addr, void* ssl_context)
 {
+    struct sockaddr_in* address = (struct sockaddr_in*)addr;
     _socket = sock;
     _result = createResult(_socket);
     if (_result.code() != SocketCode::SUCCESS)
@@ -30,8 +31,8 @@ ServerActiveSocket::ServerActiveSocket(int32_t sock, struct sockaddr_in* addr)
 
 	if (sock >= 0) {
 		
-		inet_ntop(AF_INET, &(addr->sin_addr), _client_ip, sizeof(_client_ip));
-		_client_port = ntohs(addr->sin_port);
+		inet_ntop(AF_INET, &(address->sin_addr), _client_ip, sizeof(_client_ip));
+		_client_port = ntohs(address->sin_port);
 		// printf("Connected client ip : %s port : %d\n", _client_ip, _client_port);
 	}
 
@@ -67,7 +68,7 @@ int ServerActiveSocket::write(const void* buffer, size_t size)
 	return ret;
 }
 
-TLSServerActiveSocket::TLSServerActiveSocket(SSL_CTX* ctx, int32_t sock)
+TLSServerActiveSocket::TLSServerActiveSocket(int32_t sock, void* addr, void* ssl_context)
 {
 	throw std::runtime_error("Not Implemented");
 }

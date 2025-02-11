@@ -59,8 +59,8 @@ namespace Bn3Monkey
     private:
         bool _is_initialized{ false };
         static constexpr size_t size = sizeof(PlainSocket) > sizeof(TLSSocket) ? sizeof(PlainSocket) : sizeof(TLSSocket);
-        static_assert(sizeof(PlainSocket) <= 64);
-        static_assert(sizeof(TLSSocket) <= 64);
+        static_assert(sizeof(PlainSocket) <= 64, "");
+        static_assert(sizeof(TLSSocket) <= 64, "");
         char buffer[size]{ 0 };
     };
 }

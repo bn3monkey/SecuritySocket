@@ -16,7 +16,7 @@ namespace Bn3Monkey
     {
     public:
         ServerActiveSocket() {}
-        ServerActiveSocket(int32_t sock, struct sockaddr_in* addr);
+        ServerActiveSocket(int32_t sock, void* addr, void* ssl_context = nullptr);
         virtual ~ServerActiveSocket();
 
         inline SocketResult result() { return _result; }
@@ -28,7 +28,7 @@ namespace Bn3Monkey
         inline int port() const { return _client_port; }
     
     protected:
-        char _client_ip[INET_ADDRSTRLEN]{ 0 };
+        char _client_ip[22]{ 0 };
         int _client_port = 0;
     };
 
@@ -36,8 +36,7 @@ namespace Bn3Monkey
     {
     public:
         TLSServerActiveSocket() {}
-        TLSServerActiveSocket(int32_t socket, struct sockaddr_in* addr) {}
-        TLSServerActiveSocket(SSL_CTX* ctx, int32_t sock);
+        TLSServerActiveSocket(int32_t sock, void* addr, void* ssl_context);
         virtual ~TLSServerActiveSocket();
         
         virtual void close();

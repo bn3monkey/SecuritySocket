@@ -101,7 +101,7 @@ ServerActiveSocketContainer PassiveSocket::accept()
     socklen_t client_len = sizeof(client_addr);
 
     int sock = ::accept(_socket, (struct sockaddr*)&client_addr, &client_len);
-    ServerActiveSocketContainer container{false, sock, &client_addr};
+    ServerActiveSocketContainer container{false, sock, (void*)&client_addr, nullptr};
     return container;   
 }
 
