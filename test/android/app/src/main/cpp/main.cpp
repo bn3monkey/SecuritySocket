@@ -20,30 +20,25 @@ class StandardIORedirector
 {
 public:
     explicit StandardIORedirector() {
-        // LOG_D("Redirector start");
+        setvbuf(stdout, nullptr, _IOLBF , 0);
+        setvbuf(stderr, nullptr, _IOLBF , 0);
+
         pipe(_stdout_pipe);
         dup2(_stdout_pipe[1], STDOUT_FILENO);
         close(_stdout_pipe[1]);
-
-        // LOG_D("Standard output : %d %d", _stdout_pipe[0], _stdout_pipe[1]);
 
         pipe(_stderr_pipe);
         dup2(_stderr_pipe[1], STDERR_FILENO);
         close(_stderr_pipe[1]);
 
-        // LOG_D("Set Sync with Stdio");
         std::ios::sync_with_stdio(true);
 
-        // LOG_D("Standard error : %d %d", _stderr_pipe[0], _stderr_pipe[1]);
-
-        // LOG_D("Start Thread");
         _is_running = true;
         _log_runner = std::thread {[=]() {
             logRunner(_stdout_pipe[0], _stderr_pipe[0], _is_running);
         }};
     }
     virtual ~StandardIORedirector() {
-        // LOG_D("Redirector stop");
         _is_running = false;
         _log_runner.join();
 
