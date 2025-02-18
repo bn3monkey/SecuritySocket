@@ -21,6 +21,8 @@ namespace Bn3Monkey
 		virtual void close();
 
 		virtual SocketResult connect(const SocketAddress& address);
+		virtual SocketResult reconnect();
+
 		virtual void disconnect(); 
 		virtual SocketResult isConnected();
 		virtual SocketResult read(void* buffer, size_t size);
@@ -41,6 +43,7 @@ namespace Bn3Monkey
 		virtual void close() override;
 
 		SocketResult connect(const SocketAddress& address) override;
+		virtual SocketResult reconnect() override;
 		void disconnect() override;
 		SocketResult isConnected() override;
 		SocketResult read(void* buffer, size_t size) override;

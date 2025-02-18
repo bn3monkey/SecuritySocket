@@ -64,7 +64,10 @@ SocketResult ClientActiveSocket::connect(const SocketAddress& address)
 	return result;
 }
 
-
+SocketResult ClientActiveSocket::reconnect()
+{
+	return SocketResult(SocketCode::SUCCESS);
+}
 
 void Bn3Monkey::ClientActiveSocket::disconnect()
 {
@@ -138,15 +141,23 @@ void Bn3Monkey::TLSClientActiveSocket::close()
 	}
 	close();
 }
-
-SocketResult Bn3Monkey::TLSClientActiveSocket::connect(const SocketAddress& address)
+SocketResult TLSClientActiveSocket::connect(const SocketAddress& address)
 {
-	SocketResult ret = ClientActiveSocket::connect(address);
-	if (ret.code() != SocketCode::SUCCESS)
+	SocketResult result;
 	{
-		return ret;
-	}
+		int32_t res = ::connect(_socket, address.address(), address.size());
+		if (res < 0)
+		{
+			// ERROR
+			result = createResult(res);
+		}
 
+	}
+	return result;
+}
+SocketResult Bn3Monkey::TLSClientActiveSocket::reconnect()
+{	
+	SocketResult result;
 	if (SSL_set_fd(_ssl, _socket) == 0)
 	{
 		return SocketResult(SocketCode::TLS_SETFD_ERROR);
@@ -154,11 +165,11 @@ SocketResult Bn3Monkey::TLSClientActiveSocket::connect(const SocketAddress& addr
 	auto res = SSL_connect(_ssl);
 	if (res != 1)
 	{
-		ret = createTLSResult(_ssl, res);
-		if (ret.code() != SocketCode::SUCCESS)
-			return ret;
+		result = createTLSResult(_ssl, res);
+		if (result.code() != SocketCode::SUCCESS)
+			return result;
 	}
-	return ret;
+	return result;
 }
 
 void Bn3Monkey::TLSClientActiveSocket::disconnect()

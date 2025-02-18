@@ -76,6 +76,7 @@ SocketResult SocketClientImpl::connect()
 				return result;
 			}
 			else {
+				result = _socket->reconnect();
 				break;
 			}
 		}
