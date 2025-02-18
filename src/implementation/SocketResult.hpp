@@ -117,6 +117,9 @@ inline SocketResult createTLSResult(SSL* ssl, int operation_return)
 	{
 	case SSL_ERROR_SSL:
 		return SocketResult(SocketCode::SSL_PROTOCOL_ERROR, operation_return);
+        case SSL_ERROR_WANT_READ:
+    case SSL_ERROR_WANT_WRITE:
+        return SocketResult(SocketCode::SOCKET_CONNECTION_NEED_TO_BE_BLOCKED, operation_return);
 	case SSL_ERROR_SYSCALL:
 		// System Error / TCP Error
 		return createResult(operation_return);
