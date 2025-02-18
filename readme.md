@@ -282,3 +282,4 @@ C++ 14
 ### 2.1.0 / 2025.02.18
 
 - Fix socket result to contain read/write bytes
+- Fix read function to only call once

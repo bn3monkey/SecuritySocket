@@ -107,9 +107,6 @@ namespace Bn3Monkey
             const SocketCode& code = SocketCode::SUCCESS,
             int32_t bytes = -1) : _code(code), _bytes(bytes) {
             }
-        SocketResult(const SocketResult& result) : _code(result._code) {
-        }
-
     private:
         SocketCode _code;
         int32_t _bytes;
