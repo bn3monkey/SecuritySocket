@@ -23,12 +23,13 @@ message("-- OpenSSL CMake Initialization --")
 include(FetchContent)
 
 if (SECURITYSOCKET_USING_TLS)
+    set(TEMP_BUILD_SHARED_LIBS ${BUILD_SHARED_LIBS})
     set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build OpenSSL Static Libraries" FORCE)
     FetchContent_Declare(OpenSSL
         GIT_REPOSITORY https://github.com/janbar/openssl-cmake
         GIT_TAG 1.1.1w-20231130)
     FetchContent_MakeAvailable(OpenSSL)
-    set(BUILD_SHARED_LIBS ON CACHE BOOL "Build OpenSSL Static Libraries" FORCE)
+    set(BUILD_SHARED_LIBS ${TEMP_BUILD_SHARED_LIBS} ON CACHE BOOL "Build OpenSSL Static Libraries" FORCE)
 
     message("OpenSSL BINARY DIR is ${openssl_BINARY_DIR}")
     set(openssl_include_dir "${openssl_BINARY_DIR}/include")
@@ -92,7 +93,7 @@ install(TARGETS securitysocket
 )
 
 if (BUILD_SECURITYSOCKET_TEST)
-
+    set(TEMP_BUILD_SHARED_LIBS ${BUILD_SHARED_LIBS})
     set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build Google Test Static Libraries" FORCE)
     FetchContent_Declare(
         googletest
@@ -100,7 +101,7 @@ if (BUILD_SECURITYSOCKET_TEST)
         GIT_TAG release-1.12.1
     )
     FetchContent_MakeAvailable(googletest)
-    set(BUILD_SHARED_LIBS ON CACHE BOOL "Restore Google Test Static Libraries" FORCE)
+    set(BUILD_SHARED_LIBS ${TEMP_BUILD_SHARED_LIBS} CACHE BOOL "Restore Google Test Static Libraries" FORCE)
 
     set(SECURITYSOCKET_TEST_DIR "${PROJECT_SOURCE_DIR}/test")
     message(STATUS "SECURITYSOCKET_TEST_DIR = ${SECURITYSOCKET_TEST_DIR}")
