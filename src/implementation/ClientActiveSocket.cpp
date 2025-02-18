@@ -128,8 +128,6 @@ Bn3Monkey::TLSClientActiveSocket::TLSClientActiveSocket(bool is_unix_domain) : C
 
 Bn3Monkey::TLSClientActiveSocket::~TLSClientActiveSocket()
 {
-	disconnect();
-	close();
 }
 
 void Bn3Monkey::TLSClientActiveSocket::close()
