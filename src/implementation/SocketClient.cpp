@@ -86,8 +86,8 @@ SocketResult SocketClientImpl::connect()
 }
 SocketResult SocketClientImpl::read(void* buffer, size_t size)
 {
-	int read_size {0};
 	SocketResult result;
+	int32_t read_size{ -1 };
 
 	SocketEventListener event_listener;
 	event_listener.open(*_socket, SocketEventType::READ);
@@ -102,27 +102,24 @@ SocketResult SocketClientImpl::read(void* buffer, size_t size)
 		else if (result.code() != SocketCode::SUCCESS)
 			break;
 
-		int ret = _socket->read((char *)buffer + read_size, size - read_size);
-		if (ret == 0)
+		read_size = _socket->read((char *)buffer, size);
+		if (read_size == 0)
 		{
 			result = SocketResult(SocketCode::SOCKET_CLOSED);
 			break;
 		}
 
-		result = createResult(ret);
+		result = createResult(read_size);
 		if (result.code() == SocketCode::SOCKET_TIMEOUT)
 		{
 			continue;
 		}
-		else if (result.code() != SocketCode::SUCCESS)
-			break;
-
-
-		read_size += ret;
-		if (read_size == size) {
+		else {
 			break;
 		}
 	}
+
+	result = SocketResult(result.code(), read_size);			
 
 	// Check if connection is available when timeout occurs max_trial_time
 	if (result.code() == SocketCode::SOCKET_TIMEOUT)
@@ -165,6 +162,8 @@ SocketResult SocketClientImpl::write(const void* buffer, size_t size)
 		if (written_size == size)
 			break;
 	}
+
+	result = SocketResult(result.code(), written_size);
 
 	if (result.code() == SocketCode::SOCKET_TIMEOUT)
 	{

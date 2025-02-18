@@ -26,7 +26,7 @@
 #define WIN32_LEAN_AND_MEAN
 
 #define BN3MONKEY_SECURITYSOCKET_VERSION_MAJOR 2
-#define BN3MONKEY_SECURITYSOCKET_VERSION_MINOR 0
+#define BN3MONKEY_SECURITYSOCKET_VERSION_MINOR 1
 #define BN3MONKEY_SECURITYSOCKET_VERSION_REVISION 0
 
 #define STRINGIFY(x) #x
@@ -100,16 +100,19 @@ namespace Bn3Monkey
     struct SECURITYSOCKET_API SocketResult
     {
         inline SocketCode code() { return _code; }
+        inline int32_t bytes() { return _bytes; }
         const char* message();
                 
         SocketResult(
-            const SocketCode& code = SocketCode::SUCCESS) : _code(code) {
+            const SocketCode& code = SocketCode::SUCCESS,
+            int32_t bytes = -1) : _code(code), _bytes(bytes) {
             }
         SocketResult(const SocketResult& result) : _code(result._code) {
         }
 
     private:
         SocketCode _code;
+        int32_t _bytes;
     };
 
 

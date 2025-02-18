@@ -23,6 +23,7 @@
                 <map>
                   <entry key="Duration" value="90" />
                   <entry key="Tests" value="360" />
+                  <entry key="samsung SM-T733" value="120" />
                   <entry key="samsung SM-X710" value="120" />
                 </map>
               </option>

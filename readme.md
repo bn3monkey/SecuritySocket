@@ -16,6 +16,7 @@ It is compatible for Windows(MSVC, MinGW Compiler), Android (Clang), Linux (gcc)
   - [Revision History](#revision-history)
     - [1.0.0 / 2024.6.16](#100--2024616)
     - [2.0.0 / 2025.02.17](#200--20250217)
+    - [2.1.0 / 2025.02.18](#210--20250218)
 
 ## Build
 
@@ -277,3 +278,7 @@ C++ 14
 - Change existing interfaces
 - Add request server (it supports only TLS functiionality. not TLS)
 - Add notification server (it supports only TLS functiionality. not TLS)
+
+### 2.1.0 / 2025.02.18
+
+- Fix socket result to contain read/write bytes
