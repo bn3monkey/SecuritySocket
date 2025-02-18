@@ -51,13 +51,13 @@ void ServerActiveSocket::close()
 #endif
     _socket = -1;
 }
-int ServerActiveSocket::read(void* buffer, size_t size)
+SocketResult ServerActiveSocket::read(void* buffer, size_t size)
 {
 	int32_t ret{ 0 };
 	ret = ::recv(_socket, static_cast<char*>(buffer), size, 0);
-	return ret;
+	return createResult(ret);
 }
-int ServerActiveSocket::write(const void* buffer, size_t size)
+SocketResult ServerActiveSocket::write(const void* buffer, size_t size)
 {
 	int32_t ret{0};
 #ifdef __linux__
@@ -65,7 +65,7 @@ int ServerActiveSocket::write(const void* buffer, size_t size)
 #else
 	ret = send(_socket, static_cast<const char*>(buffer), size, 0);
 #endif
-	return ret;
+return createResult(ret);
 }
 
 TLSServerActiveSocket::TLSServerActiveSocket(int32_t sock, void* addr, void* ssl_context)
@@ -81,11 +81,11 @@ void TLSServerActiveSocket::close()
 {
 	throw std::runtime_error("Not Implemented");
 }
-int TLSServerActiveSocket::read(void* buffer, size_t size)
+SocketResult TLSServerActiveSocket::read(void* buffer, size_t size)
 {
 	throw std::runtime_error("Not Implemented");
 }
-int TLSServerActiveSocket::write(const void* buffer, size_t size)
+SocketResult TLSServerActiveSocket::write(const void* buffer, size_t size)
 {
 	throw std::runtime_error("Not Implemented");
 }

@@ -184,15 +184,15 @@ void Bn3Monkey::SocketRequestServerImpl::run(SocketRequestHandler* handler)
 				{
 					auto* connection = static_cast<SocketConnection*>(context);
 					auto* sock = connection->socket();
-					int32_t read_size = sock->read(connection->input_buffer.data() + connection->total_input_size, connection->input_buffer.size());
-					if (read_size > 0)
+					auto result = sock->read(connection->input_buffer.data() + connection->total_input_size, connection->input_buffer.size());
+					if (result.bytes() > 0)
 					{
 						auto state = handler->onDataReceived(
 							connection->input_buffer.data(), 
 							connection->total_input_size,
-							read_size
+							result.bytes()
 							);
-						connection->total_input_size += read_size;
+						connection->total_input_size += result.bytes();
 
 						if (state == SocketRequestHandler::ProcessState::READY)
 						{
@@ -211,10 +211,10 @@ void Bn3Monkey::SocketRequestServerImpl::run(SocketRequestHandler* handler)
 					if (state == SocketTaskType::SUCCESS)
 					{
 						auto sock = connection->socket();
-						int32_t send_size = sock->write(connection->output_buffer.data() + connection->written_size, connection->total_output_size);
-						if (send_size > 0)
+						auto result = sock->write(connection->output_buffer.data() + connection->written_size, connection->total_output_size);
+						if (result.bytes() > 0)
 						{
-							connection->written_size += send_size;
+							connection->written_size += result.bytes();
 							if (connection->total_output_size == connection->written_size)
 							{
 								connection->flush();

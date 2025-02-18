@@ -23,8 +23,8 @@ namespace Bn3Monkey
 		virtual SocketResult connect(const SocketAddress& address);
 		virtual void disconnect(); 
 		virtual SocketResult isConnected();
-		virtual int read(void* buffer, size_t size);
-		virtual int write(const void* buffer, size_t size);
+		virtual SocketResult read(void* buffer, size_t size);
+		virtual SocketResult write(const void* buffer, size_t size);
 
 	protected:
 		uint32_t _read_timeout {0};
@@ -43,8 +43,8 @@ namespace Bn3Monkey
 		SocketResult connect(const SocketAddress& address) override;
 		void disconnect() override;
 		SocketResult isConnected() override;
-		int read(void* buffer, size_t size) override;
-		int write(const void* buffer, size_t size) override;
+		SocketResult read(void* buffer, size_t size) override;
+		SocketResult write(const void* buffer, size_t size) override;
 
 	private:
 		SSL_CTX* _context{ nullptr };

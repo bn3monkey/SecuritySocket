@@ -21,8 +21,8 @@ namespace Bn3Monkey
 
         inline SocketResult result() { return _result; }
         virtual void close();
-		virtual int read(void* buffer, size_t size);
-        virtual int write(const void* buffer, size_t size);
+		virtual SocketResult read(void* buffer, size_t size);
+        virtual SocketResult write(const void* buffer, size_t size);
 
         inline const char* ip() const { return _client_ip; }
         inline int port() const { return _client_port; }
@@ -40,8 +40,8 @@ namespace Bn3Monkey
         virtual ~TLSServerActiveSocket();
         
         virtual void close();
-		virtual int read(void* buffer, size_t size);
-        virtual int write(const void* buffer, size_t size);
+		virtual SocketResult read(void* buffer, size_t size);
+        virtual SocketResult write(const void* buffer, size_t size);
     private:
         SSL* ssl {nullptr};
     };

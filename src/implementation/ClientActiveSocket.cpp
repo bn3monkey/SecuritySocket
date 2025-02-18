@@ -85,7 +85,7 @@ SocketResult Bn3Monkey::ClientActiveSocket::isConnected()
 	return SocketResult(SocketCode::SOCKET_CLOSED);
 }
 
-int Bn3Monkey::ClientActiveSocket::write(const void* buffer, size_t size)
+SocketResult Bn3Monkey::ClientActiveSocket::write(const void* buffer, size_t size)
 {
 	int32_t ret{0};
 #ifdef __linux__
@@ -93,14 +93,15 @@ int Bn3Monkey::ClientActiveSocket::write(const void* buffer, size_t size)
 #else
 	ret = send(_socket, static_cast<const char*>(buffer), size, 0);
 #endif
-	return ret;
+	
+	return createResult(ret);
 }
 
-int Bn3Monkey::ClientActiveSocket::read(void* buffer, size_t size)
+SocketResult Bn3Monkey::ClientActiveSocket::read(void* buffer, size_t size)
 {
 	int32_t ret{ 0 };
 	ret = ::recv(_socket, static_cast<char*>(buffer), size, 0);
-	return ret;
+	return createResult(ret);
 }
 
 
@@ -172,16 +173,16 @@ SocketResult Bn3Monkey::TLSClientActiveSocket::isConnected()
 {
 	return ClientActiveSocket::isConnected();
 }
-int Bn3Monkey::TLSClientActiveSocket::write(const void* buffer, size_t size)
+SocketResult Bn3Monkey::TLSClientActiveSocket::write(const void* buffer, size_t size)
 {
 	int32_t ret = SSL_write(_ssl, buffer, size);
-	return ret;
+	return createTLSResult(_ssl, ret);
 }
 
-int Bn3Monkey::TLSClientActiveSocket::read(void* buffer, size_t size)
+SocketResult Bn3Monkey::TLSClientActiveSocket::read(void* buffer, size_t size)
 {
 	int32_t ret = SSL_read(_ssl, buffer, size);
-	return ret;
+	return createTLSResult(_ssl, ret);
 }
 
 

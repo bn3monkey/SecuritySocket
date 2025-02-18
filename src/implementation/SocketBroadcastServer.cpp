@@ -94,20 +94,21 @@ SocketResult SocketBroadcastServerImpl::write(const void* buffer, size_t size)
 			else if (result.code() != SocketCode::SUCCESS)
 				break;
 
-			auto ret = sock->write((char*)buffer + written_size, size - written_size);
-			result = createResult(ret);
+			result = sock->write((char*)buffer + written_size, size - written_size);
 			if (result.code() == SocketCode::SOCKET_TIMEOUT)
 			{
 				i++;
 			}
 			else if (result.code() != SocketCode::SUCCESS)
 			{
+				result = SocketResult(result.code(), written_size);
 				_back_client_containers->push_back(client_container);
 				break;
 			}
-			written_size += (size_t)ret;
+			written_size += (size_t)result.bytes();
 			if (written_size == size)
 			{
+				result = SocketResult(result.code(), written_size);
 				_back_client_containers->push_back(client_container);
 				break;
 			}

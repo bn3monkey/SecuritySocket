@@ -93,7 +93,7 @@ inline SocketResult createResult(int operation_return)
 {
 	if (operation_return > 0)
 	{
-		return SocketResult(SocketCode::SUCCESS);
+		return SocketResult(SocketCode::SUCCESS, operation_return);
 	}
 #ifdef _WIN32
 	int error = WSAGetLastError();
@@ -101,27 +101,29 @@ inline SocketResult createResult(int operation_return)
 	int error = errno;
 #endif
 
-	return createResultFromSocketError(error);
+	auto res = createResultFromSocketError(error);
+    res = SocketResult(res.code(), operation_return);
+    return res;
 }
 
 
 inline SocketResult createTLSResult(SSL* ssl, int operation_return)
 {
 	if (operation_return >= 1)
-		return SocketResult(SocketCode::SUCCESS);
+		return SocketResult(SocketCode::SUCCESS, operation_return);
 
 	int code = SSL_get_error(ssl, operation_return);
 	switch (code)
 	{
 	case SSL_ERROR_SSL:
-		return SocketResult(SocketCode::SSL_PROTOCOL_ERROR);
+		return SocketResult(SocketCode::SSL_PROTOCOL_ERROR, operation_return);
 	case SSL_ERROR_SYSCALL:
 		// System Error / TCP Error
 		return createResult(operation_return);
 	case SSL_ERROR_ZERO_RETURN:
-		return SocketResult(SocketCode::SSL_ERROR_CLOSED_BY_PEER);
+		return SocketResult(SocketCode::SSL_ERROR_CLOSED_BY_PEER, operation_return);
 	}
-	return SocketResult(SocketCode::UNKNOWN_ERROR);
+	return SocketResult(SocketCode::UNKNOWN_ERROR, operation_return);
 }
 
 inline const char* getMessage(const SocketCode& code)
