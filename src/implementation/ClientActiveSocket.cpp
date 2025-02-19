@@ -115,7 +115,7 @@ Bn3Monkey::TLSClientActiveSocket::TLSClientActiveSocket(bool is_unix_domain) : C
 		return;
 	}
 
-	auto client_method = TLSv1_2_client_method();
+	auto client_method = TLS_client_method();
 
 	_context = SSL_CTX_new(client_method);
 	if (!_context) {

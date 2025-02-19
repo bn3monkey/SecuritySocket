@@ -150,6 +150,14 @@ SocketResult SocketClientImpl::read(void* buffer, size_t size)
 		{
 			continue;
 		}
+		else if (result.code() == SocketCode::SOCKET_CONNECTION_NEED_TO_BE_BLOCKED)
+		{
+			result = event_listener.wait(_configuration.read_timeout());
+			if (result.code() == SocketCode::SOCKET_TIMEOUT)
+			{
+				continue;
+			}
+		}
 		else {
 			break;
 		}
@@ -187,6 +195,14 @@ SocketResult SocketClientImpl::write(const void* buffer, size_t size)
 		{
 			i++;
 			continue;
+		}
+		else if (result.code() == SocketCode::SOCKET_CONNECTION_NEED_TO_BE_BLOCKED)
+		{
+			result = event_listener.wait(_configuration.write_timeout());
+			if (result.code() == SocketCode::SOCKET_TIMEOUT)
+			{
+				continue;
+			}
 		}
 		else if (result.code() != SocketCode::SUCCESS)
 			break;
