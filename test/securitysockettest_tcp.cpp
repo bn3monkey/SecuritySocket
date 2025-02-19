@@ -256,8 +256,7 @@ static void echoClientRoutine(int idx)
 
 TEST(SecuritySocket, EchoClient)
 {
-    return;
-
+    
     using namespace Bn3Monkey;
 
     Bn3Monkey::initializeSecuritySocket();
@@ -338,6 +337,7 @@ TEST(SecuritySocket, EchoClient)
 
 TEST(SecuritySocket, EchoTest)
 {
+
     SimpleEvent event_obj;
 
     Bn3Monkey::initializeSecuritySocket();
@@ -561,6 +561,7 @@ void broadcastSingleClientRoutine(BroadcastEventPatterns* patterns)
 
 TEST(SecuritySocket, OneClientBroadcastTest)
 {
+
     Bn3Monkey::initializeSecuritySocket();
 
     BroadcastEventPatterns patterns;
