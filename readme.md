@@ -216,7 +216,6 @@ int main()
 int main()
 {
     using namespace Bn3Monkey;
-    using namespace Bn3Monkey;
 
     SocketConfiguration config{
         "127.0.0.1",
