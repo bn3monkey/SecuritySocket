@@ -31,9 +31,7 @@ Bn3Monkey::ClientActiveSocket::ClientActiveSocket(bool is_unix_domain)
 		_result = createResult(_socket);
 		return;
 	}
-
 	setNonBlockingMode(_socket);
-
 	return;
 }
 Bn3Monkey::ClientActiveSocket::~ClientActiveSocket()
@@ -49,18 +47,19 @@ void ClientActiveSocket::close() {
 	_socket = -1;	
 }
 
-SocketResult ClientActiveSocket::connect(const SocketAddress& address)
+SocketResult ClientActiveSocket::connect(const SocketAddress& address, uint32_t read_timeout_ms, uint32_t write_timeout_ms)
 {
 	SocketResult result;
 	{
+		setTimeout(_socket, read_timeout_ms, write_timeout_ms);
 		int32_t res = ::connect(_socket, address.address(), address.size());
 		if (res < 0)
 		{
 			// ERROR
 			result = createResult(res);
-		}
-
+		}		
 	}
+	// setBlockingMode(_socket);
 	return result;
 }
 
@@ -141,17 +140,17 @@ void Bn3Monkey::TLSClientActiveSocket::close()
 	}
 	close();
 }
-SocketResult TLSClientActiveSocket::connect(const SocketAddress& address)
+SocketResult TLSClientActiveSocket::connect(const SocketAddress& address, uint32_t read_timeout_ms, uint32_t write_timeout_ms)
 {
 	SocketResult result;
 	{
+		setTimeout(_socket, read_timeout_ms, write_timeout_ms);
 		int32_t res = ::connect(_socket, address.address(), address.size());
 		if (res < 0)
 		{
 			// ERROR
 			result = createResult(res);
 		}
-
 	}
 	return result;
 }

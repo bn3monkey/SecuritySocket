@@ -20,7 +20,7 @@ namespace Bn3Monkey
 
 		virtual void close();
 
-		virtual SocketResult connect(const SocketAddress& address);
+		virtual SocketResult connect(const SocketAddress& address, uint32_t read_timeout_ms, uint32_t write_timeout_ms);
 		virtual SocketResult reconnect();
 
 		virtual void disconnect(); 
@@ -29,8 +29,6 @@ namespace Bn3Monkey
 		virtual SocketResult write(const void* buffer, size_t size);
 
 	protected:
-		uint32_t _read_timeout {0};
-		uint32_t _write_timeout {0};
 	};
 
 
@@ -42,7 +40,7 @@ namespace Bn3Monkey
 
 		virtual void close() override;
 
-		SocketResult connect(const SocketAddress& address) override;
+		SocketResult connect(const SocketAddress& address, uint32_t read_timeout_ms, uint32_t write_timeout_ms) override;
 		virtual SocketResult reconnect() override;
 		void disconnect() override;
 		SocketResult isConnected() override;

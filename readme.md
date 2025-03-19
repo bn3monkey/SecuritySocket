@@ -17,6 +17,7 @@ It is compatible for Windows(MSVC, MinGW Compiler), Android (Clang), Linux (gcc)
     - [1.0.0 / 2024.6.16](#100--2024616)
     - [2.0.0 / 2025.02.17](#200--20250217)
     - [2.1.0 / 2025.02.18](#210--20250218)
+    - [2.2.0 / 2025.03.19](#220--20250319)
 
 ## Build
 
@@ -282,3 +283,7 @@ C++ 14
 
 - Fix socket result to contain read/write bytes
 - Fix read function to only call once
+
+### 2.2.0 / 2025.03.19
+
+- Add time_between_retries to the configuration

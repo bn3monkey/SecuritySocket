@@ -123,7 +123,8 @@ namespace Bn3Monkey
         inline size_t pdu_size() { return _pdu_size;} 
         inline uint32_t max_retries() { return _max_retries; } 
         inline uint32_t read_timeout() { return _read_timeout; } 
-        inline uint32_t write_timeout() { return _write_timeout; } 
+        inline uint32_t write_timeout() { return _write_timeout; }
+        inline uint32_t time_between_retries() { return _time_between_retries;  }
 
 
         explicit SocketConfiguration(
@@ -133,12 +134,14 @@ namespace Bn3Monkey
             uint32_t max_retries = 3,
             uint32_t read_timeout = 2000,
             uint32_t write_timeout = 2000,
+            uint32_t time_between_retries = 100,
             size_t pdu_size = MAX_PDU_SIZE) : 
             _tls(tls), 
             _pdu_size(pdu_size),
             _max_retries(max_retries),
             _read_timeout(read_timeout),
-            _write_timeout(write_timeout)
+            _write_timeout(write_timeout),
+            _time_between_retries(time_between_retries)
         {
             ::memcpy(_ip, ip, strlen(ip));
             sprintf(_port, "%d", port);
@@ -153,6 +156,7 @@ namespace Bn3Monkey
         uint32_t _max_retries{ 0 };
         uint32_t _read_timeout{ 0 };
         uint32_t _write_timeout{ 0 };
+        uint32_t _time_between_retries{ 0 };
     };
 
     class SECURITYSOCKET_API SocketClient

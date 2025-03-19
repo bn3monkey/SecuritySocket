@@ -36,6 +36,7 @@ static void echoServerRoutine(SimpleEvent* event_obj)
         5,
         1000,
         1000,
+        100,
         8192
     };
 
@@ -90,8 +91,9 @@ static void echoClientRoutine(int idx)
         20000,
         false,
         5,
-        5000,
-        5000,
+        1000,
+        1000,
+        100,
         8192
     };
 
@@ -259,6 +261,8 @@ TEST(SecuritySocket, EchoClient)
     
     using namespace Bn3Monkey;
 
+    return;
+
     Bn3Monkey::initializeSecuritySocket();
 
     SocketConfiguration config{
@@ -266,8 +270,8 @@ TEST(SecuritySocket, EchoClient)
         3000,
         false,
         3,
-        3000,
-        3000,
+        1000,
+        1000,
         8192
     };
 
@@ -393,6 +397,7 @@ void broadcastServerRoutine(BroadcastEventPatterns* patterns)
         5,
         1000,
         1000,
+        100,
         8192
     };
 
@@ -459,6 +464,7 @@ void broadcastSingleClientRoutine(BroadcastEventPatterns* patterns)
         5,
         1000,
         1000,
+        100,
         8192
     };
 

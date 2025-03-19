@@ -1,6 +1,9 @@
 #include "SocketClient.hpp"
 #include "SocketResult.hpp"
 
+#include <thread>
+#include <chrono>
+
 using namespace Bn3Monkey;
 
 SocketClientImpl::~SocketClientImpl()
@@ -44,7 +47,7 @@ SocketResult SocketClientImpl::connect()
 
 	for (size_t i = 0; i < _configuration.max_retries(); i++)
 	{
-		result = _socket->connect(address);
+		result = _socket->connect(address, _configuration.read_timeout(), _configuration.write_timeout());
 		if (result.code() == SocketCode::SUCCESS)
 		{
 			break;
@@ -79,6 +82,8 @@ SocketResult SocketClientImpl::connect()
 				break;
 			}
 		}
+
+		std::this_thread::sleep_for(std::chrono::milliseconds(_configuration.time_between_retries()));
 	}
 
 	for (size_t i = 0; i < _configuration.max_retries(); i++)
@@ -118,9 +123,10 @@ SocketResult SocketClientImpl::connect()
 				break;
 			}
 		}
+		std::this_thread::sleep_for(std::chrono::milliseconds(_configuration.time_between_retries()));
 	}
 
-	std::this_thread::sleep_for(std::chrono::milliseconds(3000));
+	std::this_thread::sleep_for(std::chrono::milliseconds(100));
 	return result;
 }
 SocketResult SocketClientImpl::read(void* buffer, size_t size)
@@ -135,28 +141,29 @@ SocketResult SocketClientImpl::read(void* buffer, size_t size)
 		result = event_listener.wait(_configuration.read_timeout());
 		if (result.code() == SocketCode::SOCKET_TIMEOUT)
 		{
-			continue;
 		}
 		else if (result.code() != SocketCode::SUCCESS)
+		{
 			break;
-
-		result = _socket->read((char *)buffer, size);
-		if (result.bytes() == 0)
-		{
-			result = SocketResult(SocketCode::SOCKET_CLOSED);
-			break;
-		}
-		if (result.code() == SocketCode::SOCKET_TIMEOUT)
-		{
-			continue;
-		}
-		else if (result.code() == SocketCode::SOCKET_CONNECTION_NEED_TO_BE_BLOCKED)
-		{
-			continue;
 		}
 		else {
-			break;
+			result = _socket->read((char*)buffer, size);
+			if (result.bytes() == 0)
+			{
+				result = SocketResult(SocketCode::SOCKET_CLOSED);
+				break;
+			}
+			if (result.code() == SocketCode::SOCKET_TIMEOUT)
+			{
+			}
+			else if (result.code() == SocketCode::SOCKET_CONNECTION_NEED_TO_BE_BLOCKED)
+			{
+			}
+			else {
+				break;
+			}
 		}
+		std::this_thread::sleep_for(std::chrono::milliseconds(_configuration.time_between_retries()));
 	}
 
 	// Check if connection is available when timeout occurs max_trial_time
@@ -181,27 +188,28 @@ SocketResult SocketClientImpl::write(const void* buffer, size_t size)
 		if (result.code() == SocketCode::SOCKET_TIMEOUT)
 		{
 			i++;
-			continue;
 		}
 		else if (result.code() != SocketCode::SUCCESS)
-			break;
-
-		result = _socket->write((char *)buffer + written_size, size - written_size);
-		if (result.code() == SocketCode::SOCKET_TIMEOUT)
 		{
-			i++;
-			continue;
-		}
-		else if (result.code() == SocketCode::SOCKET_CONNECTION_NEED_TO_BE_BLOCKED)
-		{
-			continue;
-		}
-		else if (result.code() != SocketCode::SUCCESS)
 			break;
+		}
+		else {
+			result = _socket->write((char*)buffer + written_size, size - written_size);
+			if (result.code() == SocketCode::SOCKET_TIMEOUT)
+			{
+				i++;
+			}
+			else if (result.code() == SocketCode::SOCKET_CONNECTION_NEED_TO_BE_BLOCKED)
+			{
+			}
+			else if (result.code() != SocketCode::SUCCESS)
+				break;
 
-		written_size += (size_t)result.bytes();
-		if (written_size == size)
-			break;
+			written_size += (size_t)result.bytes();
+			if (written_size == size)
+				break;
+		}
+		std::this_thread::sleep_for(std::chrono::milliseconds(_configuration.time_between_retries()));
 	}
 
 	result = SocketResult(result.code(), written_size);
