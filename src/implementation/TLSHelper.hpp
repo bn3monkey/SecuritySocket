@@ -28,7 +28,7 @@ using SSL_CTX = void;
 using SSL = void;
 using METHOD = void;
 
-inline METHOD* TLSv1_2_client_method()
+inline METHOD* TLS_client_method()
 {
     return nullptr;
 }
@@ -79,6 +79,8 @@ inline int32_t SSL_get_error(SSL* ssl, int32_t operation_return)
 static constexpr int32_t SSL_ERROR_SSL = 1;
 static constexpr int32_t SSL_ERROR_SYSCALL = 2;
 static constexpr int32_t SSL_ERROR_ZERO_RETURN = 3;
+static constexpr int32_t SSL_ERROR_WANT_READ = 4;
+static constexpr int32_t SSL_ERROR_WANT_WRITE = 5;
 
 #endif // USING_TLS
 
