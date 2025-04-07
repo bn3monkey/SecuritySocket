@@ -2,6 +2,7 @@
 #include "SocketEvent.hpp"
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <algorithm>
 
 void SocketEventListener::open(BaseSocket& sock, SocketEventType eventType)
 {

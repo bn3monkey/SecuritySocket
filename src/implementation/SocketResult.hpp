@@ -6,6 +6,8 @@
 #if defined _WIN32
 #include <windows.h>
 #include <WinSock2.h>
+#elif defined __linux__
+#include <errno.h>
 #endif // _WIN32
 
 #include "TLSHelper.hpp"
