@@ -115,7 +115,7 @@ namespace Bn3Monkey
 
     class SECURITYSOCKET_API SocketConfiguration {
     public:
-        constexpr static size_t MAX_PDU_SIZE = 32768;
+        constexpr static size_t MAX_PDU_SIZE = 65536;
 
         inline char* ip() { return _ip; } 
         inline char* port() {return _port;} 
