@@ -240,9 +240,9 @@ void Bn3Monkey::SocketRequestServerImpl::run(SocketRequestHandler* handler)
 					auto* sock = connection->socket();
 					handler->onClientDisconnected(sock->ip(), sock->port());
 					sock->close();
-
+					
 					listener.removeEvent(connection);
-
+					_socket_connection_pool.release(connection);
 				}
 				break;
 
