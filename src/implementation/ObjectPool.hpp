@@ -33,7 +33,7 @@ namespace Bn3Monkey
             return new_ptr;
         }
 
-        void relelase(ObjectType* object)
+        void release(ObjectType* object)
         {
             auto* pos = static_cast<ObjectType*>(object);
             auto* start_ptr = reinterpret_cast<ObjectType*>(_objects.data());
