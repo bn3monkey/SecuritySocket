@@ -172,19 +172,14 @@ void Bn3Monkey::SocketRequestServerImpl::run(SocketRequestHandler* handler)
 			case SocketEventType::ACCEPT:
 				{
 					auto socket_container = _socket->accept();
-					SocketConnection* connection = _socket_connection_pool.acquire(socket_container);
-					connection->initialize(_configuration.pdu_size());
-
-					auto* sock = connection->socket();
-					if (sock->result().code() == SocketCode::SUCCESS)
+					auto* client_socket = socket_container.get();
+					if (client_socket->result().code() == SocketCode::SUCCESS)
 					{
+						SocketConnection* connection = _socket_connection_pool.acquire(socket_container);
+						connection->initialize(_configuration.pdu_size());
+						auto* sock = connection->socket();
 						handler->onClientConnected(sock->ip(), sock->port());
 						listener.addEvent(connection, SocketEventType::READ);
-					}
-					else
-					{
-						// Discard Current connection and re-try
-						_socket_connection_pool.release(connection);
 					}
 				}
 				break;
