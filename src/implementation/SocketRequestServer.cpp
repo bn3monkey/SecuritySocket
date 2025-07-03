@@ -176,13 +176,16 @@ void Bn3Monkey::SocketRequestServerImpl::run(SocketRequestHandler* handler)
 					connection->initialize(_configuration.pdu_size());
 
 					auto* sock = connection->socket();
-					if (sock->port() == 0)
+					if (sock->result().code() == SocketCode::SUCCESS)
 					{
-						// Discard Connection
+						handler->onClientConnected(sock->ip(), sock->port());
+						listener.addEvent(connection, SocketEventType::READ);
+					}
+					else
+					{
+						// Discard Current connection and re-try
 						_socket_connection_pool.release(connection);
 					}
-					handler->onClientConnected(sock->ip(), sock->port());
-					listener.addEvent(connection, SocketEventType::READ);
 				}
 				break;
 			case SocketEventType::READ:
