@@ -26,7 +26,9 @@ namespace Bn3Monkey
 
         inline const char* ip() const { return _client_ip; }
         inline int port() const { return _client_port; }
-    
+
+        void setSocketBufferSize(size_t size); 
+
     protected:
         char _client_ip[22]{ 0 };
         int _client_port = 0;
