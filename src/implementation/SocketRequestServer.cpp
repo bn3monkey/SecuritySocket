@@ -178,7 +178,7 @@ void Bn3Monkey::SocketRequestServerImpl::run(SocketRequestHandler* handler)
 						SocketConnection* connection = _socket_connection_pool.acquire(socket_container);
 						connection->initialize(_configuration.pdu_size());
 						auto* sock = connection->socket();
-						sock->setSocketBufferSize(1024*1024);
+						sock->setSocketBufferSize(_configuration.pdu_size());
 						handler->onClientConnected(sock->ip(), sock->port());
 						listener.addEvent(connection, SocketEventType::READ);
 					}
