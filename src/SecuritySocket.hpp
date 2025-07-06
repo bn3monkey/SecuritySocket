@@ -185,18 +185,25 @@ namespace Bn3Monkey
         enum class ProcessState
         {
             INCOMPLETE,
-            READY
+            READY,
+            READY_BUT_NO_RESPONSE,
         };
 
         virtual void onClientConnected(const char* ip, int port) = 0;
         virtual void onClientDisconnected(const char* ip, int port) = 0;
 
         virtual ProcessState onDataReceived(const void* input_buffer, size_t offset, size_t read_size) = 0;
+        
+        virtual void onProcessedWithoutResponse(
+            const void* input_buffer,
+            size_t intput_size) = 0;
+
         virtual bool onProcessed(
-            const void* input_buffer, 
+            const void* input_buffer,
             size_t intput_size,
             void* output_buffer,
             size_t& output_size) = 0;
+
     };
     
 

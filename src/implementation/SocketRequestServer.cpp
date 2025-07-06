@@ -72,7 +72,7 @@ public:
 			std::unique_lock<std::mutex> lock(_mtx);
 			_is_running = true;
 		}
-		_routine = std::thread(&SocketRequestWorker::run, this);
+		_thread = std::thread(&SocketRequestWorker::routine, this);
 	}
 	void stop()
 	{
@@ -81,9 +81,14 @@ public:
 			_is_running = false;
 			_cv.notify_all();
 		}
-		_routine.join();
+		_thread.join();
 	}
-
+	void run(SocketConnection* connection)
+	{
+		_handler->onProcessedWithoutResponse(
+			connection->input_buffer.data(),
+			connection->total_input_size);
+	}
 	void async(SocketConnection* connection)
 	{
 		{
@@ -98,7 +103,7 @@ public:
 	}
 
 private:
-	void run()
+	void routine()
 	{
 		while (true)
 		{
@@ -127,7 +132,7 @@ private:
 		}
 	}
 
-	std::thread _routine;
+	std::thread _thread;
 	SocketRequestHandler* _handler;
 	SocketMultiEventListener& _event_listener;
 
@@ -178,7 +183,6 @@ void Bn3Monkey::SocketRequestServerImpl::run(SocketRequestHandler* handler)
 						SocketConnection* connection = _socket_connection_pool.acquire(socket_container);
 						connection->initialize(_configuration.pdu_size());
 						auto* sock = connection->socket();
-						sock->setSocketBufferSize(_configuration.pdu_size());
 						handler->onClientConnected(sock->ip(), sock->port());
 						listener.addEvent(connection, SocketEventType::READ);
 					}
@@ -203,6 +207,15 @@ void Bn3Monkey::SocketRequestServerImpl::run(SocketRequestHandler* handler)
 							listener.removeEvent(connection);
 
 							worker.async(connection);
+						}
+						else if (state == SocketRequestHandler::ProcessState::READY_BUT_NO_RESPONSE)
+						{
+							worker.run(connection);
+							connection->flush();
+						}
+						else if (state == SocketRequestHandler::ProcessState::INCOMPLETE)
+						{
+							// Do nothing, wait for more data
 						}
 					}
 				}
