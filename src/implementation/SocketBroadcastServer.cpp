@@ -47,7 +47,7 @@ SocketResult Bn3Monkey::SocketBroadcastServerImpl::enumerate()
 	SocketEventListener listener;
 	listener.open(*_socket, SocketEventType::ACCEPT);
 
-	for (int i = 0; i < _configuration.max_retries();)
+	for (auto i = 0u; i < _configuration.max_retries();)
 	{
 		result = listener.wait(_configuration.read_timeout());
 		if (result.code() == SocketCode::SOCKET_TIMEOUT)
@@ -79,7 +79,7 @@ SocketResult SocketBroadcastServerImpl::write(const void* buffer, size_t size)
 		listener.open(*sock, SocketEventType::WRITE);
 		size_t written_size = 0;
 
-		for (auto i = 0; i < _configuration.max_retries(); )
+		for (auto i = 0u; i < _configuration.max_retries(); )
 		{
 			auto result = listener.wait(_configuration.write_timeout());
 			if (result.code() == SocketCode::SOCKET_TIMEOUT)
@@ -101,14 +101,14 @@ SocketResult SocketBroadcastServerImpl::write(const void* buffer, size_t size)
 			}
 			else if (result.code() != SocketCode::SUCCESS)
 			{
-				result = SocketResult(result.code(), written_size);
+				result = SocketResult(result.code(), static_cast<int32_t>(written_size));
 				_back_client_containers->push_back(client_container);
 				break;
 			}
 			written_size += (size_t)result.bytes();
 			if (written_size == size)
 			{
-				result = SocketResult(result.code(), written_size);
+				result = SocketResult(result.code(), static_cast<int32_t>(written_size));
 				_back_client_containers->push_back(client_container);
 				break;
 			}

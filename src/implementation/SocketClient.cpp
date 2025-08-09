@@ -212,7 +212,7 @@ SocketResult SocketClientImpl::write(const void* buffer, size_t size)
 		std::this_thread::sleep_for(std::chrono::milliseconds(_configuration.time_between_retries()));
 	}
 
-	result = SocketResult(result.code(), written_size);
+	result = SocketResult(result.code(), static_cast<int32_t>(written_size));
 
 	if (result.code() == SocketCode::SOCKET_TIMEOUT)
 	{

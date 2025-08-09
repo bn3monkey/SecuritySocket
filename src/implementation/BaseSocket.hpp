@@ -13,8 +13,8 @@ namespace Bn3Monkey
         inline SocketResult valid() { return _result; }
     
     protected:
-        SocketResult _result;
-        int32_t _socket;
+        SocketResult _result{};
+        int32_t _socket{ 0 };
     };
 
     template <class PlainSocket, class TLSSocket,

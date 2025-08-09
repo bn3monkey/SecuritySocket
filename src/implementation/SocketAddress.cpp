@@ -1,5 +1,6 @@
 #include "SocketAddress.hpp"
 #include <cstring>
+#include <cstdio>
 
 #ifdef __linux__
 #include <netinet/in.h>
@@ -42,7 +43,8 @@ Bn3Monkey::SocketAddress::SocketAddress(const char* ip, const char* port, bool i
 	{
 		struct sockaddr_un* addr = new (_socket_address) struct sockaddr_un;
 		addr->sun_family = AF_UNIX;
-		strncpy(addr->sun_path, ip, strlen(ip));
+		
+		snprintf(addr->sun_path, sizeof(addr->sun_path), ip);
 		_socket_address_size = sizeof(struct sockaddr_un);
 		return;
 	}

@@ -54,7 +54,7 @@ void ServerActiveSocket::close()
 SocketResult ServerActiveSocket::read(void* buffer, size_t size)
 {
 	int32_t ret{ 0 };
-	ret = ::recv(_socket, static_cast<char*>(buffer), size, 0);
+	ret = ::recv(_socket, static_cast<char*>(buffer), static_cast<int32_t>(size), 0);
 	return createResult(ret);
 }
 SocketResult ServerActiveSocket::write(const void* buffer, size_t size)
@@ -63,7 +63,7 @@ SocketResult ServerActiveSocket::write(const void* buffer, size_t size)
 #ifdef __linux__
 	ret = send(_socket, buffer, size, MSG_NOSIGNAL);
 #else
-	ret = send(_socket, static_cast<const char*>(buffer), size, 0);
+	ret = send(_socket, static_cast<const char*>(buffer), static_cast<int32_t>(size), 0);
 #endif
 return createResult(ret);
 }

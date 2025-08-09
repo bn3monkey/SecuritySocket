@@ -168,7 +168,7 @@ SocketEventResult SocketMultiEventListener::wait(uint32_t timeout_ms)
     }
 
 
-    int ret = WSAPoll(handle.data(), handle.size(), timeout_ms);
+    int ret = WSAPoll(handle.data(), static_cast<ULONG>(handle.size()), timeout_ms);
     if (ret == 0)
     {
         res.result = SocketResult(SocketCode::SOCKET_TIMEOUT);

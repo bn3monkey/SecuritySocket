@@ -43,8 +43,8 @@ namespace Bn3Monkey
 		SocketResult write(const void* buffer, size_t size);
 
 	private:
-		ClientActiveSocketContainer _container;
-		ClientActiveSocket* _socket;
+		ClientActiveSocketContainer _container{};
+		ClientActiveSocket* _socket{ nullptr };
 		
 		SocketConfiguration _configuration;
 	};

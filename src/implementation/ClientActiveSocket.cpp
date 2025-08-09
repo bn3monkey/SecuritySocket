@@ -22,10 +22,14 @@ using namespace Bn3Monkey;
 Bn3Monkey::ClientActiveSocket::ClientActiveSocket(bool is_unix_domain)
 {
 	
-	if (is_unix_domain)
-		_socket = ::socket(AF_UNIX, SOCK_STREAM, 0);
-	else
-		_socket = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+	if (is_unix_domain) {
+		auto temp_socket = ::socket(AF_UNIX, SOCK_STREAM, 0);
+		_socket = static_cast<int32_t>(temp_socket);
+	}
+	else {
+		auto temp_socket = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+		_socket = static_cast<int32_t>(temp_socket);
+	}
 	if (_socket < 0)
 	{
 		_result = createResult(_socket);
@@ -93,7 +97,7 @@ SocketResult Bn3Monkey::ClientActiveSocket::write(const void* buffer, size_t siz
 #ifdef __linux__
 	ret = send(_socket, buffer, size, MSG_NOSIGNAL);
 #else
-	ret = send(_socket, static_cast<const char*>(buffer), size, 0);
+	ret = send(_socket, static_cast<const char*>(buffer), static_cast<int32_t>(size), 0);
 #endif
 	
 	return createResult(ret);
@@ -102,7 +106,7 @@ SocketResult Bn3Monkey::ClientActiveSocket::write(const void* buffer, size_t siz
 SocketResult Bn3Monkey::ClientActiveSocket::read(void* buffer, size_t size)
 {
 	int32_t ret{ 0 };
-	ret = ::recv(_socket, static_cast<char*>(buffer), size, 0);
+	ret = ::recv(_socket, static_cast<char*>(buffer), static_cast<int32_t>(size), 0);
 	return createResult(ret);
 }
 

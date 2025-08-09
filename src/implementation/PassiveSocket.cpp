@@ -41,11 +41,15 @@ static inline void loadAcceptExFunction(int32_t socket, LPFN_ACCEPTEX* function_
 
 PassiveSocket::PassiveSocket(bool is_unix_domain)
 {
-	if (is_unix_domain)
-		_socket = ::socket(AF_UNIX, SOCK_STREAM, 0);
-	else
-		_socket = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-	if (_socket < 0)
+    if (is_unix_domain) {
+        auto temp_socket = ::socket(AF_UNIX, SOCK_STREAM, 0);
+        _socket = static_cast<int32_t>(temp_socket);
+    }
+    else {
+        auto temp_socket = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+        _socket = static_cast<int32_t>(temp_socket);
+    }
+    if (_socket < 0)
 	{
 		_result = createResult(_socket);
 		return;
@@ -100,7 +104,10 @@ ServerActiveSocketContainer PassiveSocket::accept()
     struct sockaddr_in client_addr;
     socklen_t client_len = sizeof(client_addr);
 
-    int sock = ::accept(_socket, (struct sockaddr*)&client_addr, &client_len);
+    int sock = static_cast<int32_t>(::accept(_socket, (struct sockaddr*)&client_addr, &client_len));
+    if (sock == 0) {
+        // Do nothing
+    }
     ServerActiveSocketContainer container{false, sock, (void*)&client_addr, nullptr};
     return container;   
 }

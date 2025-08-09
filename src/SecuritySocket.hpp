@@ -144,7 +144,7 @@ namespace Bn3Monkey
             _time_between_retries(time_between_retries)
         {
             ::memcpy(_ip, ip, strlen(ip));
-            sprintf(_port, "%d", port);
+            snprintf(_port,16, "%d", port);
         }
 
 
@@ -196,7 +196,7 @@ namespace Bn3Monkey
         
         virtual void onProcessedWithoutResponse(
             const void* input_buffer,
-            size_t intput_size) = 0;
+            size_t input_size) = 0;
 
         virtual bool onProcessed(
             const void* input_buffer,
