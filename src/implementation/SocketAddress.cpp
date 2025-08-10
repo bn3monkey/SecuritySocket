@@ -44,7 +44,7 @@ Bn3Monkey::SocketAddress::SocketAddress(const char* ip, const char* port, bool i
 		struct sockaddr_un* addr = new (_socket_address) struct sockaddr_un;
 		addr->sun_family = AF_UNIX;
 		
-		snprintf(addr->sun_path, sizeof(addr->sun_path), ip);
+		snprintf(addr->sun_path, sizeof(addr->sun_path), "%s", ip);
 		_socket_address_size = sizeof(struct sockaddr_un);
 		return;
 	}

@@ -65,6 +65,7 @@ static void echoServerRoutine(SimpleEvent* event_obj)
             output_size = snprintf((char*)output_buffer, 8192, "echo) %s", (char*)input_buffer);
             return true;
         }
+        
         virtual void onProcessedWithoutResponse(
             const void* input_buffer,
             size_t input_size
