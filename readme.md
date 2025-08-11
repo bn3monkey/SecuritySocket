@@ -19,6 +19,7 @@ It is compatible for Windows(MSVC, MinGW Compiler), Android (Clang), Linux (gcc)
     - [2.1.0 / 2025.02.18](#210--20250218)
     - [2.2.0 / 2025.03.19](#220--20250319)
     - [2.3.0 / 2025.07.02](#230--20250702)
+    - [2.4.0 / 2025.08.11](#240--20250811)
 
 ## Build
 
@@ -292,3 +293,7 @@ C++ 14
 ### 2.3.0 / 2025.07.02
 
 - Fixed the issue where resources were not freed when the client disconnected. 
+  
+### 2.4.0 / 2025.08.11
+
+- Fixed the compile warning issues in MSVC /W3
