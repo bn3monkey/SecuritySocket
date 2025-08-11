@@ -73,7 +73,11 @@ Bn3Monkey::SocketResult Bn3Monkey::SocketClient::write(const void* buffer, size_
 	SocketClientImpl* impl = static_cast<SocketClientImpl*>((void*)_container);
 	return impl->write(buffer, size);
 }
-
+Bn3Monkey::SocketResult Bn3Monkey::SocketClient::isConnected()
+{
+	SocketClientImpl* impl = static_cast<SocketClientImpl*>((void*)_container);
+	return impl->isConnected();
+}
 
 Bn3Monkey::SocketRequestServer::SocketRequestServer(const SocketConfiguration& configuration)
 {

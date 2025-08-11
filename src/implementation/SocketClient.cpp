@@ -86,6 +86,11 @@ SocketResult SocketClientImpl::connect()
 		std::this_thread::sleep_for(std::chrono::milliseconds(_configuration.time_between_retries()));
 	}
 
+	if (result.code() != SocketCode::SUCCESS)
+	{
+		return result;
+	}
+
 	for (size_t i = 0; i < _configuration.max_retries(); i++)
 	{
 		result = _socket->reconnect();
@@ -166,11 +171,6 @@ SocketResult SocketClientImpl::read(void* buffer, size_t size)
 		std::this_thread::sleep_for(std::chrono::milliseconds(_configuration.time_between_retries()));
 	}
 
-	// Check if connection is available when timeout occurs max_trial_time
-	if (result.code() == SocketCode::SOCKET_TIMEOUT)
-	{
-		result = _socket->isConnected();
-	}
 	return result;
 }
 SocketResult SocketClientImpl::write(const void* buffer, size_t size)
@@ -213,11 +213,10 @@ SocketResult SocketClientImpl::write(const void* buffer, size_t size)
 	}
 
 	result = SocketResult(result.code(), static_cast<int32_t>(written_size));
-
-	if (result.code() == SocketCode::SOCKET_TIMEOUT)
-	{
-		result = _socket->isConnected();
-	}
 	return result;
+}
+SocketResult SocketClientImpl::isConnected()
+{
+	return _socket->isConnected();
 }
 

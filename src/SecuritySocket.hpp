@@ -173,6 +173,7 @@ namespace Bn3Monkey
         SocketResult connect();
         SocketResult read(void* buffer, size_t size);
         SocketResult write(const void* buffer, size_t size);
+        SocketResult isConnected();
 
     private:
         char _container[IMPLEMENTATION_SIZE]{ 0 };

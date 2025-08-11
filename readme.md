@@ -49,20 +49,21 @@ target_link_libraries(YourLibrary PRIAVATE securitysocket)
 You can add option before importing security socket
 
 - **SECURITY_USING_TLS**
+
   - Include TLS functionality into security socket library.
   - You can lighten this project by switching this option off.
   - If the option is off, OpenSSL resource for supporting TLS is not included in this project.
-  - Default Value is *ON*
+  - Default Value is _ON_
 
 - **BUILD_SECURITYSOCKET_SHARED**
+
   - Build security socket as shared library.
   - You can build security socket as static library by switching this option off.
-  - Default value is *ON*
+  - Default value is _ON_
 
 - **BUILD_SECURITYSOCKET_TEST**
-  - Include security socket project into the whold cmake project. 
-  - Default value is *ON*
-
+  - Include security socket project into the whold cmake project.
+  - Default value is _ON_
 
 ```cmake
 cmake_minimum_required (VERSION 3.16)
@@ -120,14 +121,14 @@ int main()
     {
         char buffer[4096] {0};
         strncpy(buffer, "Hello, World!", 4096);
-        size_t size = strlen(buffer); 
+        size_t size = strlen(buffer);
         auto result = client.write(buffer, size);
         if (result.code() != SocketCode::SUCCESS)
         {
             printf(result.message());
             return -1;
         }
-    }    
+    }
     {
         char buffer[4096] {0};
         auto result = client.read(buffer, 14);
@@ -147,8 +148,6 @@ int main()
 ```
 
 ### Using Request Server
-
-
 
 ```cpp
 #include <SecuritySocket.hpp>
@@ -178,7 +177,7 @@ int main()
             printf("[Sever] Client disconnected (%s, %d)\n", ip, port);
         }
         virtual ProcessState onDataReceived(const void* input_buffer, size_t offset, size_t read_size) override
-        {            
+        {
             return ProcessState::READY;
         }
         virtual bool onProcessed(
@@ -255,7 +254,6 @@ int main()
 }
 ```
 
-
 ## Speicifcation
 
 ### Recommanded C++ Version
@@ -292,8 +290,12 @@ C++ 14
 
 ### 2.3.0 / 2025.07.02
 
-- Fixed the issue where resources were not freed when the client disconnected. 
-  
+- Fixed the issue where resources were not freed when the client disconnected.
+
 ### 2.4.0 / 2025.08.11
 
 - Fixed the compile warning issues in MSVC /W3
+
+### 2.5.0 / 2025.08.11
+
+- add isConnected function in SocketClient
