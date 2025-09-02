@@ -16,10 +16,11 @@ It is compatible for Windows(MSVC, MinGW Compiler), Android (Clang), Linux (gcc)
   - [Revision History](#revision-history)
     - [1.0.0 / 2024.6.16](#100--2024616)
     - [2.0.0 / 2025.02.17](#200--20250217)
-    - [2.1.0 / 2025.02.18](#210--20250218)
-    - [2.2.0 / 2025.03.19](#220--20250319)
-    - [2.3.0 / 2025.07.02](#230--20250702)
-    - [2.4.0 / 2025.08.11](#240--20250811)
+    - [2.0.1 / 2025.02.18](#201--20250218)
+    - [2.0.2 / 2025.03.19](#202--20250319)
+    - [2.0.3 / 2025.07.02](#203--20250702)
+    - [2.0.4 / 2025.08.11](#204--20250811)
+    - [2.0.5 / 2025.08.11](#205--20250811)
 
 ## Build
 
@@ -279,23 +280,23 @@ C++ 14
 - Add request server (it supports only TLS functiionality. not TLS)
 - Add notification server (it supports only TLS functiionality. not TLS)
 
-### 2.1.0 / 2025.02.18
+### 2.0.1 / 2025.02.18
 
 - Fix socket result to contain read/write bytes
 - Fix read function to only call once
 
-### 2.2.0 / 2025.03.19
+### 2.0.2 / 2025.03.19
 
 - Add time_between_retries to the configuration
 
-### 2.3.0 / 2025.07.02
+### 2.0.3 / 2025.07.02
 
 - Fixed the issue where resources were not freed when the client disconnected.
 
-### 2.4.0 / 2025.08.11
+### 2.0.4 / 2025.08.11
 
 - Fixed the compile warning issues in MSVC /W3
 
-### 2.5.0 / 2025.08.11
+### 2.0.5 / 2025.08.11
 
 - add isConnected function in SocketClient
