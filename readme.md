@@ -21,6 +21,7 @@ It is compatible for Windows(MSVC, MinGW Compiler), Android (Clang), Linux (gcc)
     - [2.0.3 / 2025.07.02](#203--20250702)
     - [2.0.4 / 2025.08.11](#204--20250811)
     - [2.0.5 / 2025.08.11](#205--20250811)
+    - [2.0.6 / 2025.09.04](#206--20250904)
 
 ## Build
 
@@ -300,3 +301,7 @@ C++ 14
 ### 2.0.5 / 2025.08.11
 
 - add isConnected function in SocketClient
+
+### 2.0.6 / 2025.09.04
+
+- Fixed the unix_domain support mechanism.

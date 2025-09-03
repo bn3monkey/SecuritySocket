@@ -22,23 +22,8 @@
 	#endif
 #endif
 
-
-bool Bn3Monkey::SocketAddress::checkUnixDomain(const char* ip)
+Bn3Monkey::SocketAddress::SocketAddress(const char* ip, const char* port, bool is_server, bool is_unix_domain) : _is_unix_domain(is_unix_domain)
 {
-	static constexpr const char* domain_prefix =
-	#if defined(_WIN32)
-		"\\\\.\\pipe\\";
-	#elif defined(__linux__)
-		"/tmp/";
-	#else
-		"invalid";
-	#endif 
-	return !strncmp(ip, domain_prefix, strlen(domain_prefix));
-}
-
-Bn3Monkey::SocketAddress::SocketAddress(const char* ip, const char* port, bool is_server)
-{
-	_is_unix_domain = checkUnixDomain(ip);
 	if (_is_unix_domain)
 	{
 		struct sockaddr_un* addr = new (_socket_address) struct sockaddr_un;
