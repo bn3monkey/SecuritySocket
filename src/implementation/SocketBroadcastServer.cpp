@@ -11,8 +11,7 @@ SocketResult SocketBroadcastServerImpl::open(size_t num_of_clients)
 {
 	SocketResult result = SocketResult(SocketCode::SUCCESS);
 
-	bool is_unix_domain = SocketAddress::checkUnixDomain(_configuration.ip());
-	_container = PassiveSocketContainer(_configuration.tls(), is_unix_domain);
+	_container = PassiveSocketContainer(_configuration.tls(), _configuration.is_unix_domain());
 	_socket = _container.get();
 	result = _socket->valid();
 	if (result.code() != SocketCode::SUCCESS)
@@ -20,7 +19,7 @@ SocketResult SocketBroadcastServerImpl::open(size_t num_of_clients)
 		return result;
 	}
 
-	SocketAddress address{ _configuration.ip(), _configuration.port(), true };
+	SocketAddress address{ _configuration.ip(), _configuration.port(), true, _configuration.is_unix_domain() };
 	result = address;
 	if (result.code() != SocketCode::SUCCESS) {
 		return result;
