@@ -7,23 +7,6 @@
 
 #include "securitysockettest_helper.hpp"
 
-static std::mutex print_mtx;
-template<class... Args>
-void printConcurrent(const char* format, Args&&... args)
-{
-    {
-        std::lock_guard<std::mutex> lock(print_mtx);
-        printf(format, std::forward<Args>(args)...);
-    }
-}
-template<>
-void printConcurrent(const char* format)
-{
-    {
-        std::lock_guard<std::mutex> lock(print_mtx);
-        printf("%s", format);
-    }
-}
 
 static void echoServerRoutine(SimpleEvent* event_obj)
 {

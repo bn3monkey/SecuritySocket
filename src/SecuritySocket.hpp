@@ -220,9 +220,9 @@ namespace Bn3Monkey
     enum class SECURITYSOCKET_API SocketRequestMode
     {
         FAST,
-        LATENT,
-        STREAM_START,
-        STREAM_STOP
+        SLOW,
+        READ_STREAM,
+        WRITE_STREAM
     };
 
     struct SECURITYSOCKET_API SocketResponse
@@ -231,6 +231,7 @@ namespace Bn3Monkey
         const char* buffer() override = 0;
         size_t length() override = 0;
     };
+
 
     struct SECURITYSOCKET_API SocketRequestHandler
     {
@@ -250,28 +251,11 @@ namespace Bn3Monkey
             char* output_buffer
         ) = 0;
 
-
-        virtual SocketResponse* onStreamStart(
+        virtual void onProcessedWithoutResponse(
             SocketRequestHeader* header,
             const char* input_buffer,
-            size_t input_size,
-            char* output_buffer
+            size_t input_size
         ) = 0;
-        
-        virtual SocketResponse* onStreamStop(
-            SocketRequestHeader* header,
-            const char* input_buffer,
-            size_t input_size,
-            char* output_buffer
-        ) = 0;
-
-        virtual void onStreamProcessed(
-            const char* input_buffer,
-            size_t input_size,
-            char* output_buffer
-        ) = 0;
-
-
     };
     
 
