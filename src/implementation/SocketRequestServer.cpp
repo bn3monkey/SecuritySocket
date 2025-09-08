@@ -30,7 +30,7 @@ Bn3Monkey::SocketResult Bn3Monkey::SocketRequestServerImpl::open(SocketRequestHa
 	if (result.code() != SocketCode::SUCCESS) {
 		return result;
 	}
-	
+
 	result = _socket->bind(address);
 	if (result.code() != SocketCode::SUCCESS) {
 		return result;
@@ -71,7 +71,7 @@ void Bn3Monkey::SocketRequestServerImpl::run(SocketRequestHandler* handler)
 
 
 	while (_is_running)
-	{		
+	{
 		auto eventlist = listener.wait(_configuration.read_timeout());
 		if (eventlist.result.code() == SocketCode::SOCKET_TIMEOUT)
 		{
@@ -81,7 +81,7 @@ void Bn3Monkey::SocketRequestServerImpl::run(SocketRequestHandler* handler)
 		{
 			break;
 		}
-		
+
 
 		for (auto& context : eventlist.contexts)
 		{
@@ -90,49 +90,69 @@ void Bn3Monkey::SocketRequestServerImpl::run(SocketRequestHandler* handler)
 			switch (type)
 			{
 			case SocketEventType::ACCEPT:
+			{
+				auto socket_container = _socket->accept();
+				auto* client_socket = socket_container.get();
+				if (client_socket->result().code() == SocketCode::SUCCESS)
 				{
-					auto socket_container = _socket->accept();
-					auto* client_socket = socket_container.get();
-					if (client_socket->result().code() == SocketCode::SUCCESS)
-					{
-						SocketConnection* connection = _socket_connection_pool.acquire(socket_container, *handler, _configuration.pdu_size());						
-						connection->connectClient(*handler, listener);
-					}
+					SocketConnection* connection = _socket_connection_pool.acquire(socket_container, *handler, _configuration.pdu_size());
+					connection->connectClient();
+					listener.addEvent(connection, Bn3Monkey::SocketEventType::READ);
 				}
-				break;
+			}
+			break;
 			case SocketEventType::DISCONNECTED:
-				{
-					auto* connection = static_cast<SocketConnection*>(context);
-					connection->disconnectClient(*handler, listener);
-					_socket_connection_pool.release(connection);
-				}
-				break;
+			{
+				auto* connection = static_cast<SocketConnection*>(context);
+				connection->disconnectClient();
+				listener.removeEvent(connection);
+				_socket_connection_pool.release(connection);
+			}
+			break;
 
 			case SocketEventType::READ:
+			{
+				auto* connection = static_cast<SocketConnection*>(context);
+				switch (connection->state)
 				{
-					auto* connection = static_cast<SocketConnection*>(context);
-					auto* header = connection->readHeader();
-					auto mode = handler->onModeClassified(header);
+				case SocketConnection::ProcessState::READING_HEADER:
+					{
+						connection->state = connection->readHeader();
+					}
+					break;
+				case SocketConnection::ProcessState::READING_PAYLOAD:
+					{
+						connection->state = connection->readPayload();
+						if (connection->state == SocketConnection::ProcessState::WRITING_RESPONSE) {
+							listener.modifyEvent(connection, Bn3Monkey::SocketEventType::WRITE);
+						}
+						else if (connection->state == SocketConnection::ProcessState::READING_HEADER) {
+							connection->flush();
+						}
+					}
+					break;
+				}
+			}
+			break;
 
-					switch (mode) {
-					case SocketRequestMode::FAST :
-						connection->runTask(header);
-						break;
-					case SocketRequestMode::SLOW:
-						connection->runSlowTask(header);
-						break;
-					case SocketRequestMode::READ_STREAM:
-						connection->runNoResponseTask(header);
-						break;
-					case SocketRequestMode::WRITE_STREAM:
-						connection->runTask(header);
-						break;
+			case SocketEventType::WRITE :
+			{
+				auto connection = static_cast<SocketConnection*>(context);
+				switch (connection->state) {
+				case SocketConnection::ProcessState::WRITING_RESPONSE:
+					{
+						connection->state = connection->writeResponse();
+						if (connection->state == SocketConnection::ProcessState::READING_HEADER) {
+							connection->flush();
+							listener.modifyEvent(connection, Bn3Monkey::SocketEventType::READ);
+						}
 					}
 				}
-				break;
-			
+			}
+
 			default:
 				break;
+			}
 		}
 
 	}

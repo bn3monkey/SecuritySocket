@@ -28,12 +28,6 @@ namespace Bn3Monkey
         WRITE,
         READ_WRITE
     };
-    enum class SocketTaskType
-    {
-        PROCESSING,
-        SUCCESS,
-        FAIL,
-    };
 
     class SocketEventListener
     {
@@ -53,26 +47,7 @@ namespace Bn3Monkey
         OVERLAPPED overlapped;
     #endif
         int32_t fd{ -1 };
-        SocketEventType type { SocketEventType::UNDEFINED };
-
-        std::vector<char> input_header_buffer {0, std::allocator<char>()};
-        std::vector<char> input_payload_buffer {0, std::allocator<char>()};
-        std::vector<char> output_buffer {0, std::allocator<char>()};
-        
-    public:
-        inline void initialize(size_t header_size, size_t pdu_size)
-        {
-            input_header_buffer.resize(header_size);
-            input_payload_buffer.resize(pdu_size);
-            output_buffer.resize(pdu_size);
-        }
-        inline void flush() {
-            memset(input_header_buffer.data(), 0, input_header_buffer.size());
-            memset(input_payload_buffer.data(), 0, input_payload_buffer.size());
-            memset(output_buffer.data(), 0, output_buffer.size());
-        }
-    
-    private:
+        SocketEventType type{ SocketEventType::UNDEFINED };
     };
 
     struct SocketEventResult

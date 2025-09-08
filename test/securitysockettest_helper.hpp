@@ -10,7 +10,7 @@ inline std::mutex& getPrintMutex() {
     return _mtx;
 }
 template<class... Args>
-void printConcurrent(const char* format, Args&&... args)
+inline void printConcurrent(const char* format, Args&&... args)
 {
     {
         std::lock_guard<std::mutex> lock(getPrintMutex());
@@ -18,7 +18,7 @@ void printConcurrent(const char* format, Args&&... args)
     }
 }
 template<>
-void printConcurrent(const char* format)
+inline void printConcurrent(const char* format)
 {
     {
         std::lock_guard<std::mutex> lock(getPrintMutex());

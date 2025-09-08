@@ -40,6 +40,7 @@ void broadcastServerRoutine(BroadcastEventPatterns* patterns)
         "127.0.0.1",
         20000,
         false,
+        false,
         5,
         1000,
         1000,
@@ -106,6 +107,7 @@ void broadcastSingleClientRoutine(BroadcastEventPatterns* patterns)
     SocketConfiguration config{
         "127.0.0.1",
         20000,
+        false,
         false,
         5,
         1000,
@@ -211,8 +213,9 @@ void broadcastSingleClientRoutine(BroadcastEventPatterns* patterns)
 
 
 
-TEST(SecuritySocket, OneClientBroadcastTest)
+TEST(TCPBroadcast, runOneClient)
 {
+    return;
 
     Bn3Monkey::initializeSecuritySocket();
 

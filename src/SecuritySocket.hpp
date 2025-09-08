@@ -218,7 +218,7 @@ namespace Bn3Monkey
 
     struct SECURITYSOCKET_API SocketRequestHeader
     {
-        virtual size_t payload_size() = 0;
+        virtual size_t payloadSize() = 0;
     };
     
     enum class SECURITYSOCKET_API SocketRequestMode
@@ -228,14 +228,6 @@ namespace Bn3Monkey
         READ_STREAM,
         WRITE_STREAM
     };
-
-    struct SECURITYSOCKET_API SocketResponse
-    {
-        bool isValid() override = 0;
-        const char* buffer() override = 0;
-        size_t length() override = 0;
-    };
-
 
     struct SECURITYSOCKET_API SocketRequestHandler
     {
@@ -248,11 +240,12 @@ namespace Bn3Monkey
         virtual void onClientConnected(const char* ip, int port) = 0;
         virtual void onClientDisconnected(const char* ip, int port) = 0;
         
-        virtual SocketResponse* onProcessed(
+        virtual void onProcessed(
             SocketRequestHeader* header,
             const char* input_buffer,
             size_t input_size,
-            char* output_buffer
+            char* output_buffer,
+            size_t* output_size
         ) = 0;
 
         virtual void onProcessedWithoutResponse(
