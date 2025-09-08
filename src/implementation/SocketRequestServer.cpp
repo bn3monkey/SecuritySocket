@@ -59,88 +59,6 @@ void Bn3Monkey::SocketRequestServerImpl::close()
 	}
 }
 
-class SocketRequestWorker
-{
-public:
-	SocketRequestWorker(SocketRequestHandler* handler, SocketMultiEventListener& event_listener)
-		: _handler(handler), _event_listener(event_listener)
-	{
-	}
-	void start()
-	{
-		{
-			std::unique_lock<std::mutex> lock(_mtx);
-			_is_running = true;
-		}
-		_thread = std::thread(&SocketRequestWorker::routine, this);
-	}
-	void stop()
-	{
-		{
-			std::unique_lock<std::mutex> lock(_mtx);
-			_is_running = false;
-			_cv.notify_all();
-		}
-		_thread.join();
-	}
-	void run(SocketConnection* connection)
-	{
-		_handler->onProcessedWithoutResponse(
-			connection->input_buffer.data(),
-			connection->total_input_size);
-	}
-	void async(SocketConnection* connection)
-	{
-		{
-			std::unique_lock<std::mutex> lock(_mtx);
-			_queue.push(connection);
-			_cv.notify_all();
-		}
-	}
-	SocketTaskType await(SocketConnection* connection)
-	{
-		return connection->taskResult();
-	}
-
-private:
-	void routine()
-	{
-		while (true)
-		{
-			SocketConnection* connection{ nullptr };
-			
-			{
-				std::unique_lock<std::mutex> lock(_mtx);
-				_cv.wait(lock, [&]() {
-					return !_is_running || !_queue.empty();
-					});
-
-				if (!_is_running) return;
-
-				connection = _queue.front();
-				_queue.pop();
-			}
-			
-			bool is_finished = _handler->onProcessed(
-				connection->input_buffer.data(),
-				connection->total_input_size,
-				connection->output_buffer.data(),
-				connection->total_output_size);
-
-			connection->finishTask(is_finished);
-			_event_listener.addEvent(connection, SocketEventType::WRITE);
-		}
-	}
-
-	std::thread _thread;
-	SocketRequestHandler* _handler;
-	SocketMultiEventListener& _event_listener;
-
-	std::atomic_bool _is_running;
-	std::queue<SocketConnection*> _queue;
-	std::mutex _mtx;
-	std::condition_variable _cv;
-};
 
 
 void Bn3Monkey::SocketRequestServerImpl::run(SocketRequestHandler* handler)
@@ -181,42 +99,76 @@ void Bn3Monkey::SocketRequestServerImpl::run(SocketRequestHandler* handler)
 					if (client_socket->result().code() == SocketCode::SUCCESS)
 					{
 						SocketConnection* connection = _socket_connection_pool.acquire(socket_container);
-						connection->initialize(_configuration.pdu_size());
+						connection->initialize(handler->headerSize(), _configuration.pdu_size());
 						auto* sock = connection->socket();
 						handler->onClientConnected(sock->ip(), sock->port());
 						listener.addEvent(connection, SocketEventType::READ);
 					}
 				}
 				break;
+			case SocketEventType::DISCONNECTED:
+				{
+					auto* connection = static_cast<SocketConnection*>(context);
+					auto* sock = connection->socket();
+					handler->onClientDisconnected(sock->ip(), sock->port());
+					sock->close();
+					
+					listener.removeEvent(connection);
+					_socket_connection_pool.release(connection);
+				}
+				break;
+
 			case SocketEventType::READ:
 				{
 					auto* connection = static_cast<SocketConnection*>(context);
 					auto* sock = connection->socket();
-					auto result = sock->read(connection->input_buffer.data() + connection->total_input_size, connection->input_buffer.size());
-					if (result.bytes() > 0)
+
+					auto header_size = handler->headerSize();
+					auto* header = reinterpret_cast<SocketRequestHeader*>(connection->input_header_buffer.data());
+
+					for (size_t total_read_size = 0; total_read_size < header_size; )
 					{
-						auto state = handler->onDataReceived(
-							connection->input_buffer.data(), 
-							connection->total_input_size,
-							result.bytes()
-							);
-						connection->total_input_size += result.bytes();
+						auto result = sock->read(reinterpret_cast<char*>(header) + total_read_size, header_size - total_read_size);
+						if (result.bytes() < 0) {
+							// Discard Header
+							continue;
+						}
+						total_read_size += result.bytes();
+					}
 
-						if (state == SocketRequestHandler::ProcessState::READY)
-						{
-							listener.removeEvent(connection);
+					auto mode = handler->onModeClassified(header);
+					if (mode == SocketRequestMode::FAST) {
+						auto payload_size = header->payload_size();
+						auto payload = connection->input_payload_buffer.data();
+						for (size_t total_read_size = 0; total_read_size < payload_size; ) {
+							auto result = sock->read(payload + total_read_size, payload_size - total_read_size);
+							if (result.bytes() < 0) {
+								continue;
+							}
+							total_read_size += result.bytes();
+						}
 
-							worker.async(connection);
+						auto* response = handler->onProcessed(header, payload, payload_size, connection->output_buffer.data());
+						if (response->isValid() != nullptr) {
+							auto output_size = response->length();
+							auto* output = response->buffer();
+							for (size_t total_write_size = 0; total_write_size < output_size; ) {
+								auto result = sock->write(output + total_write_size, output_size);
+								if (result.bytes() < 0) {
+									continue;
+								}
+								total_write_size += result.bytes();
+							}
 						}
-						else if (state == SocketRequestHandler::ProcessState::READY_BUT_NO_RESPONSE)
-						{
-							worker.run(connection);
-							connection->flush();
-						}
-						else if (state == SocketRequestHandler::ProcessState::INCOMPLETE)
-						{
-							// Do nothing, wait for more data
-						}
+						connection->flush();
+					}
+					else if (mode == SocketRequestMode::LATENT) {
+					
+					}
+					else if (mode == SocketRequestMode::STREAM_START) {
+					}
+					else if (mode == SocketRequestMode::STREAM_STOP) {
+					
 					}
 				}
 				break;
@@ -251,21 +203,8 @@ void Bn3Monkey::SocketRequestServerImpl::run(SocketRequestHandler* handler)
 
 				}
 				break;
-			case SocketEventType::DISCONNECTED:
-				{
-					auto* connection = static_cast<SocketConnection*>(context);
-					auto* sock = connection->socket();
-					handler->onClientDisconnected(sock->ip(), sock->port());
-					sock->close();
-					
-					listener.removeEvent(connection);
-					_socket_connection_pool.release(connection);
-				}
+			default:
 				break;
-
-                default:
-                    break;
-			}
 		}
 
 	}

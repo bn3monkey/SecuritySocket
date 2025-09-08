@@ -55,38 +55,24 @@ namespace Bn3Monkey
         int32_t fd{ -1 };
         SocketEventType type { SocketEventType::UNDEFINED };
 
-        std::vector<char> input_buffer {0, std::allocator<char>()};
-        size_t total_input_size {0};
+        std::vector<char> input_header_buffer {0, std::allocator<char>()};
+        std::vector<char> input_payload_buffer {0, std::allocator<char>()};
         std::vector<char> output_buffer {0, std::allocator<char>()};
-        size_t total_output_size {0};
-        size_t written_size{ 0 };
-
+        
     public:
-        inline void initialize(size_t pdu_size)
+        inline void initialize(size_t header_size, size_t pdu_size)
         {
-            input_buffer.resize(pdu_size);
+            input_header_buffer.resize(header_size);
+            input_payload_buffer.resize(pdu_size);
             output_buffer.resize(pdu_size);
         }
-        inline void finishTask(bool result)
-        {
-            _task_status = result ? SocketTaskType::SUCCESS : SocketTaskType::FAIL;
-        }
-
-        inline SocketTaskType taskResult() {
-              return _task_status;
-        }
-
         inline void flush() {
-            _task_status = SocketTaskType::PROCESSING;
-            memset(input_buffer.data(), 0, total_input_size);
-            total_input_size = 0;
-            memset(output_buffer.data(), 0, total_output_size);
-            total_output_size = 0;
-            written_size = 0;
+            memset(input_header_buffer.data(), 0, input_header_buffer.size());
+            memset(input_payload_buffer.data(), 0, input_payload_buffer.size());
+            memset(output_buffer.data(), 0, output_buffer.size());
         }
     
     private:
-        SocketTaskType _task_status{ SocketTaskType::PROCESSING };
     };
 
     struct SocketEventResult

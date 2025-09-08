@@ -180,7 +180,7 @@ namespace Bn3Monkey
     };
 
 
-    
+    /*
     struct SECURITYSOCKET_API SocketRequestHandler
     {
         enum class ProcessState
@@ -204,6 +204,73 @@ namespace Bn3Monkey
             size_t intput_size,
             void* output_buffer,
             size_t& output_size) = 0;
+
+    };
+    */
+
+    // 오래 걸릴 것 같은 작업은 다른 쓰레드에서 처리하게 함.
+    // 애초에 payload를 다른 쓰레드에서 read를 여러번하고 write를 하자
+    // 금방 끝날 것은 이 쓰레드에서 처리하기.
+
+    struct SECURITYSOCKET_API SocketRequestHeader
+    {
+        virtual size_t payload_size() = 0;
+    };
+    
+    enum class SECURITYSOCKET_API SocketRequestMode
+    {
+        FAST,
+        LATENT,
+        STREAM_START,
+        STREAM_STOP
+    };
+
+    struct SECURITYSOCKET_API SocketResponse
+    {
+        bool isValid() override = 0;
+        const char* buffer() override = 0;
+        size_t length() override = 0;
+    };
+
+    struct SECURITYSOCKET_API SocketRequestHandler
+    {
+        virtual size_t headerSize() = 0;
+        
+        virtual SocketRequestMode onModeClassified(
+            SocketRequestHeader* header
+        ) = 0;
+        
+        virtual void onClientConnected(const char* ip, int port) = 0;
+        virtual void onClientDisconnected(const char* ip, int port) = 0;
+        
+        virtual SocketResponse* onProcessed(
+            SocketRequestHeader* header,
+            const char* input_buffer,
+            size_t input_size,
+            char* output_buffer
+        ) = 0;
+
+
+        virtual SocketResponse* onStreamStart(
+            SocketRequestHeader* header,
+            const char* input_buffer,
+            size_t input_size,
+            char* output_buffer
+        ) = 0;
+        
+        virtual SocketResponse* onStreamStop(
+            SocketRequestHeader* header,
+            const char* input_buffer,
+            size_t input_size,
+            char* output_buffer
+        ) = 0;
+
+        virtual void onStreamProcessed(
+            const char* input_buffer,
+            size_t input_size,
+            char* output_buffer
+        ) = 0;
+
 
     };
     
