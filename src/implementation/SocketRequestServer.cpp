@@ -118,6 +118,13 @@ void Bn3Monkey::SocketRequestServerImpl::run(SocketRequestHandler* handler)
 				case SocketConnection::ProcessState::READING_HEADER:
 					{
 						connection->state = connection->readHeader();
+						if (connection->state == SocketConnection::ProcessState::WRITING_RESPONSE) {
+							listener.modifyEvent(connection, Bn3Monkey::SocketEventType::WRITE);
+						}
+						else if (connection->state == SocketConnection::ProcessState::FINISH_PROCESS) {
+							connection->flush();
+							connection->state = SocketConnection::ProcessState::READING_HEADER;
+						}
 					}
 					break;
 				case SocketConnection::ProcessState::READING_PAYLOAD:
@@ -126,8 +133,9 @@ void Bn3Monkey::SocketRequestServerImpl::run(SocketRequestHandler* handler)
 						if (connection->state == SocketConnection::ProcessState::WRITING_RESPONSE) {
 							listener.modifyEvent(connection, Bn3Monkey::SocketEventType::WRITE);
 						}
-						else if (connection->state == SocketConnection::ProcessState::READING_HEADER) {
+						else if (connection->state == SocketConnection::ProcessState::FINISH_PROCESS) {
 							connection->flush();
+							connection->state = SocketConnection::ProcessState::READING_HEADER;
 						}
 					}
 					break;
@@ -145,9 +153,10 @@ void Bn3Monkey::SocketRequestServerImpl::run(SocketRequestHandler* handler)
 					case SocketConnection::ProcessState::WRITING_RESPONSE:
 					{
 						connection->state = connection->writeResponse();
-						if (connection->state == SocketConnection::ProcessState::READING_HEADER) {
+						if (connection->state == SocketConnection::ProcessState::FINISH_PROCESS) {
 							connection->flush();
 							listener.modifyEvent(connection, Bn3Monkey::SocketEventType::READ);
+							connection->state = SocketConnection::ProcessState::READING_HEADER;
 						}
 					}
 						break;

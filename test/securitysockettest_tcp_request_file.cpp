@@ -9,6 +9,7 @@
 #include "securitysockettest_helper.hpp"
 
 enum class FileRequestType : int32_t {
+    CREATE_HANDLE,
     CREATE_FILE,
     OPEN_FILE,
     READ_FILE,
@@ -91,6 +92,7 @@ struct FileRequestHandler : public Bn3Monkey::SocketRequestHandler
     Bn3Monkey::SocketRequestMode onModeClassified(const char* header) override {
         auto* derived_header = reinterpret_cast<const FileRequestHeader*>(header);
         switch (derived_header->request_type) {
+        case FileRequestType::CREATE_HANDLE:
         case FileRequestType::CREATE_FILE:
         case FileRequestType::OPEN_FILE:
         case FileRequestType::CLOSE_FILE:
@@ -122,6 +124,13 @@ struct FileRequestHandler : public Bn3Monkey::SocketRequestHandler
         auto* derived_header = reinterpret_cast<const FileRequestHeader*>(header);
 
         switch (derived_header->request_type) {
+        case FileRequestType::CREATE_HANDLE: {
+                printConcurrent("[Client %d -> Server] : Create Handle \n", derived_header->client_no);
+
+                auto* response = new (output_buffer) FileResponseHeader{ derived_header->request_type, derived_header->request_no, sizeof(FileOpenResponse)};
+                *output_size = sizeof(FileResponseHeader);
+            }
+            break;
         case FileRequestType::CREATE_FILE:
             {
                 printConcurrent("[Client %d -> Server] : Create File\n", derived_header->client_no);
@@ -244,6 +253,19 @@ void runFileClient(int32_t client_no)
     auto test_cases = createTestCases();
     int32_t request_no{ 0 };
     FILE* fp{ nullptr };
+
+    // Create Handle
+    {
+        FileRequestHeader request_header{ FileRequestType::CREATE_HANDLE, ++request_no, 0, client_no };
+        client.write(&request_header, sizeof(request_header));
+
+        FileResponseHeader response;
+        client.read(&response, sizeof(response));
+
+        auto& response_header = response;
+        EXPECT_EQ(response_header.response_no, request_header.request_no);
+        EXPECT_EQ(response_header.request_type, request_header.request_type);
+    }
 
     // Create File
     {

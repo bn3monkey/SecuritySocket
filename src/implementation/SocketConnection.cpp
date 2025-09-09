@@ -28,6 +28,11 @@ Bn3Monkey::SocketConnection::ProcessState Bn3Monkey::SocketConnection::readHeade
 		auto* header = input_header_buffer.data();
 		payload_size = _handler.getPayloadSize(header);
 		mode = _handler.onModeClassified(header);
+
+		if (payload_size == 0) {
+			return runTask(mode, payload_size);
+		}
+
 		return ProcessState::READING_PAYLOAD;
 	}
 	return ProcessState::READING_HEADER;	
@@ -43,36 +48,8 @@ Bn3Monkey::SocketConnection::ProcessState Bn3Monkey::SocketConnection::readPaylo
 	total_input_payload_read_size += result.bytes();
 	if (total_input_payload_read_size == payload_size)
 	{
-		switch (mode) {
-		case SocketRequestMode::FAST:
-			{
-				auto* header = input_header_buffer.data();
-				_handler.onProcessed(header, payload, payload_size, output_buffer.data(), &response_size);
-				return ProcessState::WRITING_RESPONSE;
-			}
-			break;
-		case SocketRequestMode::SLOW:
-			{
-				// @Todo
-			}
-			break;
-		case SocketRequestMode::READ_STREAM:
-			{
-				auto* header = input_header_buffer.data();
-				_handler.onProcessed(header, payload, payload_size, output_buffer.data(), &response_size);
-				return ProcessState::WRITING_RESPONSE;
-			}
-			break;
-		case SocketRequestMode::WRITE_STREAM:
-			{
-				auto* header = input_header_buffer.data();
-				_handler.onProcessedWithoutResponse(header, payload, payload_size);
-				return ProcessState::READING_HEADER;
-			}
-			break;
-		}
+		return runTask(mode, payload_size);
 	}
-
 	return ProcessState::READING_PAYLOAD;
 }
 
@@ -86,7 +63,7 @@ Bn3Monkey::SocketConnection::ProcessState Bn3Monkey::SocketConnection::writeResp
 	total_output_write_size += result.bytes();
 
 	if (total_output_write_size == response_size) {
-		return ProcessState::READING_HEADER;
+		return ProcessState::FINISH_PROCESS;
 	}
 	return ProcessState::WRITING_RESPONSE;
 }
@@ -106,6 +83,43 @@ void Bn3Monkey::SocketConnection::flush()
 	
 	response_size;
 	total_output_write_size = 0;
+}
+
+Bn3Monkey::SocketConnection::ProcessState Bn3Monkey::SocketConnection::runTask(SocketRequestMode mode, size_t payload_size)
+{
+
+	auto* header = input_header_buffer.data();
+	auto* payload = input_payload_buffer.data();
+
+
+	switch (mode) {
+	case SocketRequestMode::FAST:
+	{
+		_handler.onProcessed(header, payload, payload_size, output_buffer.data(), &response_size);
+		return ProcessState::WRITING_RESPONSE;
+	}
+	break;
+	case SocketRequestMode::SLOW:
+	{
+		// @Todo
+	}
+	break;
+	case SocketRequestMode::READ_STREAM:
+	{
+		auto* header = input_header_buffer.data();
+		_handler.onProcessed(header, payload, payload_size, output_buffer.data(), &response_size);
+		return ProcessState::WRITING_RESPONSE;
+	}
+	break;
+	case SocketRequestMode::WRITE_STREAM:
+	{
+		auto* header = input_header_buffer.data();
+		_handler.onProcessedWithoutResponse(header, payload, payload_size);
+		return ProcessState::FINISH_PROCESS;
+	}
+	break;
+	}
+	return ProcessState::WRITING_RESPONSE;
 }
 
 

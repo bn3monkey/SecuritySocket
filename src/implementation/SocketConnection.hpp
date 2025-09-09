@@ -20,6 +20,7 @@ namespace Bn3Monkey
             READING_HEADER,
             READING_PAYLOAD,
             WRITING_RESPONSE,
+            FINISH_PROCESS
         };
 
         SocketConnection(ServerActiveSocketContainer& container, SocketRequestHandler& handler, size_t pdu_size) :
@@ -52,6 +53,7 @@ namespace Bn3Monkey
         void flush();
         
     private:
+        ProcessState runTask(SocketRequestMode mode, size_t payload_size);
 
         ServerActiveSocketContainer _container;
         ServerActiveSocket* _socket;
