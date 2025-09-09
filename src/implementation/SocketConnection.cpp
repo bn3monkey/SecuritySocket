@@ -59,15 +59,15 @@ Bn3Monkey::SocketConnection::ProcessState Bn3Monkey::SocketConnection::readPaylo
 		case SocketRequestMode::READ_STREAM:
 			{
 				auto* header = reinterpret_cast<SocketRequestHeader*>(input_header_buffer.data());
-				_handler.onProcessedWithoutResponse(header, payload, payload_size);
-				return ProcessState::READING_HEADER;				
+				_handler.onProcessed(header, payload, payload_size, output_buffer.data(), &response_size);
+				return ProcessState::WRITING_RESPONSE;
 			}
 			break;
 		case SocketRequestMode::WRITE_STREAM:
 			{
 				auto* header = reinterpret_cast<SocketRequestHeader*>(input_header_buffer.data());
-				_handler.onProcessed(header, payload, payload_size, output_buffer.data(), &response_size);
-				return ProcessState::WRITING_RESPONSE;
+				_handler.onProcessedWithoutResponse(header, payload, payload_size);
+				return ProcessState::READING_HEADER;
 			}
 			break;
 		}
