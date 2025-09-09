@@ -25,8 +25,8 @@ Bn3Monkey::SocketConnection::ProcessState Bn3Monkey::SocketConnection::readHeade
 	total_input_header_read_size += result.bytes();
 
 	if (total_input_header_read_size == input_header_buffer.size()) {
-		auto* header = reinterpret_cast<SocketRequestHeader*>(input_header_buffer.data());
-		payload_size = header->payloadSize();
+		auto* header = input_header_buffer.data();
+		payload_size = _handler.getPayloadSize(header);
 		mode = _handler.onModeClassified(header);
 		return ProcessState::READING_PAYLOAD;
 	}
@@ -46,7 +46,7 @@ Bn3Monkey::SocketConnection::ProcessState Bn3Monkey::SocketConnection::readPaylo
 		switch (mode) {
 		case SocketRequestMode::FAST:
 			{
-				auto* header = reinterpret_cast<SocketRequestHeader*>(input_header_buffer.data());
+				auto* header = input_header_buffer.data();
 				_handler.onProcessed(header, payload, payload_size, output_buffer.data(), &response_size);
 				return ProcessState::WRITING_RESPONSE;
 			}
@@ -58,14 +58,14 @@ Bn3Monkey::SocketConnection::ProcessState Bn3Monkey::SocketConnection::readPaylo
 			break;
 		case SocketRequestMode::READ_STREAM:
 			{
-				auto* header = reinterpret_cast<SocketRequestHeader*>(input_header_buffer.data());
+				auto* header = input_header_buffer.data();
 				_handler.onProcessed(header, payload, payload_size, output_buffer.data(), &response_size);
 				return ProcessState::WRITING_RESPONSE;
 			}
 			break;
 		case SocketRequestMode::WRITE_STREAM:
 			{
-				auto* header = reinterpret_cast<SocketRequestHeader*>(input_header_buffer.data());
+				auto* header = input_header_buffer.data();
 				_handler.onProcessedWithoutResponse(header, payload, payload_size);
 				return ProcessState::READING_HEADER;
 			}

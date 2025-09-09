@@ -23,6 +23,7 @@ It is compatible for Windows(MSVC, MinGW Compiler), Android (Clang), Linux (gcc)
     - [2.0.5 / 2025.08.11](#205--20250811)
     - [2.0.6 / 2025.09.04](#206--20250904)
     - [2.1.0 / 2025.09.09](#210--20250909)
+    - [2.1.1 / 2025.09.09](#211--20250909)
 
 ## Build
 
@@ -178,11 +179,7 @@ int main()
         4. The client receives the payload.
     */
 
-    /*
-        The header of the request packet must be defined using SocketRequestHeader.
-        payloadSize() must be implemented
-    */
-    struct EchoRequestHeader : public Bn3Monkey::SocketRequestHeader
+    struct EchoRequestHeader
     {
         int32_t request_type{ 0 };
         int32_t request_no{ 0 };
@@ -201,11 +198,14 @@ int main()
 
     struct EchoRequestHandler : public Bn3Monkey::SocketRequestHandler
     {
-        size_t headerSize() override {
+        size_t getHeaderSize() override {
             return sizeof(EchoRequestHeader);
         }
-        Bn3Monkey::SocketRequestMode onModeClassified(Bn3Monkey::SocketRequestHeader* header) override {
-            auto* derived_header = reinterpret_cast<EchoRequestHeader*>(header);
+        size_t getPayloadSize(const char* header) override {
+            return reinterpret_cast<const EchoResponseHeader*>(header)->payload_size;
+        }
+        Bn3Monkey::SocketRequestMode onModeClassified(const char* header) override {
+            auto* derived_header = reinterpret_cast<const EchoRequestHeader*>(header);
             switch (derived_header->request_type) {
             case 0:
                 return Bn3Monkey::SocketRequestMode::FAST;
@@ -222,14 +222,14 @@ int main()
         }
     
         void onProcessed(
-            Bn3Monkey::SocketRequestHeader* header,
+            const char* header,
             const char* input_buffer,
             size_t input_size,
             char* output_buffer,
             size_t* output_size
         ) override {
     
-            auto* derived_header = reinterpret_cast<EchoRequestHeader*>(header);
+            auto* derived_header = reinterpret_cast<const EchoRequestHeader*>(header);
                     
             switch (derived_header->request_type) {
             case 0:
@@ -243,7 +243,7 @@ int main()
         }
     
         void onProcessedWithoutResponse(
-            Bn3Monkey::SocketRequestHeader* header,
+            const char* header,
             const char* input_buffer,
             size_t input_size
         ) override {
@@ -374,3 +374,7 @@ C++ 14
             - Bn3Monkey::SocketRequestMode::WRITE_STREAM: requests that continuously send data to the server
             - Bn3Monkey::SocketRequestMode::READ_STREAM: requests that continuously receive data from the server
        2. Users must implement tasks that should be processed quickly in onProcessedWithoutResponse, and tasks that require a response in onProcessed.
+
+### 2.1.1 / 2025.09.09
+
+- Remove Request Header class

@@ -20,7 +20,7 @@ const char* test_patterns[] = {
     "Mixed123!@#한글ABC"
 };
 
-struct EchoRequestHeader : public Bn3Monkey::SocketRequestHeader
+struct EchoRequestHeader
 {
     int32_t request_type{ 0 };
     int32_t request_no{ 0 };
@@ -33,8 +33,6 @@ struct EchoRequestHeader : public Bn3Monkey::SocketRequestHeader
         payload_size(payload_size),
         client_no(client_no) {
     }
-
-    size_t payloadSize() override { return payload_size;  }
 };
 
 struct EchoResponseHeader {
@@ -59,11 +57,14 @@ struct EchoResponse
 
 struct EchoRequestHandler : public Bn3Monkey::SocketRequestHandler
 {
-    size_t headerSize() override {
+    size_t getHeaderSize() override {
         return sizeof(EchoRequestHeader);
     }
-    Bn3Monkey::SocketRequestMode onModeClassified(Bn3Monkey::SocketRequestHeader* header) override {
-        auto* derived_header = reinterpret_cast<EchoRequestHeader*>(header);
+    size_t getPayloadSize(const char* header) override {
+        return reinterpret_cast<const EchoResponseHeader*>(header)->payload_size;
+    }
+    Bn3Monkey::SocketRequestMode onModeClassified(const char* header) override {
+        auto* derived_header = reinterpret_cast<const EchoRequestHeader*>(header);
         switch (derived_header->request_type) {
         case 0:
             return Bn3Monkey::SocketRequestMode::FAST;
@@ -80,14 +81,14 @@ struct EchoRequestHandler : public Bn3Monkey::SocketRequestHandler
     }
 
     void onProcessed(
-        Bn3Monkey::SocketRequestHeader* header,
+        const char* header,
         const char* input_buffer,
         size_t input_size,
         char* output_buffer,
         size_t* output_size
     ) override {
 
-        auto* derived_header = reinterpret_cast<EchoRequestHeader*>(header);
+        auto* derived_header = reinterpret_cast<const EchoRequestHeader*>(header);
                 
         switch (derived_header->request_type) {
         case 0:
@@ -101,7 +102,7 @@ struct EchoRequestHandler : public Bn3Monkey::SocketRequestHandler
     }
 
     void onProcessedWithoutResponse(
-        Bn3Monkey::SocketRequestHeader* header,
+        const char* header,
         const char* input_buffer,
         size_t input_size
     ) override {

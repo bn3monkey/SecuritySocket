@@ -16,7 +16,7 @@ enum class FileRequestType : int32_t {
     CLOSE_FILE,
 };
 
-struct FileRequestHeader : public Bn3Monkey::SocketRequestHeader
+struct FileRequestHeader
 {
     FileRequestType request_type{ FileRequestType::CREATE_FILE };
     int32_t request_no{ 0 };
@@ -29,8 +29,6 @@ struct FileRequestHeader : public Bn3Monkey::SocketRequestHeader
         payload_size(payload_size),
         client_no(client_no) {
     }
-
-    size_t payloadSize() override { return payload_size; }
 };
 struct FileOpenRequestPayload
 {
@@ -82,11 +80,16 @@ struct FileCloseResponse {
 
 struct FileRequestHandler : public Bn3Monkey::SocketRequestHandler
 {
-    size_t headerSize() override {
+    size_t getHeaderSize() override {
         return sizeof(FileRequestHeader);
     }
-    Bn3Monkey::SocketRequestMode onModeClassified(Bn3Monkey::SocketRequestHeader* header) override {
-        auto* derived_header = reinterpret_cast<FileRequestHeader*>(header);
+    size_t getPayloadSize(const char* buffer) override {
+        return reinterpret_cast<const FileRequestHeader*>(buffer)->payload_size;
+    }
+
+
+    Bn3Monkey::SocketRequestMode onModeClassified(const char* header) override {
+        auto* derived_header = reinterpret_cast<const FileRequestHeader*>(header);
         switch (derived_header->request_type) {
         case FileRequestType::CREATE_FILE:
         case FileRequestType::OPEN_FILE:
@@ -109,14 +112,14 @@ struct FileRequestHandler : public Bn3Monkey::SocketRequestHandler
     }
 
     void onProcessed(
-        Bn3Monkey::SocketRequestHeader* header,
+        const char* header,
         const char* input_buffer,
         size_t input_size,
         char* output_buffer,
         size_t* output_size
     ) override {
 
-        auto* derived_header = reinterpret_cast<FileRequestHeader*>(header);
+        auto* derived_header = reinterpret_cast<const FileRequestHeader*>(header);
 
         switch (derived_header->request_type) {
         case FileRequestType::CREATE_FILE:
@@ -173,11 +176,11 @@ struct FileRequestHandler : public Bn3Monkey::SocketRequestHandler
     }
 
     void onProcessedWithoutResponse(
-        Bn3Monkey::SocketRequestHeader* header,
+        const char* header,
         const char* input_buffer,
         size_t input_size
     ) override {
-        auto* derived_header = reinterpret_cast<FileRequestHeader*>(header);
+        auto* derived_header = reinterpret_cast<const FileRequestHeader*>(header);
         switch (derived_header->request_type) {
         case FileRequestType::WRITE_FILE:
             {

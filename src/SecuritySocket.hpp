@@ -215,12 +215,7 @@ namespace Bn3Monkey
     // 오래 걸릴 것 같은 작업은 다른 쓰레드에서 처리하게 함.
     // 애초에 payload를 다른 쓰레드에서 read를 여러번하고 write를 하자
     // 금방 끝날 것은 이 쓰레드에서 처리하기.
-
-    struct SECURITYSOCKET_API SocketRequestHeader
-    {
-        virtual size_t payloadSize() = 0;
-    };
-    
+        
     enum class SECURITYSOCKET_API SocketRequestMode
     {
         FAST,
@@ -231,17 +226,18 @@ namespace Bn3Monkey
 
     struct SECURITYSOCKET_API SocketRequestHandler
     {
-        virtual size_t headerSize() = 0;
+        virtual size_t getHeaderSize() = 0;
+        virtual size_t getPayloadSize(const char* header) = 0;
         
         virtual SocketRequestMode onModeClassified(
-            SocketRequestHeader* header
+            const char* header
         ) = 0;
         
         virtual void onClientConnected(const char* ip, int port) = 0;
         virtual void onClientDisconnected(const char* ip, int port) = 0;
         
         virtual void onProcessed(
-            SocketRequestHeader* header,
+            const char* header,
             const char* input_buffer,
             size_t input_size,
             char* output_buffer,
@@ -249,7 +245,7 @@ namespace Bn3Monkey
         ) = 0;
 
         virtual void onProcessedWithoutResponse(
-            SocketRequestHeader* header,
+            const char* header,
             const char* input_buffer,
             size_t input_size
         ) = 0;

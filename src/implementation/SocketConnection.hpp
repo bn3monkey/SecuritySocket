@@ -28,7 +28,7 @@ namespace Bn3Monkey
             _socket = _container.get();
             fd = _socket->descriptor();
 
-            input_header_buffer.resize(handler.headerSize());
+            input_header_buffer.resize(handler.getHeaderSize());
             input_payload_buffer.resize(pdu_size);
             output_buffer.resize(pdu_size);
         }
