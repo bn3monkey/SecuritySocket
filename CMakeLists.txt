@@ -17,6 +17,11 @@ message("BUILD_SECURITYSOCKET_SHARED = ${BUILD_SECURITYSOCKET_SHARED}")
 option(BUILD_SECURITYSOCKET_TEST "Build Tests of Security Socket Library" on)
 message("BUILD_SECURITYSOCKET_TEST = ${BUILD_SECURITYSOCKET_TEST}")
 
+if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    message("Apply -fPIC in linux environment ")
+    set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+endif()
+
 ## OpenSSL
 
 message("-- OpenSSL CMake Initialization --")
@@ -79,9 +84,6 @@ endif()
 
 set_target_properties(securitysocket PROPERTIES PUBLIC_HEADER "${source_dir}/SecuritySocket.hpp")
 
-if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
-    set(CMAKE_POSITION_INDEPENDENT_CODE ON)
-endif()
 
 # INSTALL
 

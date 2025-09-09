@@ -180,15 +180,15 @@ TEST(TCPRequestEcho, runFourClient)
     EchoRequestHandler handler;
     SocketRequestServer server{ config };
 
+    auto result = server.open(&handler, 4);
+    ASSERT_EQ(SocketCode::SUCCESS, result.code());
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+
     std::thread client1{ runEchoClient, 1 };
     std::thread client2{ runEchoClient, 2 };
     std::thread client3{ runEchoClient, 3 };
     std::thread client4{ runEchoClient, 4 };
-
-
-    auto result = server.open(&handler, 4);
-    ASSERT_EQ(SocketCode::SUCCESS, result.code());
-
 
     client1.join();
     client2.join();

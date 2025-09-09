@@ -131,6 +131,9 @@ void Bn3Monkey::SocketRequestServerImpl::run(SocketRequestHandler* handler)
 						}
 					}
 					break;
+
+				default:
+					break;
 				}
 			}
 			break;
@@ -139,7 +142,7 @@ void Bn3Monkey::SocketRequestServerImpl::run(SocketRequestHandler* handler)
 			{
 				auto connection = static_cast<SocketConnection*>(context);
 				switch (connection->state) {
-				case SocketConnection::ProcessState::WRITING_RESPONSE:
+					case SocketConnection::ProcessState::WRITING_RESPONSE:
 					{
 						connection->state = connection->writeResponse();
 						if (connection->state == SocketConnection::ProcessState::READING_HEADER) {
@@ -147,6 +150,9 @@ void Bn3Monkey::SocketRequestServerImpl::run(SocketRequestHandler* handler)
 							listener.modifyEvent(connection, Bn3Monkey::SocketEventType::READ);
 						}
 					}
+						break;
+					default:
+						break;
 				}
 			}
 

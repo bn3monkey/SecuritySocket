@@ -167,6 +167,8 @@ struct FileRequestHandler : public Bn3Monkey::SocketRequestHandler
 
             }
             break;
+        default:
+            break;
         }
     }
 
@@ -185,6 +187,9 @@ struct FileRequestHandler : public Bn3Monkey::SocketRequestHandler
 
                 auto length = fwrite(write_request_payload->data, 1, write_request_payload->length, write_request_payload->fp);
             }
+            break;
+
+        default:
             break;
         }
     }
@@ -377,12 +382,12 @@ TEST(TCPRequestFile, runOneClient)
     FileRequestHandler handler;
     SocketRequestServer server{ config };
 
-    std::thread client1{ runFileClient, 1 };
-
 
     auto result = server.open(&handler, 4);
     ASSERT_EQ(SocketCode::SUCCESS, result.code());
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
 
+    std::thread client1{ runFileClient, 1 };
 
     client1.join();
 
@@ -414,15 +419,17 @@ TEST(TCPRequestFile, runFourClient)
     FileRequestHandler handler;
     SocketRequestServer server{ config };
 
-    std::thread client1{ runFileClient, 1 };
-    std::thread client2{ runFileClient, 2 };
-    std::thread client3{ runFileClient, 3 };
-    std::thread client4{ runFileClient, 4 };
 
 
     auto result = server.open(&handler, 4);
     ASSERT_EQ(SocketCode::SUCCESS, result.code());
 
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+
+    std::thread client1{ runFileClient, 1 };
+    std::thread client2{ runFileClient, 2 };
+    std::thread client3{ runFileClient, 3 };
+    std::thread client4{ runFileClient, 4 };
 
     client1.join();
     client2.join();
