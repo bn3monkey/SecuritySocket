@@ -175,7 +175,6 @@ SocketResult SocketClientImpl::read(void* buffer, size_t size)
 }
 SocketResult SocketClientImpl::write(const void* buffer, size_t size)
 {
-	int ret{ 0 };
 	size_t written_size{ 0 };
 	SocketResult result;
 

@@ -9,6 +9,8 @@ SocketBroadcastServerImpl::~SocketBroadcastServerImpl()
 }
 SocketResult SocketBroadcastServerImpl::open(size_t num_of_clients)
 {
+	(void)num_of_clients;
+
 	SocketResult result = SocketResult(SocketCode::SUCCESS);
 
 	bool is_unix_domain = SocketAddress::checkUnixDomain(_configuration.ip());

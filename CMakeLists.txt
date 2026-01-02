@@ -2,6 +2,7 @@ cmake_minimum_required (VERSION 3.16)
 
 project(SecuritySocket)
 
+
 # Security Socket Project
 
 message("-- Security Socket --")
@@ -27,7 +28,7 @@ if (SECURITYSOCKET_USING_TLS)
     set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build OpenSSL Static Libraries" FORCE)
     FetchContent_Declare(OpenSSL
         GIT_REPOSITORY https://github.com/janbar/openssl-cmake
-        GIT_TAG 1.1.1w-20231130)
+        GIT_TAG 1.1.1w-20250419)
     FetchContent_MakeAvailable(OpenSSL)
     set(BUILD_SHARED_LIBS ${TEMP_BUILD_SHARED_LIBS} ON CACHE BOOL "Build OpenSSL Static Libraries" FORCE)
 

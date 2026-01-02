@@ -61,6 +61,18 @@ target_sources(securitysocket PRIVATE $<TARGET_OBJECTS:crypto> $<TARGET_OBJECTS:
 
 configure_file(${source_dir}/SecuritySocket.hpp ${securitysocket_include_dir}/SecuritySocket.hpp)
 
+if(MSVC)
+    target_compile_options(securitysocket PRIVATE /W4)
+    target_compile_options(securitysocket PRIVATE /W4)
+elseif(APPLE)
+    target_compile_options(securitysocket PRIVATE -Wall -Wextra -fPIC)
+    target_compile_options(securitysocket PRIVATE -Wall -Wextra -fPIC)
+elseif(UNIX AND NOT APPLE)
+    target_compile_options(securitysocket PRIVATE -Wall -Wextra -fPIC)
+    target_compile_options(securitysocket PRIVATE -Wall -Wextra -fPIC)
+endif()
+
+
 if (ANDROID)
 set_target_properties(securitysocket PROPERTIES LIBRARY_OUTPUT_DIRECTORY
     ${securitysocket_binary_dir}/${ANDROID_ABI})

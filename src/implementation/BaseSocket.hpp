@@ -39,9 +39,15 @@ namespace Bn3Monkey
         }
 
         SocketContainer(const SocketContainer& container) {
-            _is_initialized = container._is_initialized;
-            memcpy(buffer, container.buffer, size);
+			if (this != &container)
+                copyFrom(container);
         }
+
+        SocketContainer& operator=(const SocketContainer& container) {
+            if (this != &container) 
+				copyFrom(container);
+            return *this;
+		}
 
         ~SocketContainer() {
             auto* sock = get();
@@ -57,6 +63,11 @@ namespace Bn3Monkey
         }
 
     private:
+        void copyFrom(const SocketContainer& container) {
+            _is_initialized = container._is_initialized;
+            memcpy(buffer, container.buffer, size);
+		}
+
         bool _is_initialized{ false };
         static constexpr size_t size = sizeof(PlainSocket) > sizeof(TLSSocket) ? sizeof(PlainSocket) : sizeof(TLSSocket);
         static_assert(sizeof(PlainSocket) <= 64, "");
