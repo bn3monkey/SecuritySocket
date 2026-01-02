@@ -15,8 +15,7 @@ SocketResult SocketClientImpl::open()
 {
 	SocketResult result;
 	
-	bool is_unix_domain = SocketAddress::checkUnixDomain(_configuration.ip());
-	_container = SocketContainer<ClientActiveSocket, TLSClientActiveSocket>(_configuration.tls(), is_unix_domain);
+	_container = SocketContainer<ClientActiveSocket, TLSClientActiveSocket>(_configuration.tls(), _configuration.is_unix_domain());
 	_socket = _container.get();
 	result = _socket->valid();
 	if (result.code() != SocketCode::SUCCESS)
@@ -37,7 +36,7 @@ SocketResult SocketClientImpl::connect()
 {
 	SocketResult result;
 
-	SocketAddress address{_configuration.ip(), _configuration.port(), false};
+	SocketAddress address{_configuration.ip(), _configuration.port(), false, _configuration.is_unix_domain()};
 	if (result.code() != SocketCode::SUCCESS) {
 		return result;
 	}

@@ -4,6 +4,28 @@
 #include <mutex>
 #include <condition_variable>
 
+
+inline std::mutex& getPrintMutex() {
+    static std::mutex _mtx;
+    return _mtx;
+}
+template<class... Args>
+inline void printConcurrent(const char* format, Args&&... args)
+{
+    {
+        std::lock_guard<std::mutex> lock(getPrintMutex());
+        printf(format, std::forward<Args>(args)...);
+    }
+}
+template<>
+inline void printConcurrent(const char* format)
+{
+    {
+        std::lock_guard<std::mutex> lock(getPrintMutex());
+        printf("%s", format);
+    }
+}
+
 class SimpleEvent
 {
 public:

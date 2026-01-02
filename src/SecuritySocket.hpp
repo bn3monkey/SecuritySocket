@@ -120,6 +120,7 @@ namespace Bn3Monkey
         inline char* ip() { return _ip; } 
         inline char* port() {return _port;} 
         inline bool tls() { return _tls;} 
+        inline bool is_unix_domain() { return _is_unix_domain; }
         inline size_t pdu_size() { return _pdu_size;} 
         inline uint32_t max_retries() { return _max_retries; } 
         inline uint32_t read_timeout() { return _read_timeout; } 
@@ -131,12 +132,14 @@ namespace Bn3Monkey
             const char* ip,
             uint32_t port,
             bool tls,
+            bool is_unix_domain = false,
             uint32_t max_retries = 3,
             uint32_t read_timeout = 2000,
             uint32_t write_timeout = 2000,
             uint32_t time_between_retries = 100,
             size_t pdu_size = MAX_PDU_SIZE) : 
             _tls(tls), 
+            _is_unix_domain(is_unix_domain),
             _pdu_size(pdu_size),
             _max_retries(max_retries),
             _read_timeout(read_timeout),
@@ -157,6 +160,7 @@ namespace Bn3Monkey
         uint32_t _read_timeout{ 0 };
         uint32_t _write_timeout{ 0 };
         uint32_t _time_between_retries{ 0 };
+        bool _is_unix_domain{ false };
     };
 
     class SECURITYSOCKET_API SocketClient
@@ -180,7 +184,7 @@ namespace Bn3Monkey
     };
 
 
-    
+    /*
     struct SECURITYSOCKET_API SocketRequestHandler
     {
         enum class ProcessState
@@ -205,6 +209,46 @@ namespace Bn3Monkey
             void* output_buffer,
             size_t& output_size) = 0;
 
+    };
+    */
+
+    // 오래 걸릴 것 같은 작업은 다른 쓰레드에서 처리하게 함.
+    // 애초에 payload를 다른 쓰레드에서 read를 여러번하고 write를 하자
+    // 금방 끝날 것은 이 쓰레드에서 처리하기.
+        
+    enum class SECURITYSOCKET_API SocketRequestMode
+    {
+        FAST,
+        SLOW,
+        READ_STREAM,
+        WRITE_STREAM
+    };
+
+    struct SECURITYSOCKET_API SocketRequestHandler
+    {
+        virtual size_t getHeaderSize() = 0;
+        virtual size_t getPayloadSize(const char* header) = 0;
+        
+        virtual SocketRequestMode onModeClassified(
+            const char* header
+        ) = 0;
+        
+        virtual void onClientConnected(const char* ip, int port) = 0;
+        virtual void onClientDisconnected(const char* ip, int port) = 0;
+        
+        virtual void onProcessed(
+            const char* header,
+            const char* input_buffer,
+            size_t input_size,
+            char* output_buffer,
+            size_t* output_size
+        ) = 0;
+
+        virtual void onProcessedWithoutResponse(
+            const char* header,
+            const char* input_buffer,
+            size_t input_size
+        ) = 0;
     };
     
 

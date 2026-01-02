@@ -16,10 +16,14 @@ It is compatible for Windows(MSVC, MinGW Compiler), Android (Clang), Linux (gcc)
   - [Revision History](#revision-history)
     - [1.0.0 / 2024.6.16](#100--2024616)
     - [2.0.0 / 2025.02.17](#200--20250217)
-    - [2.1.0 / 2025.02.18](#210--20250218)
-    - [2.2.0 / 2025.03.19](#220--20250319)
-    - [2.3.0 / 2025.07.02](#230--20250702)
-    - [2.4.0 / 2025.08.11](#240--20250811)
+    - [2.0.1 / 2025.02.18](#201--20250218)
+    - [2.0.2 / 2025.03.19](#202--20250319)
+    - [2.0.3 / 2025.07.02](#203--20250702)
+    - [2.0.4 / 2025.08.11](#204--20250811)
+    - [2.0.5 / 2025.08.11](#205--20250811)
+    - [2.0.6 / 2025.09.04](#206--20250904)
+    - [2.1.0 / 2025.09.09](#210--20250909)
+    - [2.1.1 / 2025.09.09](#211--20250909)
 
 ## Build
 
@@ -167,31 +171,86 @@ int main()
         8192
     };
 
+    /*
+    The Request Server is assumed to operate as follows:
+        1. The client sends a Request Header containing the payload size.
+        2. The client sends the Request Payload.
+        3. The server parses the payload and sends a Response.
+        4. The client receives the payload.
+    */
 
-    class EchoRequestHandler : public SocketRequestHandler
+    struct EchoRequestHeader
     {
-        virtual void onClientConnected(const char* ip, int port) override {
-            printf("[Sever] Client connected (%s, %d)\n", ip, port);
+        int32_t request_type{ 0 };
+        int32_t request_no{ 0 };
+        size_t payload_size{ 0 };
+        int32_t client_no{ 0 };
+    
+        EchoRequestHeader(int32_t request_type, int32_t request_no, size_t payload_size, int32_t client_no) :
+            request_type(request_type),
+            request_no(request_no),
+            payload_size(payload_size),
+            client_no(client_no) {
         }
-        virtual void onClientDisconnected(const char* ip, int port) override {
-            printf("[Sever] Client disconnected (%s, %d)\n", ip, port);
-        }
-        virtual ProcessState onDataReceived(const void* input_buffer, size_t offset, size_t read_size) override
-        {
-            return ProcessState::READY;
-        }
-        virtual bool onProcessed(
-            const void* input_buffer,
-            size_t input_size,
-            void* output_buffer,
-            size_t& output_size) override
-        {
+    
+        size_t payloadSize() override { return payload_size;  }
+    };
 
-            printf("[Server] Received Data : %s (%zu)\n", (char *)input_buffer, input_size);
-            output_size = snprintf((char*)output_buffer, 8192, "echo) %s", (char*)input_buffer);
-            return true;
+    struct EchoRequestHandler : public Bn3Monkey::SocketRequestHandler
+    {
+        size_t getHeaderSize() override {
+            return sizeof(EchoRequestHeader);
+        }
+        size_t getPayloadSize(const char* header) override {
+            return reinterpret_cast<const EchoResponseHeader*>(header)->payload_size;
+        }
+        Bn3Monkey::SocketRequestMode onModeClassified(const char* header) override {
+            auto* derived_header = reinterpret_cast<const EchoRequestHeader*>(header);
+            switch (derived_header->request_type) {
+            case 0:
+                return Bn3Monkey::SocketRequestMode::FAST;
+            }
+            return Bn3Monkey::SocketRequestMode::FAST;
+        }
+    
+        void onClientConnected(const char* ip, int port) override {
+            printConcurrent("Client connected (ip : %s port : %d)\n", ip, port);
+        }
+        
+        void onClientDisconnected(const char* ip, int port) override {
+            printConcurrent("Client disconnected (ip : %s port : %d)\n", ip, port);
+        }
+    
+        void onProcessed(
+            const char* header,
+            const char* input_buffer,
+            size_t input_size,
+            char* output_buffer,
+            size_t* output_size
+        ) override {
+    
+            auto* derived_header = reinterpret_cast<const EchoRequestHeader*>(header);
+                    
+            switch (derived_header->request_type) {
+            case 0:
+                printConcurrent("[Client %d -> Server] : %s\n", derived_header->client_no, input_buffer);
+                
+                auto* response = new (output_buffer) EchoResponse{ {derived_header->request_type, derived_header->request_no, sizeof(EchoResponse)}, input_buffer, input_size };
+                *output_size = sizeof(EchoResponse);
+                
+                break;
+            }
+        }
+    
+        void onProcessedWithoutResponse(
+            const char* header,
+            const char* input_buffer,
+            size_t input_size
+        ) override {
+            return;
         }
     };
+
     EchoRequestHandler handler;
 
     SocketRequestServer server{ config};
@@ -279,23 +338,43 @@ C++ 14
 - Add request server (it supports only TLS functiionality. not TLS)
 - Add notification server (it supports only TLS functiionality. not TLS)
 
-### 2.1.0 / 2025.02.18
+### 2.0.1 / 2025.02.18
 
 - Fix socket result to contain read/write bytes
 - Fix read function to only call once
 
-### 2.2.0 / 2025.03.19
+### 2.0.2 / 2025.03.19
 
 - Add time_between_retries to the configuration
 
-### 2.3.0 / 2025.07.02
+### 2.0.3 / 2025.07.02
 
 - Fixed the issue where resources were not freed when the client disconnected.
 
-### 2.4.0 / 2025.08.11
+### 2.0.4 / 2025.08.11
 
 - Fixed the compile warning issues in MSVC /W3
 
-### 2.5.0 / 2025.08.11
+### 2.0.5 / 2025.08.11
 
 - add isConnected function in SocketClient
+
+### 2.0.6 / 2025.09.04
+
+- Fixed the unix_domain support mechanism.
+
+### 2.1.0 / 2025.09.09
+
+- Fix request server
+    1. Add Header Class
+    2. Fix Request Handler class
+       1. Users can interpret a custom-defined header through the onModeClassified function to determine the nature of the request:
+            - Bn3Monkey::SocketRequestMode::FAST: tasks that can be processed quickly
+            - Bn3Monkey::SocketRequestMode::SLOW: tasks that take longer, such as I/O
+            - Bn3Monkey::SocketRequestMode::WRITE_STREAM: requests that continuously send data to the server
+            - Bn3Monkey::SocketRequestMode::READ_STREAM: requests that continuously receive data from the server
+       2. Users must implement tasks that should be processed quickly in onProcessedWithoutResponse, and tasks that require a response in onProcessed.
+
+### 2.1.1 / 2025.09.09
+
+- Remove Request Header class
