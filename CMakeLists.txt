@@ -85,6 +85,17 @@ endif()
 
 set_target_properties(securitysocket PROPERTIES PUBLIC_HEADER "${source_dir}/SecuritySocket.hpp")
 
+if(MSVC)
+    target_compile_options(securitysocket PRIVATE /W4)
+    target_compile_options(securitysocket PRIVATE /W4)
+elseif(APPLE)
+    target_compile_options(securitysocket PRIVATE -Wall -Wextra)
+    target_compile_options(securitysocket PRIVATE -Wall -Wextra)
+elseif(UNIX AND NOT APPLE)
+    target_compile_options(securitysocket PRIVATE -Wall -Wextra)
+    target_compile_options(securitysocket PRIVATE -Wall -Wextra)
+endif()
+
 
 # INSTALL
 

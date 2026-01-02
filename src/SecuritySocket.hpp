@@ -139,12 +139,12 @@ namespace Bn3Monkey
             uint32_t time_between_retries = 100,
             size_t pdu_size = MAX_PDU_SIZE) : 
             _tls(tls), 
-            _is_unix_domain(is_unix_domain),
             _pdu_size(pdu_size),
             _max_retries(max_retries),
             _read_timeout(read_timeout),
             _write_timeout(write_timeout),
-            _time_between_retries(time_between_retries)
+            _time_between_retries(time_between_retries),
+            _is_unix_domain(is_unix_domain)
         {
             ::memcpy(_ip, ip, strlen(ip));
             snprintf(_port,16, "%d", port);

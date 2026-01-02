@@ -82,34 +82,34 @@ SocketResult SocketBroadcastServerImpl::write(const void* buffer, size_t size)
 
 		for (auto i = 0u; i < _configuration.max_retries(); )
 		{
-			auto result = listener.wait(_configuration.write_timeout());
-			if (result.code() == SocketCode::SOCKET_TIMEOUT)
+			auto inner_result = listener.wait(_configuration.write_timeout());
+			if (inner_result.code() == SocketCode::SOCKET_TIMEOUT)
 			{
 				i++;
 				continue;
 			}
-			else if (result.code() == SocketCode::SOCKET_CLOSED)
+			else if (inner_result.code() == SocketCode::SOCKET_CLOSED)
 			{
 				sock->close();
 			}
-			else if (result.code() != SocketCode::SUCCESS)
+			else if (inner_result.code() != SocketCode::SUCCESS)
 				break;
 
-			result = sock->write((char*)buffer + written_size, size - written_size);
-			if (result.code() == SocketCode::SOCKET_TIMEOUT)
+			inner_result = sock->write((char*)buffer + written_size, size - written_size);
+			if (inner_result.code() == SocketCode::SOCKET_TIMEOUT)
 			{
 				i++;
 			}
-			else if (result.code() != SocketCode::SUCCESS)
+			else if (inner_result.code() != SocketCode::SUCCESS)
 			{
-				result = SocketResult(result.code(), static_cast<int32_t>(written_size));
+				inner_result = SocketResult(inner_result.code(), static_cast<int32_t>(written_size));
 				_back_client_containers->push_back(client_container);
 				break;
 			}
-			written_size += (size_t)result.bytes();
+			written_size += (size_t)inner_result.bytes();
 			if (written_size == size)
 			{
-				result = SocketResult(result.code(), static_cast<int32_t>(written_size));
+				result = SocketResult(inner_result.code(), static_cast<int32_t>(written_size));
 				_back_client_containers->push_back(client_container);
 				break;
 			}

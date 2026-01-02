@@ -26,11 +26,11 @@ Bn3Monkey::SocketConnection::ProcessState Bn3Monkey::SocketConnection::readHeade
 
 	if (total_input_header_read_size == input_header_buffer.size()) {
 		auto* header = input_header_buffer.data();
-		payload_size = _handler.getPayloadSize(header);
-		mode = _handler.onModeClassified(header);
+		_payload_size = _handler.getPayloadSize(header);
+		_mode = _handler.onModeClassified(header);
 
-		if (payload_size == 0) {
-			return runTask(mode, payload_size);
+		if (_payload_size == 0) {
+			return runTask(_mode, _payload_size);
 		}
 
 		return ProcessState::READING_PAYLOAD;
@@ -41,14 +41,14 @@ Bn3Monkey::SocketConnection::ProcessState Bn3Monkey::SocketConnection::readHeade
 Bn3Monkey::SocketConnection::ProcessState Bn3Monkey::SocketConnection::readPayload()
 {
 	auto* payload = input_payload_buffer.data();
-	auto result = _socket->read(reinterpret_cast<char*>(payload) + total_input_payload_read_size, payload_size - total_input_payload_read_size);
+	auto result = _socket->read(reinterpret_cast<char*>(payload) + total_input_payload_read_size, _payload_size - total_input_payload_read_size);
 	if (result.bytes() < 0) {
 		return ProcessState::READING_PAYLOAD;
 	}
 	total_input_payload_read_size += result.bytes();
-	if (total_input_payload_read_size == payload_size)
+	if (total_input_payload_read_size == _payload_size)
 	{
-		return runTask(mode, payload_size);
+		return runTask(_mode, _payload_size);
 	}
 	return ProcessState::READING_PAYLOAD;
 }
@@ -78,10 +78,10 @@ void Bn3Monkey::SocketConnection::flush()
 
 	total_input_header_read_size = 0;
 	
-	payload_size = 0;
+	_payload_size = 0;
 	total_input_payload_read_size = 0;
 	
-	response_size;
+	response_size = 0;
 	total_output_write_size = 0;
 }
 
@@ -106,14 +106,12 @@ Bn3Monkey::SocketConnection::ProcessState Bn3Monkey::SocketConnection::runTask(S
 	break;
 	case SocketRequestMode::READ_STREAM:
 	{
-		auto* header = input_header_buffer.data();
 		_handler.onProcessed(header, payload, payload_size, output_buffer.data(), &response_size);
 		return ProcessState::WRITING_RESPONSE;
 	}
 	break;
 	case SocketRequestMode::WRITE_STREAM:
 	{
-		auto* header = input_header_buffer.data();
 		_handler.onProcessedWithoutResponse(header, payload, payload_size);
 		return ProcessState::FINISH_PROCESS;
 	}

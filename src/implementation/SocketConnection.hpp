@@ -65,11 +65,11 @@ namespace Bn3Monkey
         std::vector<char> input_header_buffer{ 0, std::allocator<char>() };
 
         // Reading Payload
-        size_t payload_size{ 0 };
+        size_t _payload_size{ 0 };
         size_t total_input_payload_read_size{ 0 };
         std::vector<char> input_payload_buffer{ 0, std::allocator<char>() };
 
-        SocketRequestMode mode;
+        SocketRequestMode _mode;
 
         size_t response_size;
         size_t total_output_write_size{ 0 };

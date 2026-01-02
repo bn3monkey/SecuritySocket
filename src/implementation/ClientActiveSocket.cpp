@@ -191,13 +191,13 @@ SocketResult Bn3Monkey::TLSClientActiveSocket::isConnected()
 }
 SocketResult Bn3Monkey::TLSClientActiveSocket::write(const void* buffer, size_t size)
 {
-	int32_t ret = SSL_write(_ssl, buffer, size);
+	int32_t ret = SSL_write(_ssl, buffer, static_cast<int32_t>(size));
 	return createTLSResult(_ssl, ret);
 }
 
 SocketResult Bn3Monkey::TLSClientActiveSocket::read(void* buffer, size_t size)
 {
-	int32_t ret = SSL_read(_ssl, buffer, size);
+	int32_t ret = SSL_read(_ssl, buffer, static_cast<int32_t>(size));
 	return createTLSResult(_ssl, ret);
 }
 
