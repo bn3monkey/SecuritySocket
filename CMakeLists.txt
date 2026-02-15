@@ -29,16 +29,11 @@ message("-- OpenSSL CMake Initialization --")
 include(FetchContent)
 
 if (SECURITYSOCKET_USING_TLS)
-    set(TEMP_BUILD_SHARED_LIBS ${BUILD_SHARED_LIBS})
-    set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build OpenSSL Static Libraries" FORCE)
-    FetchContent_Declare(OpenSSL
-        GIT_REPOSITORY https://github.com/janbar/openssl-cmake
-        GIT_TAG 1.1.1w-20250419)
-    FetchContent_MakeAvailable(OpenSSL)
-    set(BUILD_SHARED_LIBS ${TEMP_BUILD_SHARED_LIBS} ON CACHE BOOL "Build OpenSSL Static Libraries" FORCE)
 
-    message("OpenSSL BINARY DIR is ${openssl_BINARY_DIR}")
-    set(openssl_include_dir "${openssl_BINARY_DIR}/include")
+    set(OPENSSL_USE_STATIC_LIBS TRUE)
+    find_package(OpenSSL 3.6.1 REQUIRED)
+    
+    message("OpenSSL Include Dir is ${OPENSSL_INCLUDE_DIR}")
 endif()
 
 ## Security Socket
@@ -68,13 +63,13 @@ if (SECURITYSOCKET_USING_TLS)
 endif()
 
 target_include_directories(
-    securitysocket PRIVATE "${openssl_include_dir}"
+    securitysocket PRIVATE "${OPENSSL_INCLUDE_DIR}"
 )
 
 
 if (SECURITYSOCKET_USING_TLS)
-    add_dependencies(securitysocket ssl crypto)
-    target_link_libraries(securitysocket ssl crypto) 
+    add_dependencies(securitysocket OpenSSL::Crypto OpenSSL::SSL)
+    target_link_libraries(securitysocket OpenSSL::Crypto OpenSSL::SSL) 
 endif()
 
 if (WIN32)
