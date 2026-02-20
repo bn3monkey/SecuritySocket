@@ -10,6 +10,8 @@ Bn3Monkey::SocketRequestServerImpl::~SocketRequestServerImpl()
 
 Bn3Monkey::SocketResult Bn3Monkey::SocketRequestServerImpl::open(SocketRequestHandler* handler, size_t num_of_clients)
 {
+	(void)num_of_clients;
+
 	if (_is_running)
 	{
 		return SocketResult(SocketCode::SOCKET_SERVER_ALREADY_RUNNING);

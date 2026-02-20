@@ -2,6 +2,7 @@ cmake_minimum_required (VERSION 3.16)
 
 project(SecuritySocket)
 
+
 # Security Socket Project
 
 message("-- Security Socket --")
@@ -67,7 +68,7 @@ if (SECURITYSOCKET_USING_TLS)
 endif()
 
 target_include_directories(
-    securitysocket PRIVATE "${openssl_include_dir}"
+    securitysocket PRIVATE "${OPENSSL_INCLUDE_DIR}"
 )
 
 
@@ -83,6 +84,17 @@ endif()
 # PROPERTIES 
 
 set_target_properties(securitysocket PROPERTIES PUBLIC_HEADER "${source_dir}/SecuritySocket.hpp")
+
+if(MSVC)
+    target_compile_options(securitysocket PRIVATE /W4)
+    target_compile_options(securitysocket PRIVATE /W4)
+elseif(APPLE)
+    target_compile_options(securitysocket PRIVATE -Wall -Wextra)
+    target_compile_options(securitysocket PRIVATE -Wall -Wextra)
+elseif(UNIX AND NOT APPLE)
+    target_compile_options(securitysocket PRIVATE -Wall -Wextra)
+    target_compile_options(securitysocket PRIVATE -Wall -Wextra)
+endif()
 
 
 # INSTALL

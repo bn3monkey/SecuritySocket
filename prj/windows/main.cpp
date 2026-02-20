@@ -20,7 +20,7 @@
 #endif
 
 using namespace Bn3Monkey;
-
+/*
 class TCPStreamHandler : public TCPEventHandler
 {
 public:
@@ -508,11 +508,13 @@ void tcpTest()
 
     std::this_thread::sleep_for(std::chrono::seconds(2));
 }
-
+*/
 
 int main() {
      // tcpTest();
     // tcpAsyncTest();
-    tlsTest();
+    // tlsTest();
     // tlsAsyncTest();
+
+    return 0;
 }

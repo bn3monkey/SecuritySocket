@@ -24,6 +24,7 @@ It is compatible for Windows(MSVC, MinGW Compiler), Android (Clang), Linux (gcc)
     - [2.0.6 / 2025.09.04](#206--20250904)
     - [2.1.0 / 2025.09.09](#210--20250909)
     - [2.1.1 / 2025.09.09](#211--20250909)
+    - [2.1.2 / 2026.01.02](#212--20260102)
 
 ## Build
 
@@ -38,7 +39,7 @@ cmake_minimum_required (VERSION 3.16)
 include(FetchContent)
 FetchContent_Declear(SecuritySocket
     GIT_REPOSITORY https://github.com/bn3monkey/securitysocket
-    GIT_TAG v2.0.0)
+    GIT_TAG v2.1.2)
 FetchContent_MakeAvailable(SecuritySocket)
 
 ...
@@ -185,14 +186,14 @@ int main()
         int32_t request_no{ 0 };
         size_t payload_size{ 0 };
         int32_t client_no{ 0 };
-    
+
         EchoRequestHeader(int32_t request_type, int32_t request_no, size_t payload_size, int32_t client_no) :
             request_type(request_type),
             request_no(request_no),
             payload_size(payload_size),
             client_no(client_no) {
         }
-    
+
         size_t payloadSize() override { return payload_size;  }
     };
 
@@ -212,15 +213,15 @@ int main()
             }
             return Bn3Monkey::SocketRequestMode::FAST;
         }
-    
+
         void onClientConnected(const char* ip, int port) override {
             printConcurrent("Client connected (ip : %s port : %d)\n", ip, port);
         }
-        
+
         void onClientDisconnected(const char* ip, int port) override {
             printConcurrent("Client disconnected (ip : %s port : %d)\n", ip, port);
         }
-    
+
         void onProcessed(
             const char* header,
             const char* input_buffer,
@@ -228,20 +229,20 @@ int main()
             char* output_buffer,
             size_t* output_size
         ) override {
-    
+
             auto* derived_header = reinterpret_cast<const EchoRequestHeader*>(header);
-                    
+
             switch (derived_header->request_type) {
             case 0:
                 printConcurrent("[Client %d -> Server] : %s\n", derived_header->client_no, input_buffer);
-                
+
                 auto* response = new (output_buffer) EchoResponse{ {derived_header->request_type, derived_header->request_no, sizeof(EchoResponse)}, input_buffer, input_size };
                 *output_size = sizeof(EchoResponse);
-                
+
                 break;
             }
         }
-    
+
         void onProcessedWithoutResponse(
             const char* header,
             const char* input_buffer,
@@ -366,15 +367,19 @@ C++ 14
 ### 2.1.0 / 2025.09.09
 
 - Fix request server
-    1. Add Header Class
-    2. Fix Request Handler class
-       1. Users can interpret a custom-defined header through the onModeClassified function to determine the nature of the request:
-            - Bn3Monkey::SocketRequestMode::FAST: tasks that can be processed quickly
-            - Bn3Monkey::SocketRequestMode::SLOW: tasks that take longer, such as I/O
-            - Bn3Monkey::SocketRequestMode::WRITE_STREAM: requests that continuously send data to the server
-            - Bn3Monkey::SocketRequestMode::READ_STREAM: requests that continuously receive data from the server
-       2. Users must implement tasks that should be processed quickly in onProcessedWithoutResponse, and tasks that require a response in onProcessed.
+  1. Add Header Class
+  2. Fix Request Handler class
+     1. Users can interpret a custom-defined header through the onModeClassified function to determine the nature of the request:
+        - Bn3Monkey::SocketRequestMode::FAST: tasks that can be processed quickly
+        - Bn3Monkey::SocketRequestMode::SLOW: tasks that take longer, such as I/O
+        - Bn3Monkey::SocketRequestMode::WRITE_STREAM: requests that continuously send data to the server
+        - Bn3Monkey::SocketRequestMode::READ_STREAM: requests that continuously receive data from the server
+     2. Users must implement tasks that should be processed quickly in onProcessedWithoutResponse, and tasks that require a response in onProcessed.
 
 ### 2.1.1 / 2025.09.09
 
 - Remove Request Header class
+
+### 2.1.2 / 2026.01.02
+
+- fix warnings in gcc and msvc

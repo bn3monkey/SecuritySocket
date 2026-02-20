@@ -21,6 +21,8 @@ using namespace Bn3Monkey;
 
 ServerActiveSocket::ServerActiveSocket(int32_t sock, void* addr, void* ssl_context)
 {
+	(void)ssl_context;
+
     struct sockaddr_in* address = (struct sockaddr_in*)addr;
     _socket = sock;
     _result = createResult(_socket);
@@ -76,6 +78,10 @@ void ServerActiveSocket::setSocketBufferSize(size_t size)
 
 TLSServerActiveSocket::TLSServerActiveSocket(int32_t sock, void* addr, void* ssl_context)
 {
+	(void)sock;
+	(void)addr;
+	(void)ssl_context;
+
 	throw std::runtime_error("Not Implemented");
 }
 TLSServerActiveSocket::TLSServerActiveSocket::~TLSServerActiveSocket()
@@ -89,9 +95,13 @@ void TLSServerActiveSocket::close()
 }
 SocketResult TLSServerActiveSocket::read(void* buffer, size_t size)
 {
+	(void)buffer;
+	(void)size;
 	throw std::runtime_error("Not Implemented");
 }
 SocketResult TLSServerActiveSocket::write(const void* buffer, size_t size)
 {
+	(void)buffer;
+	(void)size;
 	throw std::runtime_error("Not Implemented");
 }

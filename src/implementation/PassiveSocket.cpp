@@ -115,6 +115,7 @@ ServerActiveSocketContainer PassiveSocket::accept()
 
 TLSPassiveSocket::TLSPassiveSocket(bool is_unix_domain)
 {
+	(void)is_unix_domain;
     throw std::runtime_error("Not Implemented");
 }
 void TLSPassiveSocket::close()
@@ -123,6 +124,7 @@ void TLSPassiveSocket::close()
 }
 SocketResult TLSPassiveSocket::bind(const SocketAddress& address)
 {
+	(void)address;
     throw std::runtime_error("Not Implemented");
 }
 SocketResult TLSPassiveSocket::listen()
