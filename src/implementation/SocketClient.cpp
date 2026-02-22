@@ -15,7 +15,11 @@ SocketResult SocketClientImpl::open()
 {
 	SocketResult result;
 	
-	_container = SocketContainer<ClientActiveSocket, TLSClientActiveSocket>(_configuration.tls(), _configuration.is_unix_domain());
+	_container = SocketContainer<ClientActiveSocket, TLSClientActiveSocket>(
+		_tls_configuration.valid(),
+		_configuration.is_unix_domain(),
+		_tls_configuration,
+		_configuration.ip());
 	_socket = _container.get();
 	result = _socket->valid();
 	if (result.code() != SocketCode::SUCCESS)

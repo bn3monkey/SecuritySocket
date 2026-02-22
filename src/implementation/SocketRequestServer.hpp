@@ -21,6 +21,8 @@ namespace Bn3Monkey
 	{
 	public:
 		SocketRequestServerImpl(const SocketConfiguration& configuration) : _configuration(configuration) {}
+		SocketRequestServerImpl(const SocketConfiguration& configuration, const SocketTLSServerConfiguration& tls_configuration) 
+			: _configuration(configuration), _tls_configuration(tls_configuration) {}
 		virtual ~SocketRequestServerImpl();
 
 		SocketResult open(SocketRequestHandler* handler, size_t num_of_clients);
@@ -31,6 +33,7 @@ namespace Bn3Monkey
 		PassiveSocket* _socket{ nullptr };
 
 		SocketConfiguration _configuration;
+		SocketTLSServerConfiguration _tls_configuration;
 
 		std::atomic<bool> _is_running{ false };
 		std::thread _routine;

@@ -17,6 +17,8 @@ option(BUILD_SECURITYSOCKET_SHARED "Build Security Socket Library as shared libr
 message("BUILD_SECURITYSOCKET_SHARED = ${BUILD_SECURITYSOCKET_SHARED}")
 option(BUILD_SECURITYSOCKET_TEST "Build Tests of Security Socket Library" on)
 message("BUILD_SECURITYSOCKET_TEST = ${BUILD_SECURITYSOCKET_TEST}")
+option(BUILD_SECURITYSOCKETTEST_SHARED "Build Security Socket Test Library as shared library" ON)
+message("BUILD_SECURITYSOCKETTEST_SHARED = ${BUILD_SECURITYSOCKETTEST_SHARED}")
 
 if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
     message("Apply -fPIC in linux environment ")
@@ -126,12 +128,24 @@ if (BUILD_SECURITYSOCKET_TEST)
         "${SECURITYSOCKET_TEST_DIR}/*.cpp")
     message(STATUS "SECURITYSOCKET_TEST_FILES = ${SECURITYSOCKET_TEST_FILES}")
 
-    add_library(securitysockettest
-        ${source_dir}
-        ${SECURITYSOCKET_TEST_FILES}
-        ${SECURITYSOCKET_UTILS_FILES})
+    if (BUILD_SECURITYSOCKETTEST_SHARED)
+        add_library(securitysockettest SHARED
+            ${source_dir}
+            ${SECURITYSOCKET_TEST_FILES}
+            ${SECURITYSOCKET_UTILS_FILES})
+        target_compile_definitions(securitysockettest PRIVATE SECURITYSOCKETTEST_EXPORTS)
 
-    target_compile_definitions(securitysockettest PRIVATE SECURITYSOCKETTEST_EXPORTS)
+
+    else()
+        add_library(securitysockettest
+            STATIC
+            ${source_dir}
+            ${SECURITYSOCKET_TEST_FILES}
+            ${SECURITYSOCKET_UTILS_FILES})
+        target_compile_definitions(securitysockettest PUBLIC SECURITYSOCKETTEST_STATIC)
+
+    endif()
+
 
     message(STATUS "GTEST_SOURCE_DIR = ${gtest_SOURCE_DIR}")
     message(STATUS "GMOCK_SOURCE_DIR = ${gmock_SOURCE_DIR}")

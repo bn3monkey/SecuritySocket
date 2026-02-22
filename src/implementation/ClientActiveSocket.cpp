@@ -19,9 +19,10 @@
 
 using namespace Bn3Monkey;
 
-Bn3Monkey::ClientActiveSocket::ClientActiveSocket(bool is_unix_domain)
+Bn3Monkey::ClientActiveSocket::ClientActiveSocket(bool is_unix_domain, const SocketTLSClientConfiguration& tls_configuration, const char* hostname)
 {
-	
+	(void)tls_configuration;
+	(void)hostname;
 	if (is_unix_domain) {
 		auto temp_socket = ::socket(AF_UNIX, SOCK_STREAM, 0);
 		_socket = static_cast<int32_t>(temp_socket);
@@ -35,7 +36,6 @@ Bn3Monkey::ClientActiveSocket::ClientActiveSocket(bool is_unix_domain)
 		_result = createResult(_socket);
 		return;
 	}
-	return;
 }
 Bn3Monkey::ClientActiveSocket::~ClientActiveSocket()
 {
@@ -111,20 +111,75 @@ SocketResult Bn3Monkey::ClientActiveSocket::read(void* buffer, size_t size)
 }
 
 
-Bn3Monkey::TLSClientActiveSocket::TLSClientActiveSocket(bool is_unix_domain) : ClientActiveSocket(is_unix_domain)
+Bn3Monkey::TLSClientActiveSocket::TLSClientActiveSocket(bool is_unix_domain, const SocketTLSClientConfiguration& tls_configuration, const char* hostname)
+	: ClientActiveSocket(is_unix_domain, tls_configuration, hostname)
 {
 	if (_result.code() != SocketCode::SUCCESS)
-	{
 		return;
-	}
 
-	auto client_method = TLS_client_method();
-
-	_context = SSL_CTX_new(client_method);
+	_context = SSL_CTX_new(TLS_client_method());
 	if (!_context) {
 		_result = SocketResult(SocketCode::TLS_CONTEXT_INITIALIZATION_FAIL);
 		return;
 	}
+
+	// [1] TLS 버전 범위 설정 : TLS 1.3 우선, 실패 시 TLS 1.2 자동 협상
+	{
+		bool has12 = tls_configuration.isVersionSupported(SocketTLSVersion::TLS1_2);
+		bool has13 = tls_configuration.isVersionSupported(SocketTLSVersion::TLS1_3);
+		int min_ver = has12 ? TLS1_2_VERSION : TLS1_3_VERSION;
+		int max_ver = has13 ? TLS1_3_VERSION : TLS1_2_VERSION;
+		SSL_CTX_set_min_proto_version(_context, min_ver);
+		SSL_CTX_set_max_proto_version(_context, max_ver);
+	}
+
+	// [2] Cipher Suite 등록
+	{
+		char cipher_list[512]{ 0 };
+		tls_configuration.generateTLS12CipherSuites(cipher_list);
+		if (cipher_list[0] != '\0')
+			SSL_CTX_set_cipher_list(_context, cipher_list);
+
+		char ciphersuites[512]{ 0 };
+		tls_configuration.generateTLS13CipherSuites(ciphersuites);
+		if (ciphersuites[0] != '\0')
+			SSL_CTX_set_ciphersuites(_context, ciphersuites);
+	}
+
+	// [3] 서버 인증서 검증
+	if (tls_configuration.shouldVerifyServer()) {
+		SSL_CTX_set_verify(_context, SSL_VERIFY_PEER, nullptr);
+		const char* trust_store = tls_configuration.serverTrustStorePath();
+		if (trust_store[0] != '\0')
+			SSL_CTX_load_verify_locations(_context, trust_store, nullptr);
+		else
+			SSL_CTX_set_default_verify_paths(_context);
+	}
+	else {
+		SSL_CTX_set_verify(_context, SSL_VERIFY_NONE, nullptr);
+	}
+
+	// [4] 클라이언트 인증서 등록
+	if (tls_configuration.shouldUseClientCertificate()) {
+		const char* key_password = tls_configuration.clientKeyPassword();
+		if (key_password[0] != '\0') {
+			SSL_CTX_set_default_passwd_cb(_context, [](char* buf, int size, int /*rwflag*/, void* userdata) -> int {
+				const char* pw = static_cast<const char*>(userdata);
+				int len = static_cast<int>(strlen(pw));
+				if (len > size) len = size;
+				memcpy(buf, pw, static_cast<size_t>(len));
+				return len;
+			});
+			SSL_CTX_set_default_passwd_cb_userdata(_context, const_cast<char*>(key_password));
+		}
+		SSL_CTX_use_certificate_file(_context, tls_configuration.clientCertFilePath(), SSL_FILETYPE_PEM);
+		SSL_CTX_use_PrivateKey_file(_context, tls_configuration.clientKeyFilePath(), SSL_FILETYPE_PEM);
+	}
+
+	// hostname 저장 (shouldVerifyHostname이 true인 경우에만)
+	if (tls_configuration.shouldVerifyHostname() && hostname != nullptr && hostname[0] != '\0')
+		_hostname = hostname;
+
 	_ssl = SSL_new(_context);
 	if (!_ssl) {
 		SSL_CTX_free(_context);
@@ -139,10 +194,15 @@ Bn3Monkey::TLSClientActiveSocket::~TLSClientActiveSocket()
 
 void Bn3Monkey::TLSClientActiveSocket::close()
 {
+	if (_ssl) {
+		SSL_free(_ssl);
+		_ssl = nullptr;
+	}
 	if (_context) {
 		SSL_CTX_free(_context);
+		_context = nullptr;
 	}
-	close();
+	ClientActiveSocket::close();
 }
 SocketResult TLSClientActiveSocket::connect(const SocketAddress& address, uint32_t read_timeout_ms, uint32_t write_timeout_ms)
 {
@@ -161,20 +221,24 @@ SocketResult TLSClientActiveSocket::connect(const SocketAddress& address, uint32
 	return result;
 }
 SocketResult Bn3Monkey::TLSClientActiveSocket::reconnect()
-{	
-	SocketResult result;
+{
 	if (SSL_set_fd(_ssl, _socket) == 0)
-	{
 		return SocketResult(SocketCode::TLS_SETFD_ERROR);
+
+	// [SNI + 호스트명 검증] : 도메인 연결 시 서버가 올바른 인증서를 보내도록 SNI 설정,
+	//                         인증서의 CN/SAN이 hostname과 일치하는지 검증
+	if (_hostname != nullptr) {
+		SSL_set_tlsext_host_name(_ssl, _hostname);  // SNI ClientHello extension
+		SSL_set1_host(_ssl, _hostname);              // X.509 hostname verification
 	}
+
+	// [TLS Handshake] : ClientHello → ServerHello → 인증서 교환 → 키 교환
+	//                   TLS 1.3 시도 후 서버가 지원하지 않으면 TLS 1.2로 자동 협상
 	auto res = SSL_connect(_ssl);
 	if (res != 1)
-	{
-		result = createTLSResult(_ssl, res);
-		if (result.code() != SocketCode::SUCCESS)
-			return result;
-	}
-	return result;
+		return createTLSResult(_ssl, res);
+
+	return SocketResult(SocketCode::SUCCESS);
 }
 
 void Bn3Monkey::TLSClientActiveSocket::disconnect()
@@ -182,6 +246,7 @@ void Bn3Monkey::TLSClientActiveSocket::disconnect()
 	if (_ssl) {
 		SSL_shutdown(_ssl);
 		SSL_free(_ssl);
+		_ssl = nullptr;
 	}
 	ClientActiveSocket::disconnect();
 }

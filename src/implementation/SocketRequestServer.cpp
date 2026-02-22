@@ -19,7 +19,7 @@ Bn3Monkey::SocketResult Bn3Monkey::SocketRequestServerImpl::open(SocketRequestHa
 
 	SocketResult result = SocketResult(SocketCode::SUCCESS);
 
-	_container = PassiveSocketContainer(_configuration.tls(), _configuration.is_unix_domain());
+	_container = PassiveSocketContainer(_tls_configuration.valid(), _configuration.is_unix_domain());
 	_socket = _container.get();
 	result = _socket->valid();
 	if (result.code() != SocketCode::SUCCESS)

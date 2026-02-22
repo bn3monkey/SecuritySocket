@@ -117,11 +117,30 @@ inline SocketResult createTLSResult(SSL* ssl, int operation_return)
 	int code = SSL_get_error(ssl, operation_return);
 	switch (code)
 	{
-	case SSL_ERROR_SSL:
+	case SSL_ERROR_SSL: {
+		// [1단계] X.509 검증 결과 확인 : 인증서/hostname 오류는 여기서 구분
+		long verify_result = SSL_get_verify_result(ssl);
+		if (verify_result == X509_V_ERR_HOSTNAME_MISMATCH)
+			return SocketResult(SocketCode::TLS_HOSTNAME_MISMATCH, operation_return);
+		if (verify_result != X509_V_OK)
+			return SocketResult(SocketCode::TLS_SERVER_CERT_INVALID, operation_return);
+
+		// [2단계] ERR 큐에서 SSL 프로토콜 레벨 오류 구분
+		int reason = ERR_GET_REASON(ERR_peek_error());
+		if (reason == SSL_R_UNSUPPORTED_PROTOCOL || reason == SSL_R_NO_PROTOCOLS_AVAILABLE)
+			return SocketResult(SocketCode::TLS_VERSION_NOT_SUPPORTED, operation_return);
+		if (reason == SSL_R_NO_CIPHERS_AVAILABLE || reason == SSL_R_NO_SHARED_CIPHER)
+			return SocketResult(SocketCode::TLS_CIPHER_SUITE_MISMATCH, operation_return);
+		if (reason == SSL_R_TLSV13_ALERT_CERTIFICATE_REQUIRED
+		 || reason == SSL_R_SSLV3_ALERT_HANDSHAKE_FAILURE
+		 || reason == SSL_R_TLSV1_ALERT_UNKNOWN_CA)
+			return SocketResult(SocketCode::TLS_CLIENT_CERT_REJECTED, operation_return);
+
 		return SocketResult(SocketCode::SSL_PROTOCOL_ERROR, operation_return);
-        case SSL_ERROR_WANT_READ:
-    case SSL_ERROR_WANT_WRITE:
-        return SocketResult(SocketCode::SOCKET_CONNECTION_NEED_TO_BE_BLOCKED, operation_return);
+	}
+	case SSL_ERROR_WANT_READ:
+	case SSL_ERROR_WANT_WRITE:
+		return SocketResult(SocketCode::SOCKET_CONNECTION_NEED_TO_BE_BLOCKED, operation_return);
 	case SSL_ERROR_SYSCALL:
 		// System Error / TCP Error
 		return createResult(operation_return);
@@ -167,6 +186,12 @@ inline const char* getMessage(const SocketCode& code)
         case SocketCode::SOCKET_LISTEN_FAILED: return "Socket listen failed";
 
         case SocketCode::TLS_SETFD_ERROR: return "Failed to set file descriptor for TLS";
+
+        case SocketCode::TLS_VERSION_NOT_SUPPORTED: return "Server does not support the configured TLS version";
+        case SocketCode::TLS_CIPHER_SUITE_MISMATCH: return "No common cipher suite between client and server";
+        case SocketCode::TLS_SERVER_CERT_INVALID: return "Server certificate verification failed";
+        case SocketCode::TLS_CLIENT_CERT_REJECTED: return "Server rejected the client certificate";
+        case SocketCode::TLS_HOSTNAME_MISMATCH: return "Server certificate does not match the expected hostname";
 
         case SocketCode::SSL_PROTOCOL_ERROR: return "SSL protocol error occurred";
         case SocketCode::SSL_ERROR_CLOSED_BY_PEER: return "SSL connection closed by peer";

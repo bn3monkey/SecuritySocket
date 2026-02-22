@@ -16,6 +16,9 @@ namespace Bn3Monkey
     {
     public:
 		SocketBroadcastServerImpl(const SocketConfiguration& configuration) : _configuration(configuration) {}
+        SocketBroadcastServerImpl(const SocketConfiguration& configuration, const SocketTLSServerConfiguration& tls_configuration) 
+            : _configuration(configuration), _tls_configuration(tls_configuration) {}
+
 		virtual ~SocketBroadcastServerImpl();
 
 		SocketResult open(size_t num_of_clients);
@@ -26,6 +29,7 @@ namespace Bn3Monkey
 
 	private:
         SocketConfiguration _configuration;
+        SocketTLSServerConfiguration _tls_configuration;
 
         PassiveSocketContainer _container;
         PassiveSocket* _socket{ nullptr };

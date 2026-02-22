@@ -15,7 +15,7 @@ namespace Bn3Monkey
 	class ClientActiveSocket : public BaseSocket
 	{
 	public:
-		ClientActiveSocket(bool is_unix_domain = false);
+		ClientActiveSocket(bool is_unix_domain, const SocketTLSClientConfiguration& tls_configuration, const char* hostname = nullptr);
 		virtual ~ClientActiveSocket();
 
 		virtual void close();
@@ -35,7 +35,7 @@ namespace Bn3Monkey
 	class TLSClientActiveSocket : public ClientActiveSocket
 	{
 	public:
-		TLSClientActiveSocket(bool is_unix_domain = false);
+		TLSClientActiveSocket(bool is_unix_domain, const SocketTLSClientConfiguration& tls_configuration, const char* hostname = nullptr);
 		virtual ~TLSClientActiveSocket();
 
 		virtual void close() override;
@@ -50,6 +50,7 @@ namespace Bn3Monkey
 	private:
 		SSL_CTX* _context{ nullptr };
 		SSL* _ssl{ nullptr };
+		const char* _hostname{ nullptr };  // points to SocketConfiguration._ip (externally owned)
 	};
 
 	using ClientActiveSocketContainer = SocketContainer<ClientActiveSocket, TLSClientActiveSocket>;

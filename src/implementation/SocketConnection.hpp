@@ -55,8 +55,8 @@ namespace Bn3Monkey
     private:
         ProcessState runTask(SocketRequestMode mode, size_t payload_size);
 
-        ServerActiveSocketContainer _container;
-        ServerActiveSocket* _socket;
+        ServerActiveSocketContainer _container{};
+        ServerActiveSocket* _socket{ nullptr };
 
         SocketRequestHandler& _handler;
         
@@ -69,9 +69,9 @@ namespace Bn3Monkey
         size_t total_input_payload_read_size{ 0 };
         std::vector<char> input_payload_buffer{ 0, std::allocator<char>() };
 
-        SocketRequestMode _mode;
+        SocketRequestMode _mode{ SocketRequestMode::FAST };
 
-        size_t response_size;
+        size_t response_size{ 0 };
         size_t total_output_write_size{ 0 };
         std::vector<char> output_buffer{ 0, std::allocator<char>() };
 

@@ -32,7 +32,11 @@ namespace Bn3Monkey
 	{
 	public:
 		explicit SocketClientImpl(const SocketConfiguration& configuration) 
-			: _configuration(configuration) {};
+			: _configuration(configuration) {}
+		explicit SocketClientImpl(const SocketConfiguration& configuration, const SocketTLSClientConfiguration& tls_configuration)
+			: _configuration(configuration), _tls_configuration(tls_configuration) {
+		}
+
 		virtual ~SocketClientImpl();
 
 		SocketResult open();
@@ -48,6 +52,7 @@ namespace Bn3Monkey
 		ClientActiveSocket* _socket{ nullptr };
 		
 		SocketConfiguration _configuration;
+		SocketTLSClientConfiguration _tls_configuration;
 	};
 }
 

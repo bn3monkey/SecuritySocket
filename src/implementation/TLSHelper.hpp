@@ -5,9 +5,6 @@
 #include <openssl/ssl.h>
 #include <openssl/err.h>
 
-void checkTLSFunction() {
-    TLS1_2_VERSION
-}
 #else
 
 
@@ -84,6 +81,61 @@ static constexpr int32_t SSL_ERROR_SYSCALL = 2;
 static constexpr int32_t SSL_ERROR_ZERO_RETURN = 3;
 static constexpr int32_t SSL_ERROR_WANT_READ = 4;
 static constexpr int32_t SSL_ERROR_WANT_WRITE = 5;
+
+// TLS version constants
+static constexpr int TLS1_2_VERSION = 0x0303;
+static constexpr int TLS1_3_VERSION = 0x0304;
+
+// Verify mode constants
+static constexpr int SSL_VERIFY_NONE = 0;
+static constexpr int SSL_VERIFY_PEER = 1;
+
+// Certificate file type
+static constexpr int SSL_FILETYPE_PEM = 1;
+
+// Password callback type
+using pem_password_cb = int(*)(char*, int, int, void*);
+
+// Version range
+inline int SSL_CTX_set_min_proto_version(SSL_CTX*, int) { return 1; }
+inline int SSL_CTX_set_max_proto_version(SSL_CTX*, int) { return 1; }
+
+// Cipher suite configuration
+inline int SSL_CTX_set_cipher_list(SSL_CTX*, const char*) { return 1; }
+inline int SSL_CTX_set_ciphersuites(SSL_CTX*, const char*) { return 1; }
+
+// Server certificate verification
+inline void SSL_CTX_set_verify(SSL_CTX*, int, int(*)(int, void*)) {}
+inline int  SSL_CTX_load_verify_locations(SSL_CTX*, const char*, const char*) { return 1; }
+inline int  SSL_CTX_set_default_verify_paths(SSL_CTX*) { return 1; }
+
+// Client certificate
+inline void SSL_CTX_set_default_passwd_cb(SSL_CTX*, pem_password_cb) {}
+inline void SSL_CTX_set_default_passwd_cb_userdata(SSL_CTX*, void*) {}
+inline int  SSL_CTX_use_certificate_file(SSL_CTX*, const char*, int) { return 1; }
+inline int  SSL_CTX_use_PrivateKey_file(SSL_CTX*, const char*, int) { return 1; }
+
+// Hostname / SNI
+inline int SSL_set_tlsext_host_name(SSL*, const char*) { return 1; }
+inline int SSL_set1_host(SSL*, const char*) { return 1; }
+
+// X.509 verify result codes
+static constexpr long X509_V_OK                    = 0;
+static constexpr long X509_V_ERR_HOSTNAME_MISMATCH = 62;
+
+// SSL reason codes (used with ERR_GET_REASON)
+static constexpr int SSL_R_UNSUPPORTED_PROTOCOL                 = 258;
+static constexpr int SSL_R_NO_PROTOCOLS_AVAILABLE               = 191;
+static constexpr int SSL_R_NO_CIPHERS_AVAILABLE                 = 181;
+static constexpr int SSL_R_NO_SHARED_CIPHER                     = 193;
+static constexpr int SSL_R_SSLV3_ALERT_HANDSHAKE_FAILURE        = 1040;
+static constexpr int SSL_R_TLSV13_ALERT_CERTIFICATE_REQUIRED    = 1116;
+static constexpr int SSL_R_TLSV1_ALERT_UNKNOWN_CA               = 1048;
+
+// Error queue
+inline long         SSL_get_verify_result(SSL*)      { return X509_V_OK; }
+inline unsigned long ERR_peek_error()                { return 0; }
+inline int          ERR_GET_REASON(unsigned long e)  { return static_cast<int>(e & 0xFFF); }
 
 #endif // USING_TLS
 

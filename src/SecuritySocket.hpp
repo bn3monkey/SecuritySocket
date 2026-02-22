@@ -82,6 +82,12 @@ namespace Bn3Monkey
 
         TLS_SETFD_ERROR,
 
+        TLS_VERSION_NOT_SUPPORTED,
+        TLS_CIPHER_SUITE_MISMATCH,
+        TLS_SERVER_CERT_INVALID,
+        TLS_CLIENT_CERT_REJECTED,
+        TLS_HOSTNAME_MISMATCH,
+
         SSL_PROTOCOL_ERROR,
         SSL_ERROR_CLOSED_BY_PEER,
 
@@ -185,15 +191,15 @@ namespace Bn3Monkey
         REQUIRED
 	};
 
-    class SECURITYSOCKET_API SocektTLSClientConfiguration
+    class SECURITYSOCKET_API SocketTLSClientConfiguration
     {
     public:
-        explicit SocektTLSClientConfiguration(
-            std::initializer_list<SocketTLSVersion> support_versions = { SocketTLSVersion::TLS1_2 },
+        explicit SocketTLSClientConfiguration(
+            std::initializer_list<SocketTLSVersion> support_versions = { },
             std::initializer_list<SocketTLS1_2CipherSuite> tls_1_2_cipher_suites = {},
             std::initializer_list<SocketTLS1_3CipherSuite> tls_1_3_cipher_suites = {},
-            bool verify_server,
-            bool verify_hostname,
+            bool verify_server = false,
+            bool verify_hostname = false,
             const char* server_trust_store_path = nullptr,
 
             bool use_client_certificate = false,
@@ -213,20 +219,17 @@ namespace Bn3Monkey
 			for (auto& cipher_suite : tls_1_3_cipher_suites) {
                 _tls_1_3_cipher_suites |= static_cast<int32_t>(cipher_suite);
             }
-            if (server_trust_store_path) {
-                strncpy(_server_trust_store_path, server_trust_store_path, sizeof(_server_trust_store_path)-1);
-            }
-            if (client_cert_file_path) {
-                strncpy(_client_cert_file_path, client_cert_file_path, sizeof(_client_cert_file_path)-1);
-			}
-            if (client_key_file_path) {
-                strncpy(_client_key_file_path, client_key_file_path, sizeof(_client_key_file_path)-1);
-			}
-            if (client_key_password) {
-                strncpy(_client_key_password, client_key_password, sizeof(_client_key_password) - 1);
-            }
+            if (server_trust_store_path)
+                snprintf(_server_trust_store_path, sizeof(_server_trust_store_path), "%s", server_trust_store_path);
+            if (client_cert_file_path)
+                snprintf(_client_cert_file_path, sizeof(_client_cert_file_path), "%s", client_cert_file_path);
+            if (client_key_file_path)
+                snprintf(_client_key_file_path, sizeof(_client_key_file_path), "%s", client_key_file_path);
+            if (client_key_password)
+                snprintf(_client_key_password, sizeof(_client_key_password), "%s", client_key_password);
         }
 
+        inline bool valid() const { return _tls_versions != 0; }
 		inline bool isVersionSupported(SocketTLSVersion version) const { return _tls_versions & static_cast<int32_t>(version); }
         void generateTLS12CipherSuites(char* ret) const;
         void generateTLS13CipherSuites(char* ret) const;
@@ -258,7 +261,7 @@ namespace Bn3Monkey
     {
     public:
         explicit SocketTLSServerConfiguration(
-            std::initializer_list<SocketTLSVersion> support_versions = { SocketTLSVersion::TLS1_2 },
+            std::initializer_list<SocketTLSVersion> support_versions = { },
             std::initializer_list<SocketTLS1_2CipherSuite> tls_1_2_cipher_suites = {},
             std::initializer_list<SocketTLS1_3CipherSuite> tls_1_3_cipher_suites = {},
 
@@ -279,19 +282,17 @@ namespace Bn3Monkey
             for (auto& cipher_suite : tls_1_3_cipher_suites) {
                 _tls_1_3_cipher_suites |= static_cast<int32_t>(cipher_suite);
             }
-            if (client_trust_store_path) {
-                strncpy(_client_trust_store_path, client_trust_store_path, sizeof(_client_trust_store_path) - 1);
-            }
-            if (server_cert_file_path) {
-                strncpy(_server_cert_file_path, server_cert_file_path, sizeof(_server_cert_file_path) - 1);
-            }
-            if (server_key_file_path) {
-                strncpy(_server_key_file_path, server_key_file_path, sizeof(_server_key_file_path) - 1);
-            }
-            if (server_key_password) {
-                strncpy(_server_key_password, server_key_password, sizeof(_server_key_password) - 1);
-            }
+            if (client_trust_store_path)
+                snprintf(_client_trust_store_path, sizeof(_client_trust_store_path), "%s", client_trust_store_path);
+            if (server_cert_file_path)
+                snprintf(_server_cert_file_path, sizeof(_server_cert_file_path), "%s", server_cert_file_path);
+            if (server_key_file_path)
+                snprintf(_server_key_file_path, sizeof(_server_key_file_path), "%s", server_key_file_path);
+            if (server_key_password)
+                snprintf(_server_key_password, sizeof(_server_key_password), "%s", server_key_password);
         }
+
+        inline bool valid() const { return _tls_versions != 0; }
         inline bool isVersionSupported(SocketTLSVersion version) const { return _tls_versions & static_cast<int32_t>(version); }
         void generateTLS12CipherSuites(char* ret) const;
         void generateTLS13CipherSuites(char* ret) const;
@@ -320,6 +321,7 @@ namespace Bn3Monkey
         static constexpr size_t IMPLEMENTATION_SIZE = 2048;
 
         explicit SocketClient(const SocketConfiguration& configuration);
+        explicit SocketClient(const SocketConfiguration& configuration, const SocketTLSClientConfiguration& tls_configuration);
         virtual ~SocketClient();
 
         SocketResult open();
@@ -409,6 +411,7 @@ namespace Bn3Monkey
         static constexpr size_t IMPLEMENTATION_SIZE = 2048;
 
         explicit SocketRequestServer(const SocketConfiguration& configuration);
+        explicit SocketRequestServer(const SocketConfiguration& configuration, const SocketTLSServerConfiguration& tls_configuration);
         virtual ~SocketRequestServer();
 
         SocketResult open(SocketRequestHandler* handler, size_t num_of_clients);
@@ -424,6 +427,7 @@ namespace Bn3Monkey
         static constexpr size_t IMPLEMENTATION_SIZE = 2048;
 
         explicit SocketBroadcastServer(const SocketConfiguration& configuration);
+        explicit SocketBroadcastServer(const SocketConfiguration& configuration, const SocketTLSServerConfiguration& tls_configuration);
         virtual ~SocketBroadcastServer();
 
         SocketResult open(size_t num_of_clients);
