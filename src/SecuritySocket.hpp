@@ -23,6 +23,8 @@
 #include <cstdint>
 #include <cstdio>
 #include <memory>
+#include <initializer_list>
+
 #define WIN32_LEAN_AND_MEAN
 
 #define BN3MONKEY_SECURITYSOCKET_VERSION_MAJOR 2
@@ -119,7 +121,6 @@ namespace Bn3Monkey
 
         inline char* ip() { return _ip; } 
         inline char* port() {return _port;} 
-        inline bool tls() { return _tls;} 
         inline bool is_unix_domain() { return _is_unix_domain; }
         inline size_t pdu_size() { return _pdu_size;} 
         inline uint32_t max_retries() { return _max_retries; } 
@@ -131,14 +132,12 @@ namespace Bn3Monkey
         explicit SocketConfiguration(
             const char* ip,
             uint32_t port,
-            bool tls,
             bool is_unix_domain = false,
             uint32_t max_retries = 3,
             uint32_t read_timeout = 2000,
             uint32_t write_timeout = 2000,
             uint32_t time_between_retries = 100,
             size_t pdu_size = MAX_PDU_SIZE) : 
-            _tls(tls), 
             _pdu_size(pdu_size),
             _max_retries(max_retries),
             _read_timeout(read_timeout),
@@ -154,7 +153,6 @@ namespace Bn3Monkey
     private:
         char _ip[128] {0};
         char _port[16] {0};
-        bool _tls {false};
         size_t _pdu_size { MAX_PDU_SIZE};
         uint32_t _max_retries{ 0 };
         uint32_t _read_timeout{ 0 };
@@ -162,6 +160,159 @@ namespace Bn3Monkey
         uint32_t _time_between_retries{ 0 };
         bool _is_unix_domain{ false };
     };
+
+
+    enum class SECURITYSOCKET_API SocketTLSVersion {
+        TLS1_2 = 1 << 0,
+        TLS1_3 = 1 << 1,
+	};
+    enum class SocketTLS1_2CipherSuite {
+        ECDHE_ECDSA_AES256_GCM_SHA384 = 1 << 0,
+        ECDHE_RSA_AES256_GCM_SHA384 = 1 << 1,
+        ECDHE_ECDSA_CHACHA20_POLY1305 = 1 << 2, 
+        ECDHE_RSA_CHACHA20_POLY1305 = 1 << 3,
+    };
+    enum class SocketTLS1_3CipherSuite {
+        TLS_AES128_GCM_SHA256 = 1 << 0,
+        TLS_AES256_GCM_SHA384 = 1 << 1,
+        TLS_CHACHA20_POLY1305_SHA256 = 1 << 2,
+        TLS_AES128_CCM_SHA256 = 1 << 3,
+        TLS_AES128_CCM8_SHA256 = 1 << 4
+	};
+    enum class SocketTLSClientAuthenticationMode {
+        NONE,
+        OPTIONAL,
+        REQUIRED
+	};
+
+    class SECURITYSOCKET_API SocektTLSClientConfiguration
+    {
+    public:
+        explicit SocektTLSClientConfiguration(
+            std::initializer_list<SocketTLSVersion> support_versions = { SocketTLSVersion::TLS1_2 },
+            std::initializer_list<SocketTLS1_2CipherSuite> tls_1_2_cipher_suites = {},
+            std::initializer_list<SocketTLS1_3CipherSuite> tls_1_3_cipher_suites = {},
+            bool verify_server,
+            bool verify_hostname,
+            const char* server_trust_store_path = nullptr,
+
+            bool use_client_certificate = false,
+            const char* client_cert_file_path = nullptr,
+            const char* client_key_file_path = nullptr,
+            const char* client_key_password = nullptr
+        ) : _verify_server(verify_server),
+            _verify_hostname(verify_hostname),
+			_use_client_certificate(use_client_certificate)
+        { 
+			for (auto& version : support_versions) {
+                _tls_versions |= static_cast<int32_t>(version);
+            }
+			for (auto& cipher_suite : tls_1_2_cipher_suites) {
+                _tls_1_2_cipher_suites |= static_cast<int32_t>(cipher_suite);
+            }
+			for (auto& cipher_suite : tls_1_3_cipher_suites) {
+                _tls_1_3_cipher_suites |= static_cast<int32_t>(cipher_suite);
+            }
+            if (server_trust_store_path) {
+                strncpy(_server_trust_store_path, server_trust_store_path, sizeof(_server_trust_store_path)-1);
+            }
+            if (client_cert_file_path) {
+                strncpy(_client_cert_file_path, client_cert_file_path, sizeof(_client_cert_file_path)-1);
+			}
+            if (client_key_file_path) {
+                strncpy(_client_key_file_path, client_key_file_path, sizeof(_client_key_file_path)-1);
+			}
+            if (client_key_password) {
+                strncpy(_client_key_password, client_key_password, sizeof(_client_key_password) - 1);
+            }
+        }
+
+		inline bool isVersionSupported(SocketTLSVersion version) const { return _tls_versions & static_cast<int32_t>(version); }
+        void generateTLS12CipherSuites(char* ret) const;
+        void generateTLS13CipherSuites(char* ret) const;
+		inline const char* serverTrustStorePath() const { return _server_trust_store_path; }
+		inline const char* clientCertFilePath() const { return _client_cert_file_path; }
+		inline const char* clientKeyFilePath() const { return _client_key_file_path; }
+		inline const char* clientKeyPassword() const { return _client_key_password; }
+		inline bool shouldVerifyServer() const { return _verify_server; }
+		inline bool shouldVerifyHostname() const { return _verify_hostname; }
+		inline bool shouldUseClientCertificate() const { return _use_client_certificate; }
+
+    private:
+        int32_t _tls_versions{ 0 };
+		int32_t _tls_1_2_cipher_suites{ 0 };
+		int32_t _tls_1_3_cipher_suites{ 0 };
+        
+		bool _verify_server{ false };
+		bool _verify_hostname{ false };
+		bool _use_client_certificate{ false };
+		bool _reserved{ false };
+
+		char _server_trust_store_path[256]{ 0 };
+		char _client_cert_file_path[256]{ 0 };
+		char _client_key_file_path[256]{ 0 };
+		char _client_key_password[256]{ 0 };
+    };
+
+    class SECURITYSOCKET_API SocketTLSServerConfiguration
+    {
+    public:
+        explicit SocketTLSServerConfiguration(
+            std::initializer_list<SocketTLSVersion> support_versions = { SocketTLSVersion::TLS1_2 },
+            std::initializer_list<SocketTLS1_2CipherSuite> tls_1_2_cipher_suites = {},
+            std::initializer_list<SocketTLS1_3CipherSuite> tls_1_3_cipher_suites = {},
+
+            const char* server_cert_file_path = nullptr,
+            const char* server_key_file_path = nullptr,
+            const char* server_key_password = nullptr,
+
+			SocketTLSClientAuthenticationMode client_authentication_mode = SocketTLSClientAuthenticationMode::NONE,
+            const char* client_trust_store_path = nullptr
+		) : _client_authentication_mode(client_authentication_mode)
+        {
+            for (auto& version : support_versions) {
+                _tls_versions |= static_cast<int32_t>(version);
+            }
+            for (auto& cipher_suite : tls_1_2_cipher_suites) {
+                _tls_1_2_cipher_suites |= static_cast<int32_t>(cipher_suite);
+            }
+            for (auto& cipher_suite : tls_1_3_cipher_suites) {
+                _tls_1_3_cipher_suites |= static_cast<int32_t>(cipher_suite);
+            }
+            if (client_trust_store_path) {
+                strncpy(_client_trust_store_path, client_trust_store_path, sizeof(_client_trust_store_path) - 1);
+            }
+            if (server_cert_file_path) {
+                strncpy(_server_cert_file_path, server_cert_file_path, sizeof(_server_cert_file_path) - 1);
+            }
+            if (server_key_file_path) {
+                strncpy(_server_key_file_path, server_key_file_path, sizeof(_server_key_file_path) - 1);
+            }
+            if (server_key_password) {
+                strncpy(_server_key_password, server_key_password, sizeof(_server_key_password) - 1);
+            }
+        }
+        inline bool isVersionSupported(SocketTLSVersion version) const { return _tls_versions & static_cast<int32_t>(version); }
+        void generateTLS12CipherSuites(char* ret) const;
+        void generateTLS13CipherSuites(char* ret) const;
+        inline const char* clientTrustStorePath() const { return _client_trust_store_path; }
+        inline const char* serverCertFilePath() const { return _server_cert_file_path; }
+        inline const char* serverKeyFilePath() const { return _server_key_file_path; }
+        inline const char* serverKeyPassword() const { return _server_key_password; }
+        inline SocketTLSClientAuthenticationMode clientAuthenticationMode() const { return _client_authentication_mode; }
+
+    private:
+		int32_t _tls_versions{ 0 };
+		int32_t _tls_1_2_cipher_suites{ 0 };
+		int32_t _tls_1_3_cipher_suites{ 0 };
+		SocketTLSClientAuthenticationMode _client_authentication_mode{ SocketTLSClientAuthenticationMode::NONE };
+
+        char _client_trust_store_path[256]{ 0 };
+        char _server_cert_file_path[256]{ 0 };
+        char _server_key_file_path[256]{ 0 };
+        char _server_key_password[256]{ 0 };
+    };
+
 
     class SECURITYSOCKET_API SocketClient
     {

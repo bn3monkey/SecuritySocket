@@ -13,9 +13,7 @@
 using namespace Bn3Monkey;
 
 bool Bn3Monkey::initializeSecuritySocket()
-{
-	initializeTLS();
-	
+{	
 #ifdef _WIN32
 	WSADATA data;
 	int ret = WSAStartup(MAKEWORD(2, 2), &data);
@@ -130,4 +128,113 @@ SocketResult Bn3Monkey::SocketBroadcastServer::write(const void* buffer, size_t 
 {
 	SocketBroadcastServerImpl* impl = static_cast<SocketBroadcastServerImpl*>((void*)_container);
 	return impl->write(buffer, size);
+}
+
+void Bn3Monkey::SocektTLSClientConfiguration::generateTLS12CipherSuites(char* ret) const
+{
+	ret[0] = '\0';
+	if (_tls_1_2_cipher_suites == 0)
+		return;
+
+	char* p = ret;
+	bool first = true;
+	auto append = [&](const char* suite) {
+		if (!first) { *p++ = ':'; }
+		size_t len = strlen(suite);
+		memcpy(p, suite, len);
+		p += len;
+		*p = '\0';
+		first = false;
+	};
+
+	if (_tls_1_2_cipher_suites & static_cast<int32_t>(SocketTLS1_2CipherSuite::ECDHE_ECDSA_AES256_GCM_SHA384))
+		append("ECDHE-ECDSA-AES256-GCM-SHA384");
+	if (_tls_1_2_cipher_suites & static_cast<int32_t>(SocketTLS1_2CipherSuite::ECDHE_RSA_AES256_GCM_SHA384))
+		append("ECDHE-RSA-AES256-GCM-SHA384");
+	if (_tls_1_2_cipher_suites & static_cast<int32_t>(SocketTLS1_2CipherSuite::ECDHE_ECDSA_CHACHA20_POLY1305))
+		append("ECDHE-ECDSA-CHACHA20-POLY1305");
+	if (_tls_1_2_cipher_suites & static_cast<int32_t>(SocketTLS1_2CipherSuite::ECDHE_RSA_CHACHA20_POLY1305))
+		append("ECDHE-RSA-CHACHA20-POLY1305");
+}
+void Bn3Monkey::SocektTLSClientConfiguration::generateTLS13CipherSuites(char* ret) const
+{
+	ret[0] = '\0';
+	if (_tls_1_3_cipher_suites == 0)
+		return;
+
+	char* p = ret;
+	bool first = true;
+	auto append = [&](const char* suite) {
+		if (!first) { *p++ = ':'; }
+		size_t len = strlen(suite);
+		memcpy(p, suite, len);
+		p += len;
+		*p = '\0';
+		first = false;
+	};
+
+	if (_tls_1_3_cipher_suites & static_cast<int32_t>(SocketTLS1_3CipherSuite::TLS_AES128_GCM_SHA256))
+		append("TLS_AES_128_GCM_SHA256");
+	if (_tls_1_3_cipher_suites & static_cast<int32_t>(SocketTLS1_3CipherSuite::TLS_AES256_GCM_SHA384))
+		append("TLS_AES_256_GCM_SHA384");
+	if (_tls_1_3_cipher_suites & static_cast<int32_t>(SocketTLS1_3CipherSuite::TLS_CHACHA20_POLY1305_SHA256))
+		append("TLS_CHACHA20_POLY1305_SHA256");
+	if (_tls_1_3_cipher_suites & static_cast<int32_t>(SocketTLS1_3CipherSuite::TLS_AES128_CCM_SHA256))
+		append("TLS_AES_128_CCM_SHA256");
+	if (_tls_1_3_cipher_suites & static_cast<int32_t>(SocketTLS1_3CipherSuite::TLS_AES128_CCM8_SHA256))
+		append("TLS_AES_128_CCM_8_SHA256");
+}
+void Bn3Monkey::SocketTLSServerConfiguration::generateTLS12CipherSuites(char* ret) const
+{
+	ret[0] = '\0';
+	if (_tls_1_2_cipher_suites == 0)
+		return;
+
+	char* p = ret;
+	bool first = true;
+	auto append = [&](const char* suite) {
+		if (!first) { *p++ = ':'; }
+		size_t len = strlen(suite);
+		memcpy(p, suite, len);
+		p += len;
+		*p = '\0';
+		first = false;
+	};
+
+	if (_tls_1_2_cipher_suites & static_cast<int32_t>(SocketTLS1_2CipherSuite::ECDHE_ECDSA_AES256_GCM_SHA384))
+		append("ECDHE-ECDSA-AES256-GCM-SHA384");
+	if (_tls_1_2_cipher_suites & static_cast<int32_t>(SocketTLS1_2CipherSuite::ECDHE_RSA_AES256_GCM_SHA384))
+		append("ECDHE-RSA-AES256-GCM-SHA384");
+	if (_tls_1_2_cipher_suites & static_cast<int32_t>(SocketTLS1_2CipherSuite::ECDHE_ECDSA_CHACHA20_POLY1305))
+		append("ECDHE-ECDSA-CHACHA20-POLY1305");
+	if (_tls_1_2_cipher_suites & static_cast<int32_t>(SocketTLS1_2CipherSuite::ECDHE_RSA_CHACHA20_POLY1305))
+		append("ECDHE-RSA-CHACHA20-POLY1305");
+}
+void Bn3Monkey::SocketTLSServerConfiguration::generateTLS13CipherSuites(char* ret) const
+{
+	ret[0] = '\0';
+	if (_tls_1_3_cipher_suites == 0)
+		return;
+
+	char* p = ret;
+	bool first = true;
+	auto append = [&](const char* suite) {
+		if (!first) { *p++ = ':'; }
+		size_t len = strlen(suite);
+		memcpy(p, suite, len);
+		p += len;
+		*p = '\0';
+		first = false;
+	};
+
+	if (_tls_1_3_cipher_suites & static_cast<int32_t>(SocketTLS1_3CipherSuite::TLS_AES128_GCM_SHA256))
+		append("TLS_AES_128_GCM_SHA256");
+	if (_tls_1_3_cipher_suites & static_cast<int32_t>(SocketTLS1_3CipherSuite::TLS_AES256_GCM_SHA384))
+		append("TLS_AES_256_GCM_SHA384");
+	if (_tls_1_3_cipher_suites & static_cast<int32_t>(SocketTLS1_3CipherSuite::TLS_CHACHA20_POLY1305_SHA256))
+		append("TLS_CHACHA20_POLY1305_SHA256");
+	if (_tls_1_3_cipher_suites & static_cast<int32_t>(SocketTLS1_3CipherSuite::TLS_AES128_CCM_SHA256))
+		append("TLS_AES_128_CCM_SHA256");
+	if (_tls_1_3_cipher_suites & static_cast<int32_t>(SocketTLS1_3CipherSuite::TLS_AES128_CCM8_SHA256))
+		append("TLS_AES_128_CCM_8_SHA256");
 }

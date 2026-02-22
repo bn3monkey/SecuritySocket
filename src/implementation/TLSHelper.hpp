@@ -5,24 +5,11 @@
 #include <openssl/ssl.h>
 #include <openssl/err.h>
 
-inline void initializeTLS()
-{
-    static bool is_initialized{ false };
-    if (!is_initialized)
-    {
-        SSL_library_init();
-        OpenSSL_add_all_algorithms();
-        SSL_load_error_strings();
-        is_initialized = true;
-    }
+void checkTLSFunction() {
+    TLS1_2_VERSION
 }
-
 #else
 
-inline void initializeTLS()
-{
-    return;
-}
 
 using SSL_CTX = void;
 using SSL = void;
