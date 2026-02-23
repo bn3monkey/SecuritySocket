@@ -43,9 +43,9 @@ void createCertificates()
     if (directoryExists("certs"))
     {
         printf("[cert-gen] Certificates already exist; skipping generation.\n");
-        return;
     }
-
+    else
+    {
     runCommand("Check openssl", "openssl version");
     runCommand("Check openssl", "where openssl");
 
@@ -187,4 +187,23 @@ void createCertificates()
            " -CAcreateserial -out certs/client_untrusted.crt");
 
     printf("[cert-gen] Certificate generation complete.\n");
+    } // end generation block
+
+    // Download all certificate files from the server to the local certs/ directory.
+    createLocalDirectory("certs");
+    printf("[cert-gen] Downloading certificates from server...\n");
+    downloadFile(SERVER_SELF_CERT,      SERVER_SELF_CERT);
+    downloadFile(SERVER_SELF_KEY,       SERVER_SELF_KEY);
+    downloadFile(CA_CERT,               CA_CERT);
+    downloadFile(SERVER_CA_CERT,        SERVER_CA_CERT);
+    downloadFile(SERVER_CA_KEY,         SERVER_CA_KEY);
+    downloadFile(SERVER_WRONG_CN_CERT,  SERVER_WRONG_CN_CERT);
+    downloadFile(SERVER_WRONG_CN_KEY,   SERVER_WRONG_CN_KEY);
+    downloadFile(CLIENT_CERT_PATH,      CLIENT_CERT_PATH);
+    downloadFile(CLIENT_KEY_PATH,       CLIENT_KEY_PATH);
+    downloadFile(CLIENT_ENC_KEY_PATH,   CLIENT_ENC_KEY_PATH);
+    downloadFile(UNTRUSTED_CA_CERT,     UNTRUSTED_CA_CERT);
+    downloadFile(CLIENT_UNTRUSTED_CERT, CLIENT_UNTRUSTED_CERT);
+    downloadFile(CLIENT_UNTRUSTED_KEY,  CLIENT_UNTRUSTED_KEY);
+    printf("[cert-gen] Certificate download complete.\n");
 }

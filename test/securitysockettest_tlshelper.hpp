@@ -5,6 +5,12 @@
 #include <cstdint>
 #include <fstream>
 
+#ifdef _WIN32
+#include <direct.h>
+#else
+#include <sys/stat.h>
+#endif
+
 #include <remote_command_client.hpp>
 
 constexpr static const char* SERVER_SELF_CERT      = "certs/server_self.crt";
@@ -58,6 +64,20 @@ inline void runCommand(const char* description, const char* fmt, Args... args)
     std::snprintf(cmd, sizeof(cmd), fmt, args...);
 
     Bn3Monkey::runCommand(getClient(), cmd);
+}
+
+inline bool downloadFile(const char* local_file, const char* remote_file)
+{
+    return Bn3Monkey::downloadFile(getClient(), local_file, remote_file);
+}
+
+inline void createLocalDirectory(const char* path)
+{
+#ifdef _WIN32
+    _mkdir(path);
+#else
+    mkdir(path, 0755);
+#endif
 }
 
 
