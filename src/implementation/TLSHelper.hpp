@@ -69,6 +69,13 @@ inline int32_t SSL_read(SSL* ssl, void* buffer, size_t size)
     (void)size;
     return 0;
 }
+inline int32_t SSL_peek(SSL* ssl, void* buffer, size_t size)
+{
+    (void)ssl;
+    (void)buffer;
+    (void)size;
+    return 0;
+}
 inline int32_t SSL_get_error(SSL* ssl, int32_t operation_return)
 {
     (void)ssl;
@@ -119,9 +126,15 @@ inline int  SSL_CTX_use_PrivateKey_file(SSL_CTX*, const char*, int) { return 1; 
 inline int SSL_set_tlsext_host_name(SSL*, const char*) { return 1; }
 inline int SSL_set1_host(SSL*, const char*) { return 1; }
 
+// X.509 type stub (used only when SECURITYSOCKET_TLS is not defined)
+using X509 = void;
+
 // X.509 verify result codes
-static constexpr long X509_V_OK                    = 0;
-static constexpr long X509_V_ERR_HOSTNAME_MISMATCH = 62;
+static constexpr long X509_V_OK                      = 0;
+static constexpr long X509_V_ERR_HOSTNAME_MISMATCH   = 62;
+// Returned when the peer's IP address does not match the certificate's IP SAN.
+// (Distinct from X509_V_ERR_HOSTNAME_MISMATCH which covers DNS names.)
+static constexpr long X509_V_ERR_IP_ADDRESS_MISMATCH = 64;
 
 // SSL reason codes (used with ERR_GET_REASON)
 static constexpr int SSL_R_UNSUPPORTED_PROTOCOL                 = 258;
@@ -131,11 +144,25 @@ static constexpr int SSL_R_NO_SHARED_CIPHER                     = 193;
 static constexpr int SSL_R_SSLV3_ALERT_HANDSHAKE_FAILURE        = 1040;
 static constexpr int SSL_R_TLSV13_ALERT_CERTIFICATE_REQUIRED    = 1116;
 static constexpr int SSL_R_TLSV1_ALERT_UNKNOWN_CA               = 1048;
+static constexpr int SSL_R_TLSV1_ALERT_PROTOCOL_VERSION = 1070;
 
 // Error queue
 inline long         SSL_get_verify_result(SSL*)      { return X509_V_OK; }
 inline unsigned long ERR_peek_error()                { return 0; }
 inline int          ERR_GET_REASON(unsigned long e)  { return static_cast<int>(e & 0xFFF); }
+inline void         ERR_clear_error()                {}
+
+// Returns the verify mode set on this SSL session (e.g., SSL_VERIFY_NONE or SSL_VERIFY_PEER).
+inline int          SSL_get_verify_mode(const SSL*)  { return SSL_VERIFY_NONE; }
+
+// Returns the negotiated protocol version (e.g., TLS1_2_VERSION or TLS1_3_VERSION).
+inline int          SSL_version(const SSL*)          { return 0; }
+
+// Returns the negotiated cipher for this SSL session, or nullptr if not yet negotiated.
+inline void*        SSL_get_current_cipher(const SSL*) { return nullptr; }
+
+// Returns the certificate configured for this SSL session, or nullptr if none.
+inline X509*        SSL_get_certificate(const SSL*)  { return nullptr; }
 
 #endif // USING_TLS
 

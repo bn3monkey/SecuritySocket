@@ -178,15 +178,15 @@ static void generateTLS13CipherSuiteImpl(int32_t suites_bitmap, char* ret)
 		return;
 
 	size_t offset {0};
-	if (suites_bitmap & static_cast<int32_t>(SocketTLS1_3CipherSuite::TLS_AES128_GCM_SHA256))
+	if (suites_bitmap & static_cast<int32_t>(SocketTLS1_3CipherSuite::TLS_AES_128_GCM_SHA256))
 		offset = appendCipherString("TLS_AES_128_GCM_SHA256", offset, ret);
-	if (suites_bitmap & static_cast<int32_t>(SocketTLS1_3CipherSuite::TLS_AES256_GCM_SHA384))
+	if (suites_bitmap & static_cast<int32_t>(SocketTLS1_3CipherSuite::TLS_AES_256_GCM_SHA384))
 		offset = appendCipherString("TLS_AES_256_GCM_SHA384", offset, ret);
 	if (suites_bitmap & static_cast<int32_t>(SocketTLS1_3CipherSuite::TLS_CHACHA20_POLY1305_SHA256))
 		offset = appendCipherString("TLS_CHACHA20_POLY1305_SHA256", offset, ret);
-	if (suites_bitmap & static_cast<int32_t>(SocketTLS1_3CipherSuite::TLS_AES128_CCM_SHA256))
+	if (suites_bitmap & static_cast<int32_t>(SocketTLS1_3CipherSuite::TLS_AES_128_CCM_SHA256))
 		offset = appendCipherString("TLS_AES_128_CCM_SHA256", offset, ret);
-	if (suites_bitmap & static_cast<int32_t>(SocketTLS1_3CipherSuite::TLS_AES128_CCM8_SHA256))
+	if (suites_bitmap & static_cast<int32_t>(SocketTLS1_3CipherSuite::TLS_AES_128_CCM8_SHA256))
 		offset = appendCipherString("TLS_AES_128_CCM_8_SHA256", offset, ret);
 }
 

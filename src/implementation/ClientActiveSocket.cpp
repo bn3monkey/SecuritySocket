@@ -67,8 +67,9 @@ SocketResult ClientActiveSocket::connect(const SocketAddress& address, uint32_t 
 	return result;
 }
 
-SocketResult ClientActiveSocket::reconnect()
+SocketResult ClientActiveSocket::reconnect(bool after_handshake)
 {
+	(void)after_handshake;
 	return SocketResult(SocketCode::SUCCESS);
 }
 
@@ -110,6 +111,41 @@ SocketResult Bn3Monkey::ClientActiveSocket::read(void* buffer, size_t size)
 	return createResult(ret);
 }
 
+static void trackTLSInfo(const SSL* ssl, int where, int ret)
+{
+	char buffer[2048]{ 0 };
+
+	int w = where & ~SSL_ST_MASK;
+
+	if (where & SSL_CB_LOOP)
+	{
+		const char* header = "";
+		if (w & SSL_ST_CONNECT) header = "SSL_connect";
+		else if (w & SSL_ST_ACCEPT) header = "SSL_accept";
+		snprintf(buffer, sizeof(buffer), "[%s] %s", header, SSL_state_string_long(ssl));
+	}
+	else if (where & SSL_CB_ALERT)
+	{
+		snprintf(buffer, sizeof(buffer), "[ALERT] : %s :%s", SSL_alert_type_string_long(ret), SSL_alert_desc_string_long(ret));
+	}
+	else if (where & SSL_CB_EXIT)
+	{
+		if (ret <= 0) {
+			snprintf(buffer, sizeof(buffer), "%s", ret == 0 ? "Handshake failed" : "Handshake error");
+		}
+	}
+	else if (where & SSL_CB_HANDSHAKE_START) {
+		snprintf(buffer, sizeof(buffer), "Handshake start");
+	}
+	else if (where & SSL_CB_HANDSHAKE_DONE) {
+		snprintf(buffer, sizeof(buffer), "Handshake done");
+	}
+	
+    auto* onTLSEvent = reinterpret_cast<SocketTLSClientConfiguration::TlsEventCallback>(SSL_get_ex_data(ssl, 0));
+	if (onTLSEvent) {
+		onTLSEvent(buffer);
+	}
+}
 
 Bn3Monkey::TLSClientActiveSocket::TLSClientActiveSocket(bool is_unix_domain, const SocketTLSClientConfiguration& tls_configuration, const char* hostname)
 	: ClientActiveSocket(is_unix_domain, tls_configuration, hostname)
@@ -186,6 +222,13 @@ Bn3Monkey::TLSClientActiveSocket::TLSClientActiveSocket(bool is_unix_domain, con
 		_context = nullptr;
 		_result = SocketResult(SocketCode::TLS_INITIALIZATION_FAIL);
 	}
+
+	// TLS info tracking
+	auto on_tls_event = tls_configuration.getOnTLSEvent();
+	if (on_tls_event) {
+        SSL_set_ex_data(_ssl, 0, reinterpret_cast<void*>(on_tls_event));
+		SSL_CTX_set_info_callback(_context, trackTLSInfo);
+	}
 }
 
 Bn3Monkey::TLSClientActiveSocket::~TLSClientActiveSocket()
@@ -220,24 +263,85 @@ SocketResult TLSClientActiveSocket::connect(const SocketAddress& address, uint32
 	setBlockingMode(_socket);
 	return result;
 }
-SocketResult Bn3Monkey::TLSClientActiveSocket::reconnect()
+SocketResult Bn3Monkey::TLSClientActiveSocket::reconnect(bool after_handshake)
 {
+	if (after_handshake) {
+		// In TLS 1.3 the server sends its Finished message BEFORE it processes the
+		// client's Certificate message, so SSL_connect() can return 1 (success)
+		// before the server has had a chance to reject a missing or untrusted client
+		// certificate.  Run a short post-handshake probe to catch that deferred alert.
+		// In TLS 1.2 the handshake is fully synchronous, so no probe is needed.
+		if (SSL_version(_ssl) == TLS1_3_VERSION)
+			return postHandshakeProbe();
+		return SocketResult(SocketCode::SUCCESS);
+	}
+
 	if (SSL_set_fd(_ssl, _socket) == 0)
 		return SocketResult(SocketCode::TLS_SETFD_ERROR);
 
-	// [SNI + 호스트명 검증] : 도메인 연결 시 서버가 올바른 인증서를 보내도록 SNI 설정,
-	//                         인증서의 CN/SAN이 hostname과 일치하는지 검증
+	// Set SNI extension so the server can select the correct virtual-host
+	// certificate, and enable X.509 hostname / IP-address verification so that
+	// the peer certificate's CN / SAN is checked against _hostname.
 	if (_hostname != nullptr) {
 		SSL_set_tlsext_host_name(_ssl, _hostname);  // SNI ClientHello extension
 		SSL_set1_host(_ssl, _hostname);              // X.509 hostname verification
 	}
 
-	// [TLS Handshake] : ClientHello → ServerHello → 인증서 교환 → 키 교환
-	//                   TLS 1.3 시도 후 서버가 지원하지 않으면 TLS 1.2로 자동 협상
+	// Perform the TLS handshake.  Returns 1 on success, ≤0 on failure.
 	auto res = SSL_connect(_ssl);
 	if (res != 1)
 		return createTLSResult(_ssl, res);
 
+
+	return SocketResult(SocketCode::SUCCESS);
+}
+
+SocketResult Bn3Monkey::TLSClientActiveSocket::postHandshakeProbe()
+{
+	// -------------------------------------------------------------------------
+	// TLS 1.3 deferred client-certificate rejection probe
+	//
+	// The rejection alert (certificate_required, unknown_ca, handshake_failure)
+	// arrives at the socket shortly after SSL_connect() returned 1.
+	//
+	// We perform a non-blocking SSL_peek() to check whether an alert has
+	// already arrived.  Three outcomes:
+	//   peek > 0   : application data queued — connection is good.
+	//   SSL_ERROR_SSL / SSL_ERROR_ZERO_RETURN : rejection alert received.
+	//   SSL_ERROR_WANT_READ : no data yet — return NEED_TO_BE_BLOCKED so the
+	//       caller (SocketClient::connect Phase 2) can wait via SocketEventListener
+	//       (poll/select POLLIN) and retry.  The caller treats SOCKET_TIMEOUT
+	//       (no alert within read_timeout) as an accepted connection.
+	// -------------------------------------------------------------------------
+
+	// Run in non-blocking mode so SSL_peek() returns immediately when no data
+	// is buffered, instead of blocking or depending on SO_RCVTIMEO behavior
+	// which differs between MSVC and GCC builds of OpenSSL.
+	setNonBlockingMode(_socket);
+	char probe[1];
+	int  peek_ret = SSL_peek(_ssl, probe, sizeof(probe));
+	setBlockingMode(_socket);
+
+	if (peek_ret > 0) {
+		// Application data already in the TLS receive buffer — connection is good.
+		return SocketResult(SocketCode::SUCCESS);
+	}
+
+	int ssl_err = SSL_get_error(_ssl, peek_ret);
+
+	if (ssl_err == SSL_ERROR_SSL || ssl_err == SSL_ERROR_ZERO_RETURN) {
+		// A rejection alert arrived from the server after SSL_connect()
+		// had already returned success — classify it via the normal path.
+		return createTLSResult(_ssl, peek_ret);
+	}
+
+	if (ssl_err == SSL_ERROR_WANT_READ) {
+		// No data buffered yet — tell the caller to wait for POLLIN and retry.
+		return SocketResult(SocketCode::SOCKET_CONNECTION_NEED_TO_BE_BLOCKED);
+	}
+
+	// SSL_ERROR_SYSCALL or anything else — no alert, treat as success.
+	ERR_clear_error();
 	return SocketResult(SocketCode::SUCCESS);
 }
 

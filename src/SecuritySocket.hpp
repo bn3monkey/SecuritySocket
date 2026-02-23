@@ -44,7 +44,7 @@
 namespace Bn3Monkey
 {
 
-    enum class SECURITYSOCKET_API SocketCode
+    enum class SocketCode
     {
         SUCCESS,
 
@@ -168,7 +168,7 @@ namespace Bn3Monkey
     };
 
 
-    enum class SECURITYSOCKET_API SocketTLSVersion {
+    enum class SocketTLSVersion {
         TLS1_2 = 1 << 0,
         TLS1_3 = 1 << 1,
 	};
@@ -179,11 +179,11 @@ namespace Bn3Monkey
         ECDHE_RSA_CHACHA20_POLY1305 = 1 << 3,
     };
     enum class SocketTLS1_3CipherSuite {
-        TLS_AES128_GCM_SHA256 = 1 << 0,
-        TLS_AES256_GCM_SHA384 = 1 << 1,
+        TLS_AES_128_GCM_SHA256 = 1 << 0,
+        TLS_AES_256_GCM_SHA384 = 1 << 1,
         TLS_CHACHA20_POLY1305_SHA256 = 1 << 2,
-        TLS_AES128_CCM_SHA256 = 1 << 3,
-        TLS_AES128_CCM8_SHA256 = 1 << 4
+        TLS_AES_128_CCM_SHA256 = 1 << 3,
+        TLS_AES_128_CCM8_SHA256 = 1 << 4
 	};
     enum class SocketTLSClientAuthenticationMode {
         NONE,
@@ -208,15 +208,15 @@ namespace Bn3Monkey
             const char* client_key_password = nullptr
         ) : _verify_server(verify_server),
             _verify_hostname(verify_hostname),
-			_use_client_certificate(use_client_certificate)
-        { 
-			for (auto& version : support_versions) {
+            _use_client_certificate(use_client_certificate)
+        {
+            for (auto& version : support_versions) {
                 _tls_versions |= static_cast<int32_t>(version);
             }
-			for (auto& cipher_suite : tls_1_2_cipher_suites) {
+            for (auto& cipher_suite : tls_1_2_cipher_suites) {
                 _tls_1_2_cipher_suites |= static_cast<int32_t>(cipher_suite);
             }
-			for (auto& cipher_suite : tls_1_3_cipher_suites) {
+            for (auto& cipher_suite : tls_1_3_cipher_suites) {
                 _tls_1_3_cipher_suites |= static_cast<int32_t>(cipher_suite);
             }
             if (server_trust_store_path)
@@ -229,32 +229,43 @@ namespace Bn3Monkey
                 snprintf(_client_key_password, sizeof(_client_key_password), "%s", client_key_password);
         }
 
+        using TlsEventCallback = void(*)(const char*);
+        inline void setOnTLSEvent(TlsEventCallback on_tls_event) {
+            _on_tls_event = on_tls_event;
+        }
+        inline TlsEventCallback getOnTLSEvent() const {
+            return _on_tls_event;
+        }
+
+
         inline bool valid() const { return _tls_versions != 0; }
-		inline bool isVersionSupported(SocketTLSVersion version) const { return _tls_versions & static_cast<int32_t>(version); }
+        inline bool isVersionSupported(SocketTLSVersion version) const { return _tls_versions & static_cast<int32_t>(version); }
         void generateTLS12CipherSuites(char* ret) const;
         void generateTLS13CipherSuites(char* ret) const;
-		inline const char* serverTrustStorePath() const { return _server_trust_store_path; }
-		inline const char* clientCertFilePath() const { return _client_cert_file_path; }
-		inline const char* clientKeyFilePath() const { return _client_key_file_path; }
-		inline const char* clientKeyPassword() const { return _client_key_password; }
-		inline bool shouldVerifyServer() const { return _verify_server; }
-		inline bool shouldVerifyHostname() const { return _verify_hostname; }
-		inline bool shouldUseClientCertificate() const { return _use_client_certificate; }
+        inline const char* serverTrustStorePath() const { return _server_trust_store_path; }
+        inline const char* clientCertFilePath() const { return _client_cert_file_path; }
+        inline const char* clientKeyFilePath() const { return _client_key_file_path; }
+        inline const char* clientKeyPassword() const { return _client_key_password; }
+        inline bool shouldVerifyServer() const { return _verify_server; }
+        inline bool shouldVerifyHostname() const { return _verify_hostname; }
+        inline bool shouldUseClientCertificate() const { return _use_client_certificate; }
 
     private:
         int32_t _tls_versions{ 0 };
-		int32_t _tls_1_2_cipher_suites{ 0 };
-		int32_t _tls_1_3_cipher_suites{ 0 };
-        
-		bool _verify_server{ false };
-		bool _verify_hostname{ false };
-		bool _use_client_certificate{ false };
-		bool _reserved{ false };
+        int32_t _tls_1_2_cipher_suites{ 0 };
+        int32_t _tls_1_3_cipher_suites{ 0 };
 
-		char _server_trust_store_path[256]{ 0 };
-		char _client_cert_file_path[256]{ 0 };
-		char _client_key_file_path[256]{ 0 };
-		char _client_key_password[256]{ 0 };
+        bool _verify_server{ false };
+        bool _verify_hostname{ false };
+        bool _use_client_certificate{ false };
+        bool _reserved{ false };
+
+        char _server_trust_store_path[256]{ 0 };
+        char _client_cert_file_path[256]{ 0 };
+        char _client_key_file_path[256]{ 0 };
+        char _client_key_password[256]{ 0 };
+
+        TlsEventCallback _on_tls_event{ nullptr };
     };
 
     class SECURITYSOCKET_API SocketTLSServerConfiguration
@@ -292,6 +303,13 @@ namespace Bn3Monkey
                 snprintf(_server_key_password, sizeof(_server_key_password), "%s", server_key_password);
         }
 
+        using TlsEventCallback = void(*)(const char*);
+        inline void setOnTLSEvent(TlsEventCallback on_tls_event) {
+            _on_tls_event = on_tls_event;
+        }
+        inline TlsEventCallback getOnTLSEvent() const {
+            return _on_tls_event;
+        }
         inline bool valid() const { return _tls_versions != 0; }
         inline bool isVersionSupported(SocketTLSVersion version) const { return _tls_versions & static_cast<int32_t>(version); }
         void generateTLS12CipherSuites(char* ret) const;
@@ -312,6 +330,7 @@ namespace Bn3Monkey
         char _server_cert_file_path[256]{ 0 };
         char _server_key_file_path[256]{ 0 };
         char _server_key_password[256]{ 0 };
+        TlsEventCallback _on_tls_event{ nullptr };
     };
 
 
@@ -369,7 +388,7 @@ namespace Bn3Monkey
     // 애초에 payload를 다른 쓰레드에서 read를 여러번하고 write를 하자
     // 금방 끝날 것은 이 쓰레드에서 처리하기.
         
-    enum class SECURITYSOCKET_API SocketRequestMode
+    enum class SocketRequestMode
     {
         FAST,
         SLOW,

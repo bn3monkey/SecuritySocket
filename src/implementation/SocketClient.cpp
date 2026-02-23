@@ -45,93 +45,114 @@ SocketResult SocketClientImpl::connect()
 		return result;
 	}
 
-	SocketEventListener event_listener;
-	event_listener.open(*_socket, SocketEventType::CONNECT);
-
-	for (size_t i = 0; i < _configuration.max_retries(); i++)
 	{
-		result = _socket->connect(address, _configuration.read_timeout(), _configuration.write_timeout());
-		if (result.code() == SocketCode::SUCCESS)
+		SocketEventListener event_listener;
+		event_listener.open(*_socket, SocketEventType::CONNECT);
+
+		for (size_t i = 0; i < _configuration.max_retries(); i++)
 		{
-			break;
-		}
-		else if (result.code() == SocketCode::SOCKET_CONNECTION_IN_PROGRESS)
-		{
-            result = event_listener.wait(_configuration.read_timeout());
-            if (result.code() == SocketCode::SOCKET_TIMEOUT)
-            {
-                continue;
-            }
-            else if (result.code() != SocketCode::SUCCESS)
-            {
-                return result;
-            }
-            else {
-                break;
-            }
-		}
-		else if (result.code() == SocketCode::SOCKET_CONNECTION_NEED_TO_BE_BLOCKED)
-		{
-			result = event_listener.wait(_configuration.read_timeout());
-			if (result.code() == SocketCode::SOCKET_TIMEOUT)
+			result = _socket->connect(address, _configuration.read_timeout(), _configuration.write_timeout());
+			if (result.code() == SocketCode::SUCCESS)
 			{
+				break;
+			}
+			else if (result.code() == SocketCode::SOCKET_CONNECTION_IN_PROGRESS || result.code() == SocketCode::SOCKET_CONNECTION_NEED_TO_BE_BLOCKED)
+			{
+				result = event_listener.wait(_configuration.read_timeout());
+				if (result.code() == SocketCode::SOCKET_TIMEOUT)
+				{
+					i++;
+				}
+				else if (result.code() != SocketCode::SUCCESS)
+				{
+					return result;
+				}
+				else {
+					break;
+				}
+			}
+
+			std::this_thread::sleep_for(std::chrono::milliseconds(_configuration.time_between_retries()));
+		}
+
+		if (result.code() != SocketCode::SUCCESS)
+		{
+			return result;
+		}
+
+		// Phase 1: TLS handshake — retry reconnect(false) until SSL_connect completes
+		for (size_t i = 0; i < _configuration.max_retries(); )
+		{
+			result = _socket->reconnect(false);
+			if (result.code() == SocketCode::SUCCESS)
+			{
+				break;
+			}
+			else if (result.code() == SocketCode::SOCKET_CONNECTION_IN_PROGRESS
+				|| result.code() == SocketCode::SOCKET_CONNECTION_NEED_TO_BE_BLOCKED)
+			{
+				result = event_listener.wait(_configuration.read_timeout());
+				if (result.code() == SocketCode::SOCKET_TIMEOUT)
+				{
+					i++;
+				}
+				else if (result.code() != SocketCode::SUCCESS)
+				{
+					return result;
+				}
+				// Event fired — retry reconnect(false) so SSL_connect can process
+				// the server response (handshake message or rejection alert)
 				continue;
 			}
-			else if (result.code() != SocketCode::SUCCESS)
+			else
+			{
+				// Hard TLS error (version mismatch, cert invalid, etc.) — return immediately
+				return result;
+			}
+		}
+
+		if (result.code() != SocketCode::SUCCESS)
+		{
+			return result;
+		}
+	}
+
+	// Phase 2: post-handshake probe — TLS 1.3 deferred rejection detection.
+	// postHandshakeProbe() returns SOCKET_CONNECTION_NEED_TO_BE_BLOCKED when no
+	// data is buffered yet.  We wait once via the event listener (POLLIN):
+	//   SOCKET_TIMEOUT  → no rejection alert arrived within read_timeout → accepted.
+	//   SUCCESS (data)  → retry probe to process the rejection alert.
+	//   other error     → propagate.
+	{
+		SocketEventListener event_listener;
+		event_listener.open(*_socket, SocketEventType::READ);
+		for (size_t i = 0; i < _configuration.max_retries(); )
+		{
+			result = _socket->reconnect(true);
+			if (result.code() == SocketCode::SUCCESS)
+			{
+				break;
+			}
+			else if (result.code() == SocketCode::SOCKET_CONNECTION_IN_PROGRESS
+				|| result.code() == SocketCode::SOCKET_CONNECTION_NEED_TO_BE_BLOCKED)
+			{
+				result = event_listener.wait(_configuration.read_timeout());
+				if (result.code() == SocketCode::SOCKET_TIMEOUT)
+				{
+					return SocketResult(SocketCode::SUCCESS);
+				}
+				else if (result.code() != SocketCode::SUCCESS)
+				{
+					return result;
+				}
+				// Data arrived (POLLIN fired) — retry probe to process the alert.
+				continue;
+			}
+			else
 			{
 				return result;
 			}
-			else {
-				break;
-			}
 		}
-
-		std::this_thread::sleep_for(std::chrono::milliseconds(_configuration.time_between_retries()));
-	}
-
-	if (result.code() != SocketCode::SUCCESS)
-	{
-		return result;
-	}
-
-	for (size_t i = 0; i < _configuration.max_retries(); i++)
-	{
-		result = _socket->reconnect();
-		if (result.code() == SocketCode::SUCCESS)
-		{
-			break;
-		}
-		else if (result.code() == SocketCode::SOCKET_CONNECTION_IN_PROGRESS)
-		{
-            result = event_listener.wait(_configuration.read_timeout());
-            if (result.code() == SocketCode::SOCKET_TIMEOUT)
-            {
-                continue;
-            }
-            else if (result.code() != SocketCode::SUCCESS)
-            {
-                return result;
-            }
-            else {
-                break;
-            }
-		}
-		else if (result.code() == SocketCode::SOCKET_CONNECTION_NEED_TO_BE_BLOCKED)
-		{
-			result = event_listener.wait(_configuration.read_timeout());
-			if (result.code() == SocketCode::SOCKET_TIMEOUT)
-			{
-				continue;
-			}
-			else if (result.code() != SocketCode::SUCCESS)
-			{
-				return result;
-			}
-			else {
-				break;
-			}
-		}
-		std::this_thread::sleep_for(std::chrono::milliseconds(_configuration.time_between_retries()));
 	}
 
 	std::this_thread::sleep_for(std::chrono::milliseconds(100));

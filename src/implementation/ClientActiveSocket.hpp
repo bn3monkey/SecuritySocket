@@ -21,7 +21,7 @@ namespace Bn3Monkey
 		virtual void close();
 
 		virtual SocketResult connect(const SocketAddress& address, uint32_t read_timeout_ms, uint32_t write_timeout_ms);
-		virtual SocketResult reconnect();
+		virtual SocketResult reconnect(bool after_handshake);
 
 		virtual void disconnect(); 
 		virtual SocketResult isConnected();
@@ -41,13 +41,18 @@ namespace Bn3Monkey
 		virtual void close() override;
 
 		SocketResult connect(const SocketAddress& address, uint32_t read_timeout_ms, uint32_t write_timeout_ms) override;
-		virtual SocketResult reconnect() override;
+		virtual SocketResult reconnect(bool after_handshake) override;
 		void disconnect() override;
 		SocketResult isConnected() override;
 		SocketResult read(void* buffer, size_t size) override;
 		SocketResult write(const void* buffer, size_t size) override;
 
 	private:
+		// Detects deferred client-certificate rejection alerts that arrive after
+		// SSL_connect() has already returned success in TLS 1.3.
+		// Must only be called when the negotiated version is TLS 1.3.
+		SocketResult postHandshakeProbe();
+
 		SSL_CTX* _context{ nullptr };
 		SSL* _ssl{ nullptr };
 		const char* _hostname{ nullptr };  // points to SocketConfiguration._ip (externally owned)

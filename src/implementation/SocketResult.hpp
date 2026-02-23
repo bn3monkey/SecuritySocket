@@ -118,23 +118,68 @@ inline SocketResult createTLSResult(SSL* ssl, int operation_return)
 	switch (code)
 	{
 	case SSL_ERROR_SSL: {
-		// [1단계] X.509 검증 결과 확인 : 인증서/hostname 오류는 여기서 구분
-		long verify_result = SSL_get_verify_result(ssl);
-		if (verify_result == X509_V_ERR_HOSTNAME_MISMATCH)
-			return SocketResult(SocketCode::TLS_HOSTNAME_MISMATCH, operation_return);
-		if (verify_result != X509_V_OK)
-			return SocketResult(SocketCode::TLS_SERVER_CERT_INVALID, operation_return);
+		// [Step 1] Check the X.509 chain/hostname verification result, but ONLY
+		// when the client actually enabled peer verification (SSL_VERIFY_PEER).
+		// With SSL_VERIFY_NONE, OpenSSL may still internally populate the verify
+		// result (e.g., 18 = X509_V_ERR_DEPTH_ZERO_SELF_SIGNED_CERT for a
+		// self-signed server cert) even though the client chose to ignore it.
+		// Blindly trusting that value would mask real client-cert rejection alerts.
+		if (SSL_get_verify_mode(ssl) & SSL_VERIFY_PEER) {
+			long verify_result = SSL_get_verify_result(ssl);
 
-		// [2단계] ERR 큐에서 SSL 프로토콜 레벨 오류 구분
+			// X509_V_ERR_HOSTNAME_MISMATCH (62) : CN / DNS SAN does not match the
+			//   expected hostname passed to SSL_set1_host().
+			// X509_V_ERR_IP_ADDRESS_MISMATCH (64) : IP SAN does not match the IP
+			//   address passed to SSL_set1_host().  OpenSSL uses a separate code
+			//   when the host string is an IP literal, so both must be caught here.
+			if (verify_result == X509_V_ERR_HOSTNAME_MISMATCH
+			 || verify_result == X509_V_ERR_IP_ADDRESS_MISMATCH)
+				return SocketResult(SocketCode::TLS_HOSTNAME_MISMATCH, operation_return);
+
+			// Any other non-OK verify result means the server certificate itself is
+			// invalid (expired, untrusted issuer, revoked, etc.).
+			if (verify_result != X509_V_OK)
+				return SocketResult(SocketCode::TLS_SERVER_CERT_INVALID, operation_return);
+		}
+
+		// [Step 2] Distinguish protocol-level failures via the OpenSSL error queue.
 		int reason = ERR_GET_REASON(ERR_peek_error());
-		if (reason == SSL_R_UNSUPPORTED_PROTOCOL || reason == SSL_R_NO_PROTOCOLS_AVAILABLE)
+
+		// TLS version negotiation failure.
+		if (reason == SSL_R_UNSUPPORTED_PROTOCOL
+		 || reason == SSL_R_NO_PROTOCOLS_AVAILABLE
+		 || reason == SSL_R_TLSV1_ALERT_PROTOCOL_VERSION)
 			return SocketResult(SocketCode::TLS_VERSION_NOT_SUPPORTED, operation_return);
-		if (reason == SSL_R_NO_CIPHERS_AVAILABLE || reason == SSL_R_NO_SHARED_CIPHER)
+
+		// Client-side: the SSL context itself has no usable cipher configured.
+		// These are set before any network exchange happens.
+		if (reason == SSL_R_NO_CIPHERS_AVAILABLE
+		 || reason == SSL_R_NO_SHARED_CIPHER)
 			return SocketResult(SocketCode::TLS_CIPHER_SUITE_MISMATCH, operation_return);
+
+		// Unambiguous client-certificate rejection alerts from the server:
+		//   certificate_required (TLS 1.3) and unknown_ca are only sent when
+		//   the server is processing a client certificate, so they cannot be
+		//   confused with a cipher mismatch.
 		if (reason == SSL_R_TLSV13_ALERT_CERTIFICATE_REQUIRED
-		 || reason == SSL_R_SSLV3_ALERT_HANDSHAKE_FAILURE
 		 || reason == SSL_R_TLSV1_ALERT_UNKNOWN_CA)
 			return SocketResult(SocketCode::TLS_CLIENT_CERT_REJECTED, operation_return);
+
+		// SSL_R_SSLV3_ALERT_HANDSHAKE_FAILURE (1040) is ambiguous: the server
+		// sends this generic alert both for cipher-suite mismatches and for
+		// missing/rejected client certificates (TLS 1.2).
+		// Disambiguate by checking whether cipher negotiation already completed:
+		//   - Cipher mismatch: ServerHello was never received, so no cipher was
+		//     negotiated → SSL_get_current_cipher() == nullptr.
+		//   - Cert rejection (no cert / untrusted cert): the handshake advanced
+		//     past ServerHello and cipher negotiation succeeded before the server
+		//     later rejected the Certificate message → SSL_get_current_cipher() != nullptr.
+		if (reason == SSL_R_SSLV3_ALERT_HANDSHAKE_FAILURE) {
+			if (SSL_get_current_cipher(ssl) != nullptr)
+				return SocketResult(SocketCode::TLS_CLIENT_CERT_REJECTED, operation_return);
+			else
+				return SocketResult(SocketCode::TLS_CIPHER_SUITE_MISMATCH, operation_return);
+		}
 
 		return SocketResult(SocketCode::SSL_PROTOCOL_ERROR, operation_return);
 	}
@@ -148,6 +193,7 @@ inline SocketResult createTLSResult(SSL* ssl, int operation_return)
 		return SocketResult(SocketCode::SSL_ERROR_CLOSED_BY_PEER, operation_return);
 	}
 	return SocketResult(SocketCode::UNKNOWN_ERROR, operation_return);
+
 }
 
 inline const char* getMessage(const SocketCode& code)
