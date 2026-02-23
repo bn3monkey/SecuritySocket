@@ -119,6 +119,13 @@ if (BUILD_SECURITYSOCKET_TEST)
     FetchContent_MakeAvailable(googletest)
     set(BUILD_SHARED_LIBS ${TEMP_BUILD_SHARED_LIBS} CACHE BOOL "Restore Google Test Static Libraries" FORCE)
 
+    FetchContent_Declare(
+        remote_command
+        GIT_REPOSITORY https://github.com/bn3monkey/remote-command.git
+        GIT_TAG 1.0.0
+    )
+    FETCHCONTENT_MAKEAVAILABLE(remote_command)
+
     set(SECURITYSOCKET_TEST_DIR "${PROJECT_SOURCE_DIR}/test")
     message(STATUS "SECURITYSOCKET_TEST_DIR = ${SECURITYSOCKET_TEST_DIR}")
     file(GLOB SECURITYSOCKET_TEST_FILES
@@ -169,6 +176,7 @@ if (BUILD_SECURITYSOCKET_TEST)
         securitysocket
         gtest
         gtest_main
+        remote_command_client
         ${SECURITYSOCKETTEST_PLATFORMDEPENDENT_LIBRARY})
 
 endif()

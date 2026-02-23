@@ -40,7 +40,7 @@ void createCertificates()
 {
     // If the root CA certificate is already present, all certs have been
     // generated in a previous run — skip generation entirely.
-    if (fileExists("certs/ca.crt"))
+    if (directoryExists("certs"))
     {
         printf("[cert-gen] Certificates already exist; skipping generation.\n");
         return;
@@ -84,10 +84,11 @@ void createCertificates()
     // Modern TLS clients require a SAN entry for IP address validation;
     // CN alone is no longer sufficient for hostname/IP verification.
     {
-        std::ofstream san("certs/san.ext");
-        san << "subjectAltName=IP:127.0.0.1\n";
+        // std::ofstream san("certs/san.ext");
+        // san << "subjectAltName=IP:127.0.0.1\n";
+		runCommand("Write SAN extension file for server certificate (SAN=IP:", "echo \"subjectAltName=IP:127.0.0.1\" > certs/san.ext");
     }
-
+    
     // Sign the server CSR with the CA and embed the IP SAN so that
     // clients connecting to 127.0.0.1 can verify the server certificate.
     runCommand("Sign CA-signed server certificate with CA (SAN=IP:127.0.0.1)",
