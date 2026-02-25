@@ -59,10 +59,14 @@ private:
 // Helper: create a TLS SocketClient and attempt connect; returns SocketCode.
 // max_retries=1 prevents reusing a broken SSL object on failure.
 // =============================================================================
+// ip=nullptr → connect to the remote server's discovered address (default).
+// Pass an explicit IP string to test a specific address (e.g. "127.0.0.1").
 static SocketCode tryTLSConnect(unsigned short port,
-                                const SocketTLSClientConfiguration& tls_cfg)
+                                const SocketTLSClientConfiguration& tls_cfg,
+                                const char* ip = nullptr)
 {
-	auto* ip = Bn3Monkey::getRemoteCommandServerAddress(getClient());
+    if (ip == nullptr)
+        ip = Bn3Monkey::getRemoteCommandServerAddress(getClient());
     SocketConfiguration config{
         ip,
         port,
@@ -70,7 +74,7 @@ static SocketCode tryTLSConnect(unsigned short port,
         1,      // max_retries = 1
         3000,   // read_timeout_ms
         3000,   // write_timeout_ms
-        1000,    // time_between_retries_ms
+        1000,   // time_between_retries_ms
         4096    // pdu_size
     };
 
@@ -92,8 +96,20 @@ static SocketCode tryTLSConnect(unsigned short port,
     return r.code();
 }
 
+static bool hasPrefix(const char* prefix, const char* message)
+{
+    if (prefix == nullptr || message == nullptr)
+        return false;
+
+    const std::size_t n = std::strlen(prefix);
+    // Empty prefix matches everything (common convention)
+    return std::strncmp(message, prefix, n) == 0;
+}
 void trackTLSEvent(const char* message) {
-    printf("|Client| %s\n", message);
+    if (!hasPrefix("Handshake error", message)) 
+    {
+        printf("|Client| %s\n", message);
+    }
 }
 
 static uint16_t generateRandomPort()
@@ -327,7 +343,7 @@ TEST(TLSConnection, ClientVerifiesServerCert_ServerCertSignedByTrustedCA_Connect
         {}, {},
         true,    // verify_server
         false,   // verify_hostname
-        CA_CERT
+        localCertPath(CA_CERT).c_str()
     };
     tls.setOnTLSEvent(trackTLSEvent);
     auto ret = tryTLSConnect(port, tls);
@@ -349,7 +365,7 @@ TEST(TLSConnection, ClientVerifiesServerCert_ServerHasSelfSignedCert_ConnectionF
         {}, {},
         true,    // verify_server
         false,   // verify_hostname
-        CA_CERT  // self-signed cert is NOT in this CA chain
+        localCertPath(CA_CERT).c_str()  // self-signed cert is NOT in this CA chain
     };
     tls.setOnTLSEvent(trackTLSEvent);
     auto ret = tryTLSConnect(port, tls);
@@ -371,7 +387,7 @@ TEST(TLSConnection, ClientVerifiesServerCert_ServerCertSignedByUntrustedCA_Conne
         {}, {},
         true,              // verify_server
         false,             // verify_hostname
-        UNTRUSTED_CA_CERT  // wrong CA — chain verification fails
+        localCertPath(UNTRUSTED_CA_CERT).c_str()  // wrong CA — chain verification fails
     };
     tls.setOnTLSEvent(trackTLSEvent);
     auto ret = tryTLSConnect(port, tls);
@@ -413,7 +429,7 @@ TEST(TLSConnection, ClientVerifiesServerCert_ServerCertSignedByTrustedCA_Connect
         {}, {},
         true,    // verify_server
         false,   // verify_hostname
-        CA_CERT
+        localCertPath(CA_CERT).c_str()
     };
     tls.setOnTLSEvent(trackTLSEvent);
     auto ret = tryTLSConnect(port, tls);
@@ -435,7 +451,7 @@ TEST(TLSConnection, ClientVerifiesServerCert_ServerHasSelfSignedCert_ConnectionF
         {}, {},
         true,    // verify_server
         false,   // verify_hostname
-        CA_CERT
+        localCertPath(CA_CERT).c_str()
     };
     tls.setOnTLSEvent(trackTLSEvent);
     auto ret = tryTLSConnect(port, tls);
@@ -457,7 +473,7 @@ TEST(TLSConnection, ClientVerifiesServerCert_ServerCertSignedByUntrustedCA_Conne
         {}, {},
         true,              // verify_server
         false,             // verify_hostname
-        UNTRUSTED_CA_CERT
+        localCertPath(UNTRUSTED_CA_CERT).c_str()
     };
     tls.setOnTLSEvent(trackTLSEvent);
     auto ret = tryTLSConnect(port, tls);
@@ -476,7 +492,7 @@ TEST(TLSConnection, ClientVerifiesHostname_ServerCertMatchesHostname_ConnectionS
 {
     auto port = generateRandomPort();
     Bn3Monkey::initializeSecuritySocket();
-    // server_ca.crt has CN=127.0.0.1 / SAN=IP:127.0.0.1
+    // server_ca.crt has CN=127.0.0.1 / SAN=IP:127.0.0.1,IP:<remote_ip>
     TLSServerProcess server{ port,
         std::string("-cert ") + SERVER_CA_CERT + " -key " + SERVER_CA_KEY
         + " -no_tls1_3" };
@@ -486,12 +502,21 @@ TEST(TLSConnection, ClientVerifiesHostname_ServerCertMatchesHostname_ConnectionS
         {SocketTLSVersion::TLS1_2},
         {}, {},
         true,   // verify_server
-        true,   // verify_hostname (connects to 127.0.0.1, cert matches)
-        CA_CERT
+        true,   // verify_hostname
+        localCertPath(CA_CERT).c_str()
     };
     tls.setOnTLSEvent(trackTLSEvent);
+
+    // Remote IP: cert SAN includes the server's external IP → match
     auto ret = tryTLSConnect(port, tls);
     EXPECT_EQ(SocketCode::SUCCESS, ret);
+
+    // Localhost IP: cert SAN also includes 127.0.0.1 → match
+    // (Requires the server to be reachable via 127.0.0.1 from the test machine)
+    /*
+    auto ret2 = tryTLSConnect(port, tls, "127.0.0.1");
+    EXPECT_EQ(SocketCode::SUCCESS, ret2);
+    */
     Bn3Monkey::releaseSecuritySocket();
 }
 
@@ -499,7 +524,7 @@ TEST(TLSConnection, ClientVerifiesHostname_ServerCertDoesNotMatchHostname_Connec
 {
     auto port = generateRandomPort();
     Bn3Monkey::initializeSecuritySocket();
-    // server_wrong_cn.crt has CN=wronghost; client connects to 127.0.0.1
+    // server_wrong_cn.crt has CN=wronghost, no SAN — mismatches any real IP
     TLSServerProcess server{ port,
         std::string("-cert ") + SERVER_WRONG_CN_CERT + " -key " + SERVER_WRONG_CN_KEY
         + " -no_tls1_3" };
@@ -510,11 +535,20 @@ TEST(TLSConnection, ClientVerifiesHostname_ServerCertDoesNotMatchHostname_Connec
         {}, {},
         true,   // verify_server
         true,   // verify_hostname
-        CA_CERT
+        localCertPath(CA_CERT).c_str()
     };
     tls.setOnTLSEvent(trackTLSEvent);
+
+    // Remote IP: CN=wronghost does not match → mismatch
     auto ret = tryTLSConnect(port, tls);
     EXPECT_EQ(SocketCode::TLS_HOSTNAME_MISMATCH, ret);
+
+    /*
+    // Localhost IP: CN=wronghost does not match 127.0.0.1 → mismatch
+    auto ret2 = tryTLSConnect(port, tls, "127.0.0.1");
+    EXPECT_EQ(SocketCode::TLS_HOSTNAME_MISMATCH, ret2);
+    */
+
     Bn3Monkey::releaseSecuritySocket();
 }
 
@@ -533,11 +567,20 @@ TEST(TLSConnection, ClientDoesNotVerifyHostname_ServerCertDoesNotMatchHostname_C
         {}, {},
         true,   // verify_server (cert chain is valid — signed by CA)
         false,  // verify_hostname = false
-        CA_CERT
+        localCertPath(CA_CERT).c_str()
     };
     tls.setOnTLSEvent(trackTLSEvent);
+
+    // Remote IP: hostname not checked → success despite CN mismatch
     auto ret = tryTLSConnect(port, tls);
     EXPECT_EQ(SocketCode::SUCCESS, ret);
+
+    /*
+    // Localhost IP: hostname not checked → success
+    auto ret2 = tryTLSConnect(port, tls, "127.0.0.1");
+    EXPECT_EQ(SocketCode::SUCCESS, ret2);
+    */
+
     Bn3Monkey::releaseSecuritySocket();
 }
 
@@ -545,6 +588,7 @@ TEST(TLSConnection, ClientVerifiesHostname_ServerCertMatchesHostname_ConnectionS
 {
     auto port = generateRandomPort();
     Bn3Monkey::initializeSecuritySocket();
+    // server_ca.crt has CN=127.0.0.1 / SAN=IP:127.0.0.1,IP:<remote_ip>
     TLSServerProcess server{ port,
         std::string("-cert ") + SERVER_CA_CERT + " -key " + SERVER_CA_KEY
         + " -no_tls1_2" };
@@ -555,11 +599,20 @@ TEST(TLSConnection, ClientVerifiesHostname_ServerCertMatchesHostname_ConnectionS
         {}, {},
         true,   // verify_server
         true,   // verify_hostname
-        CA_CERT
+        localCertPath(CA_CERT).c_str()
     };
     tls.setOnTLSEvent(trackTLSEvent);
+
+    // Remote IP: cert SAN includes the server's external IP → match
     auto ret = tryTLSConnect(port, tls);
     EXPECT_EQ(SocketCode::SUCCESS, ret);
+
+    /*
+    // Localhost IP: cert SAN also includes 127.0.0.1 → match
+    auto ret2 = tryTLSConnect(port, tls, "127.0.0.1");
+    EXPECT_EQ(SocketCode::SUCCESS, ret2);
+    */
+
     Bn3Monkey::releaseSecuritySocket();
 }
 
@@ -567,6 +620,7 @@ TEST(TLSConnection, ClientVerifiesHostname_ServerCertDoesNotMatchHostname_Connec
 {
     auto port = generateRandomPort();
     Bn3Monkey::initializeSecuritySocket();
+    // server_wrong_cn.crt has CN=wronghost, no SAN — mismatches any real IP
     TLSServerProcess server{ port,
         std::string("-cert ") + SERVER_WRONG_CN_CERT + " -key " + SERVER_WRONG_CN_KEY
         + " -no_tls1_2" };
@@ -577,11 +631,20 @@ TEST(TLSConnection, ClientVerifiesHostname_ServerCertDoesNotMatchHostname_Connec
         {}, {},
         true,   // verify_server
         true,   // verify_hostname
-        CA_CERT
+        localCertPath(CA_CERT).c_str()
     };
     tls.setOnTLSEvent(trackTLSEvent);
+
+    // Remote IP: CN=wronghost does not match → mismatch
     auto ret = tryTLSConnect(port, tls);
     EXPECT_EQ(SocketCode::TLS_HOSTNAME_MISMATCH, ret);
+
+    /*
+    // Localhost IP: CN=wronghost does not match 127.0.0.1 → mismatch
+    auto ret2 = tryTLSConnect(port, tls, "127.0.0.1");
+    EXPECT_EQ(SocketCode::TLS_HOSTNAME_MISMATCH, ret2);
+    */
+
     Bn3Monkey::releaseSecuritySocket();
 }
 
@@ -599,11 +662,20 @@ TEST(TLSConnection, ClientDoesNotVerifyHostname_ServerCertDoesNotMatchHostname_C
         {}, {},
         true,   // verify_server
         false,  // verify_hostname = false
-        CA_CERT
+        localCertPath(CA_CERT).c_str()
     };
     tls.setOnTLSEvent(trackTLSEvent);
+
+    // Remote IP: hostname not checked → success despite CN mismatch
     auto ret = tryTLSConnect(port, tls);
     EXPECT_EQ(SocketCode::SUCCESS, ret);
+
+    /*
+    // Localhost IP: hostname not checked → success
+    auto ret2 = tryTLSConnect(port, tls, "127.0.0.1");
+    EXPECT_EQ(SocketCode::SUCCESS, ret2);
+    */
+
     Bn3Monkey::releaseSecuritySocket();
 }
 
@@ -635,8 +707,8 @@ TEST(TLSConnection, ServerRequiresClientCert_ClientProvidesValidCert_ConnectionS
         {}, {},
         false, false, nullptr,
         true,
-        CLIENT_CERT_PATH,
-        CLIENT_KEY_PATH
+        localCertPath(CLIENT_CERT_PATH).c_str(),
+        localCertPath(CLIENT_KEY_PATH).c_str()
     };
     tls.setOnTLSEvent(trackTLSEvent);
     auto ret = tryTLSConnect(port, tls);
@@ -686,8 +758,8 @@ TEST(TLSConnection, ServerRequiresClientCert_ClientProvidesCertSignedByUntrusted
         {}, {},
         false, false, nullptr,
         true,
-        CLIENT_UNTRUSTED_CERT,
-        CLIENT_UNTRUSTED_KEY
+        localCertPath(CLIENT_UNTRUSTED_CERT).c_str(),
+        localCertPath(CLIENT_UNTRUSTED_KEY).c_str()
     };
     tls.setOnTLSEvent(trackTLSEvent);
     auto ret = tryTLSConnect(port, tls);
@@ -710,8 +782,8 @@ TEST(TLSConnection, ServerRequestsClientCert_ClientProvidesValidCert_ConnectionS
         {}, {},
         false, false, nullptr,
         true,
-        CLIENT_CERT_PATH,
-        CLIENT_KEY_PATH
+        localCertPath(CLIENT_CERT_PATH).c_str(),
+        localCertPath(CLIENT_KEY_PATH).c_str()
     };
     tls.setOnTLSEvent(trackTLSEvent);
     auto ret = tryTLSConnect(port, tls);
@@ -758,8 +830,8 @@ TEST(TLSConnection, ServerRequestsClientCert_ClientProvidesCertSignedByUntrusted
         {}, {},
         false, false, nullptr,
         true,
-        CLIENT_UNTRUSTED_CERT,
-        CLIENT_UNTRUSTED_KEY
+        localCertPath(CLIENT_UNTRUSTED_CERT).c_str(),
+        localCertPath(CLIENT_UNTRUSTED_KEY).c_str()
     };
     tls.setOnTLSEvent(trackTLSEvent);
     auto ret = tryTLSConnect(port, tls);
@@ -781,8 +853,8 @@ TEST(TLSConnection, ServerRequiresClientCert_ClientProvidesValidCert_ConnectionS
         {}, {},
         false, false, nullptr,
         true,
-        CLIENT_CERT_PATH,
-        CLIENT_KEY_PATH
+        localCertPath(CLIENT_CERT_PATH).c_str(),
+        localCertPath(CLIENT_KEY_PATH).c_str()
     };
     tls.setOnTLSEvent(trackTLSEvent);
     auto ret = tryTLSConnect(port, tls);
@@ -833,8 +905,8 @@ TEST(TLSConnection, ServerRequiresClientCert_ClientProvidesCertSignedByUntrusted
         {}, {},
         false, false, nullptr,
         true,
-        CLIENT_UNTRUSTED_CERT,
-        CLIENT_UNTRUSTED_KEY
+        localCertPath(CLIENT_UNTRUSTED_CERT).c_str(),
+        localCertPath(CLIENT_UNTRUSTED_KEY).c_str()
     };
     tls.setOnTLSEvent(trackTLSEvent);
     auto ret = tryTLSConnect(port, tls);
@@ -856,8 +928,8 @@ TEST(TLSConnection, ServerRequestsClientCert_ClientProvidesValidCert_ConnectionS
         {}, {},
         false, false, nullptr,
         true,
-        CLIENT_CERT_PATH,
-        CLIENT_KEY_PATH
+        localCertPath(CLIENT_CERT_PATH).c_str(),
+        localCertPath(CLIENT_KEY_PATH).c_str()
     };
     tls.setOnTLSEvent(trackTLSEvent);
     auto ret = tryTLSConnect(port, tls);
@@ -903,8 +975,8 @@ TEST(TLSConnection, ServerRequestsClientCert_ClientProvidesCertSignedByUntrusted
         {}, {},
         false, false, nullptr,
         true,
-        CLIENT_UNTRUSTED_CERT,
-        CLIENT_UNTRUSTED_KEY
+        localCertPath(CLIENT_UNTRUSTED_CERT).c_str(),
+        localCertPath(CLIENT_UNTRUSTED_KEY).c_str()
     };
     tls.setOnTLSEvent(trackTLSEvent);
     auto ret = tryTLSConnect(port, tls);
@@ -933,8 +1005,8 @@ TEST(TLSConnection, ClientProvidesEncryptedPrivateKey_CorrectPassword_Connection
         {}, {},
         false, false, nullptr,
         true,
-        CLIENT_CERT_PATH,
-        CLIENT_ENC_KEY_PATH,
+        localCertPath(CLIENT_CERT_PATH).c_str(),
+        localCertPath(CLIENT_ENC_KEY_PATH).c_str(),
         CLIENT_KEY_PASSWORD  // correct password for the encrypted key
     };
     tls.setOnTLSEvent(trackTLSEvent);
@@ -957,8 +1029,8 @@ TEST(TLSConnection, ClientProvidesEncryptedPrivateKey_WrongPassword_ConnectionFa
         {}, {},
         false, false, nullptr,
         true,
-        CLIENT_CERT_PATH,
-        CLIENT_ENC_KEY_PATH,
+        localCertPath(CLIENT_CERT_PATH).c_str(),
+        localCertPath(CLIENT_ENC_KEY_PATH).c_str(),
         "wrongpassword"  // incorrect password → key load fails → handshake fails
     };
     tls.setOnTLSEvent(trackTLSEvent);
@@ -981,8 +1053,8 @@ TEST(TLSConnection, ClientProvidesEncryptedPrivateKey_CorrectPassword_Connection
         {}, {},
         false, false, nullptr,
         true,
-        CLIENT_CERT_PATH,
-        CLIENT_ENC_KEY_PATH,
+        localCertPath(CLIENT_CERT_PATH).c_str(),
+        localCertPath(CLIENT_ENC_KEY_PATH).c_str(),
         CLIENT_KEY_PASSWORD
     };
     tls.setOnTLSEvent(trackTLSEvent);
@@ -1005,8 +1077,8 @@ TEST(TLSConnection, ClientProvidesEncryptedPrivateKey_WrongPassword_ConnectionFa
         {}, {},
         false, false, nullptr,
         true,
-        CLIENT_CERT_PATH,
-        CLIENT_ENC_KEY_PATH,
+        localCertPath(CLIENT_CERT_PATH).c_str(),
+        localCertPath(CLIENT_ENC_KEY_PATH).c_str(),
         "wrongpassword"
     };
     tls.setOnTLSEvent(trackTLSEvent);

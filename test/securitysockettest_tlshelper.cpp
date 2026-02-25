@@ -40,17 +40,11 @@ void createCertificates()
 {
     using namespace Bn3Monkey;
 
-    // If the root CA certificate is already present, all certs have been
-    // generated in a previous run — skip generation entirely.
-    if (directoryExists(getClient(), "certs"))
-    {
-        printf("[cert-gen] Certificates already exist; skipping generation.\n");
-    }
-    else
-    {
-		printf("Check if OpenSSL is available on the remote system:\n");
-        runCommand(getClient(), "openssl version");
-        runCommand(getClient(), "where openssl");
+    auto* remote_ip = Bn3Monkey::getRemoteCommandServerAddress(getClient());
+
+	printf("Check if OpenSSL is available on the remote system:\n");
+    runCommand(getClient(), "openssl version");
+    runCommand(getClient(), "where openssl");
 
     // Create the output directory that holds every test certificate file.
     createDirectory(getClient(), "certs");
@@ -88,11 +82,19 @@ void createCertificates()
     // Write the Subject Alternative Name extension file.
     // Modern TLS clients require a SAN entry for IP address validation;
     // CN alone is no longer sufficient for hostname/IP verification.
+    // Include both 127.0.0.1 (localhost) and the server's external IP so that
+    // hostname verification succeeds regardless of which address the client uses.
     {
-        // std::ofstream san("certs/san.ext");
-        // san << "subjectAltName=IP:127.0.0.1\n";
-        printf("Write SAN extension file for server certificate (SAN=IP:\n");
-		runCommand(getClient(), "echo subjectAltName=IP:127.0.0.1 > certs/san.ext");
+        std::string remote_ip_str = remote_ip;
+        printf("Write SAN extension file for server certificate (SAN=IP:127.0.0.1,IP:%s)\n", remote_ip);
+        if (remote_ip_str == "127.0.0.1") {
+            // Server is local — a single SAN entry covers both cases.
+            runCommand(getClient(), "cmd /c echo subjectAltName=IP:127.0.0.1 > certs/san.ext");
+        } else {
+            std::string san_cmd =
+                "cmd /c echo subjectAltName=IP:127.0.0.1,IP:" + remote_ip_str + " > certs/san.ext";
+            runCommand(getClient(), "%s", san_cmd.c_str());
+        }
     }
     
     // Sign the server CSR with the CA and embed the IP SAN so that
@@ -207,24 +209,25 @@ void createCertificates()
            " -CAcreateserial -out certs/client_untrusted.crt");
 
     printf("[cert-gen] Certificate generation complete.\n");
-    } // end generation block
-
+    
     // Download all certificate files from the server to the local certs/ directory.
-    createLocalDirectory("certs");
+    // localCertPath() prepends getCWD() so files land in the correct location on
+    // Android internal storage (or the current directory on other platforms).
+    createLocalDirectory(localCertPath("certs").c_str());
     printf("[cert-gen] Downloading certificates from server...\n");
-    downloadFile(getClient(), SERVER_SELF_CERT,      SERVER_SELF_CERT);
-    downloadFile(getClient(), SERVER_SELF_KEY,       SERVER_SELF_KEY);
-    downloadFile(getClient(), CA_CERT,               CA_CERT);
-    downloadFile(getClient(), SERVER_CA_CERT,        SERVER_CA_CERT);
-    downloadFile(getClient(), SERVER_CA_KEY,         SERVER_CA_KEY);
-    downloadFile(getClient(), SERVER_WRONG_CN_CERT,  SERVER_WRONG_CN_CERT);
-    downloadFile(getClient(), SERVER_WRONG_CN_KEY,   SERVER_WRONG_CN_KEY);
-    downloadFile(getClient(), CLIENT_CERT_PATH,      CLIENT_CERT_PATH);
-    downloadFile(getClient(), CLIENT_KEY_PATH,       CLIENT_KEY_PATH);
-    downloadFile(getClient(), CLIENT_ENC_KEY_PATH,   CLIENT_ENC_KEY_PATH);
-    downloadFile(getClient(), UNTRUSTED_CA_CERT,     UNTRUSTED_CA_CERT);
-    downloadFile(getClient(), CLIENT_UNTRUSTED_CERT, CLIENT_UNTRUSTED_CERT);
-    downloadFile(getClient(), CLIENT_UNTRUSTED_KEY,  CLIENT_UNTRUSTED_KEY);
+    downloadFile(getClient(), localCertPath(SERVER_SELF_CERT).c_str()      , SERVER_SELF_CERT     );
+    downloadFile(getClient(), localCertPath(SERVER_SELF_KEY).c_str()       , SERVER_SELF_KEY      );
+    downloadFile(getClient(), localCertPath(CA_CERT).c_str()               , CA_CERT              );
+    downloadFile(getClient(), localCertPath(SERVER_CA_CERT).c_str()        , SERVER_CA_CERT       );
+    downloadFile(getClient(), localCertPath(SERVER_CA_KEY).c_str()         , SERVER_CA_KEY        );
+    downloadFile(getClient(), localCertPath(SERVER_WRONG_CN_CERT).c_str()  , SERVER_WRONG_CN_CERT );
+    downloadFile(getClient(), localCertPath(SERVER_WRONG_CN_KEY).c_str()   , SERVER_WRONG_CN_KEY  );
+    downloadFile(getClient(), localCertPath(CLIENT_CERT_PATH).c_str()      , CLIENT_CERT_PATH     );
+    downloadFile(getClient(), localCertPath(CLIENT_KEY_PATH).c_str()       , CLIENT_KEY_PATH      );
+    downloadFile(getClient(), localCertPath(CLIENT_ENC_KEY_PATH).c_str()   , CLIENT_ENC_KEY_PATH  );
+    downloadFile(getClient(), localCertPath(UNTRUSTED_CA_CERT).c_str()     , UNTRUSTED_CA_CERT    );
+    downloadFile(getClient(), localCertPath(CLIENT_UNTRUSTED_CERT).c_str() , CLIENT_UNTRUSTED_CERT);
+    downloadFile(getClient(), localCertPath(CLIENT_UNTRUSTED_KEY).c_str()  , CLIENT_UNTRUSTED_KEY );
     printf("[cert-gen] Certificate download complete.\n");
 }
 

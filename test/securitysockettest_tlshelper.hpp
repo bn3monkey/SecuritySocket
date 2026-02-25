@@ -29,6 +29,7 @@
 extern char** environ;
 #endif
 
+// Remote-side relative cert paths (used in openssl s_server commands on the remote machine)
 constexpr static const char* SERVER_SELF_CERT      = "certs/server_self.crt";
 constexpr static const char* SERVER_SELF_KEY       = "certs/server_self.key";
 constexpr static const char* CA_CERT               = "certs/ca.crt";
@@ -43,6 +44,17 @@ constexpr static const char* CLIENT_KEY_PASSWORD   = "test1234";
 constexpr static const char* UNTRUSTED_CA_CERT     = "certs/untrusted_ca.crt";
 constexpr static const char* CLIENT_UNTRUSTED_CERT = "certs/client_untrusted.crt";
 constexpr static const char* CLIENT_UNTRUSTED_KEY  = "certs/client_untrusted.key";
+
+// Returns the working directory used for LOCAL cert files (default: ".").
+// Set via startSecuritySocketTest(argc, argv, cwd).
+const char* getCWD();
+
+// Builds a local file path by prepending getCWD() to a relative cert path.
+// Use this whenever passing a cert path to SocketTLSClientConfiguration or
+// to the local destination argument of downloadFile().
+inline std::string localCertPath(const char* rel) {
+    return std::string(getCWD()) + "/" + rel;
+}
 
 
 inline Bn3Monkey::RemoteCommandClient* getClient() {

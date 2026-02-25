@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE QtCreatorProject>
-<!-- Written by QtCreator 8.0.2, 2026-02-23T15:00:26. -->
+<!-- Written by QtCreator 8.0.2, 2026-02-23T18:11:08. -->
 <qtcreator>
  <data>
   <variable>EnvironmentId</variable>
@@ -67,56 +67,7 @@
     <value type="bool" key="AutoTest.Framework.QtQuickTest">true</value>
     <value type="bool" key="AutoTest.Framework.QtTest">true</value>
    </valuemap>
-   <valuemap type="QVariantMap" key="AutoTest.CheckStates">
-    <value type="Qt::CheckState" key="1@D:/repo/SecuritySocket/test/securitysockettest_tcp_broadcast.cpp:TCPBroadcast">Checked</value>
-    <value type="Qt::CheckState" key="1@D:/repo/SecuritySocket/test/securitysockettest_tcp_broadcast.cpp:runOneClient">Checked</value>
-    <value type="Qt::CheckState" key="1@D:/repo/SecuritySocket/test/securitysockettest_tcp_request_echo.cpp:TCPRequestEcho">Checked</value>
-    <value type="Qt::CheckState" key="1@D:/repo/SecuritySocket/test/securitysockettest_tcp_request_echo.cpp:runFourClient">Checked</value>
-    <value type="Qt::CheckState" key="1@D:/repo/SecuritySocket/test/securitysockettest_tcp_request_file.cpp:TCPRequestFile">Checked</value>
-    <value type="Qt::CheckState" key="1@D:/repo/SecuritySocket/test/securitysockettest_tcp_request_file.cpp:runFourClient">Checked</value>
-    <value type="Qt::CheckState" key="1@D:/repo/SecuritySocket/test/securitysockettest_tcp_request_file.cpp:runOneClient">Checked</value>
-    <value type="Qt::CheckState" key="1@D:/repo/SecuritySocket/test/securitysockettest_tls.cpp:ClientDoesNotVerifyHostname_ServerCertDoesNotMatchHostname_ConnectionSucceeds_TLS12">Checked</value>
-    <value type="Qt::CheckState" key="1@D:/repo/SecuritySocket/test/securitysockettest_tls.cpp:ClientDoesNotVerifyHostname_ServerCertDoesNotMatchHostname_ConnectionSucceeds_TLS13">Checked</value>
-    <value type="Qt::CheckState" key="1@D:/repo/SecuritySocket/test/securitysockettest_tls.cpp:ClientDoesNotVerifyServerCert_ServerHasSelfSignedCert_ConnectionSucceeds_TLS12">Checked</value>
-    <value type="Qt::CheckState" key="1@D:/repo/SecuritySocket/test/securitysockettest_tls.cpp:ClientDoesNotVerifyServerCert_ServerHasSelfSignedCert_ConnectionSucceeds_TLS13">Checked</value>
-    <value type="Qt::CheckState" key="1@D:/repo/SecuritySocket/test/securitysockettest_tls.cpp:ClientProvidesEncryptedPrivateKey_CorrectPassword_ConnectionSucceeds_TLS12">Checked</value>
-    <value type="Qt::CheckState" key="1@D:/repo/SecuritySocket/test/securitysockettest_tls.cpp:ClientProvidesEncryptedPrivateKey_CorrectPassword_ConnectionSucceeds_TLS13">Checked</value>
-    <value type="Qt::CheckState" key="1@D:/repo/SecuritySocket/test/securitysockettest_tls.cpp:ClientProvidesEncryptedPrivateKey_WrongPassword_ConnectionFails_TLS12">Checked</value>
-    <value type="Qt::CheckState" key="1@D:/repo/SecuritySocket/test/securitysockettest_tls.cpp:ClientProvidesEncryptedPrivateKey_WrongPassword_ConnectionFails_TLS13">Checked</value>
-    <value type="Qt::CheckState" key="1@D:/repo/SecuritySocket/test/securitysockettest_tls.cpp:ClientSpecifiesTLS12Cipher_ServerDoesNotSupportCipher_ConnectionFails_CipherSuiteMismatch">Checked</value>
-    <value type="Qt::CheckState" key="1@D:/repo/SecuritySocket/test/securitysockettest_tls.cpp:ClientSpecifiesTLS12Cipher_ServerSupportsMatchingCipher_ConnectionSucceeds">Checked</value>
-    <value type="Qt::CheckState" key="1@D:/repo/SecuritySocket/test/securitysockettest_tls.cpp:ClientSpecifiesTLS13Cipher_ServerDoesNotSupportCipher_ConnectionFails_CipherSuiteMismatch">Checked</value>
-    <value type="Qt::CheckState" key="1@D:/repo/SecuritySocket/test/securitysockettest_tls.cpp:ClientSpecifiesTLS13Cipher_ServerSupportsMatchingCipher_ConnectionSucceeds">Checked</value>
-    <value type="Qt::CheckState" key="1@D:/repo/SecuritySocket/test/securitysockettest_tls.cpp:ClientSupports_TLS12And13_ServerSupports_TLS12Only_ConnectionSucceeds">Checked</value>
-    <value type="Qt::CheckState" key="1@D:/repo/SecuritySocket/test/securitysockettest_tls.cpp:ClientSupports_TLS12And13_ServerSupports_TLS13Only_ConnectionSucceeds">Checked</value>
-    <value type="Qt::CheckState" key="1@D:/repo/SecuritySocket/test/securitysockettest_tls.cpp:ClientSupports_TLS12Only_ServerSupports_TLS12Only_ConnectionSucceeds">Checked</value>
-    <value type="Qt::CheckState" key="1@D:/repo/SecuritySocket/test/securitysockettest_tls.cpp:ClientSupports_TLS12Only_ServerSupports_TLS13Only_ConnectionFails_TLSVersionNotSupported">Checked</value>
-    <value type="Qt::CheckState" key="1@D:/repo/SecuritySocket/test/securitysockettest_tls.cpp:ClientSupports_TLS13Only_ServerSupports_TLS12Only_ConnectionFails_TLSVersionNotSupported">Checked</value>
-    <value type="Qt::CheckState" key="1@D:/repo/SecuritySocket/test/securitysockettest_tls.cpp:ClientSupports_TLS13Only_ServerSupports_TLS13Only_ConnectionSucceeds">Checked</value>
-    <value type="Qt::CheckState" key="1@D:/repo/SecuritySocket/test/securitysockettest_tls.cpp:ClientVerifiesHostname_ServerCertDoesNotMatchHostname_ConnectionFails_HostnameMismatch_TLS12">Checked</value>
-    <value type="Qt::CheckState" key="1@D:/repo/SecuritySocket/test/securitysockettest_tls.cpp:ClientVerifiesHostname_ServerCertDoesNotMatchHostname_ConnectionFails_HostnameMismatch_TLS13">Checked</value>
-    <value type="Qt::CheckState" key="1@D:/repo/SecuritySocket/test/securitysockettest_tls.cpp:ClientVerifiesHostname_ServerCertMatchesHostname_ConnectionSucceeds_TLS12">Checked</value>
-    <value type="Qt::CheckState" key="1@D:/repo/SecuritySocket/test/securitysockettest_tls.cpp:ClientVerifiesHostname_ServerCertMatchesHostname_ConnectionSucceeds_TLS13">Checked</value>
-    <value type="Qt::CheckState" key="1@D:/repo/SecuritySocket/test/securitysockettest_tls.cpp:ClientVerifiesServerCert_ServerCertSignedByTrustedCA_ConnectionSucceeds_TLS12">Checked</value>
-    <value type="Qt::CheckState" key="1@D:/repo/SecuritySocket/test/securitysockettest_tls.cpp:ClientVerifiesServerCert_ServerCertSignedByTrustedCA_ConnectionSucceeds_TLS13">Checked</value>
-    <value type="Qt::CheckState" key="1@D:/repo/SecuritySocket/test/securitysockettest_tls.cpp:ClientVerifiesServerCert_ServerCertSignedByUntrustedCA_ConnectionFails_ServerCertInvalid_TLS12">Checked</value>
-    <value type="Qt::CheckState" key="1@D:/repo/SecuritySocket/test/securitysockettest_tls.cpp:ClientVerifiesServerCert_ServerCertSignedByUntrustedCA_ConnectionFails_ServerCertInvalid_TLS13">Checked</value>
-    <value type="Qt::CheckState" key="1@D:/repo/SecuritySocket/test/securitysockettest_tls.cpp:ClientVerifiesServerCert_ServerHasSelfSignedCert_ConnectionFails_ServerCertInvalid_TLS12">Checked</value>
-    <value type="Qt::CheckState" key="1@D:/repo/SecuritySocket/test/securitysockettest_tls.cpp:ClientVerifiesServerCert_ServerHasSelfSignedCert_ConnectionFails_ServerCertInvalid_TLS13">Checked</value>
-    <value type="Qt::CheckState" key="1@D:/repo/SecuritySocket/test/securitysockettest_tls.cpp:ServerRequestsClientCert_ClientDoesNotProvideClientCert_ConnectionSucceeds_TLS12">Checked</value>
-    <value type="Qt::CheckState" key="1@D:/repo/SecuritySocket/test/securitysockettest_tls.cpp:ServerRequestsClientCert_ClientDoesNotProvideClientCert_ConnectionSucceeds_TLS13">Checked</value>
-    <value type="Qt::CheckState" key="1@D:/repo/SecuritySocket/test/securitysockettest_tls.cpp:ServerRequestsClientCert_ClientProvidesCertSignedByUntrustedCA_ConnectionFails_ClientCertRejected_TLS12">Checked</value>
-    <value type="Qt::CheckState" key="1@D:/repo/SecuritySocket/test/securitysockettest_tls.cpp:ServerRequestsClientCert_ClientProvidesCertSignedByUntrustedCA_ConnectionFails_ClientCertRejected_TLS13">Checked</value>
-    <value type="Qt::CheckState" key="1@D:/repo/SecuritySocket/test/securitysockettest_tls.cpp:ServerRequestsClientCert_ClientProvidesValidCert_ConnectionSucceeds_TLS12">Checked</value>
-    <value type="Qt::CheckState" key="1@D:/repo/SecuritySocket/test/securitysockettest_tls.cpp:ServerRequestsClientCert_ClientProvidesValidCert_ConnectionSucceeds_TLS13">Checked</value>
-    <value type="Qt::CheckState" key="1@D:/repo/SecuritySocket/test/securitysockettest_tls.cpp:ServerRequiresClientCert_ClientDoesNotProvideAnyClientCert_ConnectionFails_ClientCertRejected_TLS12">Checked</value>
-    <value type="Qt::CheckState" key="1@D:/repo/SecuritySocket/test/securitysockettest_tls.cpp:ServerRequiresClientCert_ClientDoesNotProvideAnyClientCert_ConnectionFails_ClientCertRejected_TLS13">Checked</value>
-    <value type="Qt::CheckState" key="1@D:/repo/SecuritySocket/test/securitysockettest_tls.cpp:ServerRequiresClientCert_ClientProvidesCertSignedByUntrustedCA_ConnectionFails_ClientCertRejected_TLS12">Checked</value>
-    <value type="Qt::CheckState" key="1@D:/repo/SecuritySocket/test/securitysockettest_tls.cpp:ServerRequiresClientCert_ClientProvidesCertSignedByUntrustedCA_ConnectionFails_ClientCertRejected_TLS13">Checked</value>
-    <value type="Qt::CheckState" key="1@D:/repo/SecuritySocket/test/securitysockettest_tls.cpp:ServerRequiresClientCert_ClientProvidesValidCert_ConnectionSucceeds_TLS12">Checked</value>
-    <value type="Qt::CheckState" key="1@D:/repo/SecuritySocket/test/securitysockettest_tls.cpp:ServerRequiresClientCert_ClientProvidesValidCert_ConnectionSucceeds_TLS13">Checked</value>
-    <value type="Qt::CheckState" key="1@D:/repo/SecuritySocket/test/securitysockettest_tls.cpp:TLSConnection">Checked</value>
-   </valuemap>
+   <valuemap type="QVariantMap" key="AutoTest.CheckStates"/>
    <value type="int" key="AutoTest.RunAfterBuild">0</value>
    <value type="bool" key="AutoTest.UseGlobal">true</value>
    <valuemap type="QVariantMap" key="ClangTools">

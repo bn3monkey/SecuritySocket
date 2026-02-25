@@ -2,5 +2,5 @@
 
 int main(int argc, char** argv)
 {
-	return startSecuritySocketTest(argc, argv);
+	return startSecuritySocketTest(argc, argv, nullptr);
 }

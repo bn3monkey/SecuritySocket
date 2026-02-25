@@ -1,9 +1,8 @@
 package com.bn3monkey.securitysocketandroidtest
 
-import android.Manifest
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.Assert.*
-import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -19,10 +18,13 @@ class SecuritySocketAndroidTest {
         System.loadLibrary("SecuritySocketAndroidTest")
     }
 
-    external fun startSecuritySocketTest() : Int
+    external fun startSecuritySocketTest(cwd: String) : Int
 
     @Test
     fun main() {
-        startSecuritySocketTest()
+        // Pass the app's internal files directory so cert files can be written
+        // to a writable location on the Android device.
+        val filesDir = InstrumentationRegistry.getInstrumentation().targetContext.filesDir.absolutePath
+        startSecuritySocketTest(filesDir)
     }
 }

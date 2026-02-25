@@ -105,10 +105,14 @@ private:
 extern "C"
 JNIEXPORT jint JNICALL
 Java_com_bn3monkey_securitysocketandroidtest_SecuritySocketAndroidTest_startSecuritySocketTest(
-        JNIEnv *env, jobject thiz) {
+        JNIEnv *env, jobject thiz, jstring cwd) {
 
     StandardIORedirector ioRedirector{};
+
+    const char* cwd_str = env->GetStringUTFChars(cwd, nullptr);
     int argc = 0;
     char** argv = nullptr;
-    return startSecuritySocketTest(argc, argv);
+    jint result = startSecuritySocketTest(argc, argv, cwd_str);
+    env->ReleaseStringUTFChars(cwd, cwd_str);
+    return result;
 }

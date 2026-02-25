@@ -42,7 +42,7 @@
 extern "C" {
 #endif
 
-    SECURITYSOCKETTEST_API int startSecuritySocketTest(int argc, char** argv);
+    SECURITYSOCKETTEST_API int startSecuritySocketTest(int argc, char** argv, const char* cwd);
 
 #ifdef __cplusplus
 }
