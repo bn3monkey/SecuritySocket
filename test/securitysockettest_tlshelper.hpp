@@ -13,6 +13,22 @@
 
 #include <remote_command_client.hpp>
 
+#include <cstdarg>
+#include <vector>
+#include <string>
+#include <thread>
+
+#if defined(_WIN32)
+#include <windows.h>
+#else
+#include <unistd.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <signal.h>
+#include <spawn.h>
+extern char** environ;
+#endif
+
 constexpr static const char* SERVER_SELF_CERT      = "certs/server_self.crt";
 constexpr static const char* SERVER_SELF_KEY       = "certs/server_self.key";
 constexpr static const char* CA_CERT               = "certs/ca.crt";
@@ -33,43 +49,18 @@ inline Bn3Monkey::RemoteCommandClient* getClient() {
     static Bn3Monkey::RemoteCommandClient* client = nullptr;
     if (client == nullptr)
     {
-        client = Bn3Monkey::createRemoteCommandContext(9001, 9002);
+        client = Bn3Monkey::discoverRemoteCommandClient(9000);
+        //client = Bn3Monkey::createRemoteCommandClient(9001, 9002, "192.168.0.5");
         Bn3Monkey::onRemoteOutput(client, [](const char* output) {
-            printf("[remote] %s", output);
+            printf("[remote] %s\n", output);
             });
 		Bn3Monkey::onRemoteError(client, [](const char* error) {
-            printf("[remote][error] %s", error);
+            printf("[remote][error] %s\n", error);
 			});
     }
     return client;
 }
 
-// Returns true if the file at 'path' exists and is accessible.
-inline bool directoryExists(const char* path)
-{
-    return Bn3Monkey::directoryExists(getClient(), path);
-}
-
-inline bool createDirectory(const char* path)
-{
-    return Bn3Monkey::createDirectory(getClient(), path);
-}
-
-// Prints a description, runs the shell command, and warns if it fails.
-template<typename ...Args>
-inline void runCommand(const char* description, const char* fmt, Args... args)
-{
-    printf("[cert-gen] %s\n", description);
-    char cmd[4096]{ 0 };
-    std::snprintf(cmd, sizeof(cmd), fmt, args...);
-
-    Bn3Monkey::runCommand(getClient(), cmd);
-}
-
-inline bool downloadFile(const char* local_file, const char* remote_file)
-{
-    return Bn3Monkey::downloadFile(getClient(), local_file, remote_file);
-}
 
 inline void createLocalDirectory(const char* path)
 {
@@ -80,6 +71,16 @@ inline void createLocalDirectory(const char* path)
 #endif
 }
 
+
+
+
+
+class LocalProcess
+{
+public:
+    static int32_t openProcess(const char* cmd, ...);
+    static void closeProcess(int32_t process_id);
+};
 
 void createCertificates();
 

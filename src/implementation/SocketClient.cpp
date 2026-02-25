@@ -56,7 +56,8 @@ SocketResult SocketClientImpl::connect()
 			{
 				break;
 			}
-			else if (result.code() == SocketCode::SOCKET_CONNECTION_IN_PROGRESS || result.code() == SocketCode::SOCKET_CONNECTION_NEED_TO_BE_BLOCKED)
+			else if (result.code() == SocketCode::SOCKET_CONNECTION_IN_PROGRESS || 
+					  result.code() == SocketCode::SOCKET_CONNECTION_NEED_TO_BE_BLOCKED)
 			{
 				result = event_listener.wait(_configuration.read_timeout());
 				if (result.code() == SocketCode::SOCKET_TIMEOUT)

@@ -2,7 +2,14 @@
 <project version="4">
   <component name="VcsDirectoryMappings">
     <mapping directory="$PROJECT_DIR$/../.." vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/../linux/out/build/WSL-GCC-Debug/_deps/googletest-src" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/../linux/out/build/WSL-GCC-Debug/_deps/kiotty_discover-src" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/../linux/out/build/WSL-GCC-Debug/_deps/openssl-src" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/../linux/out/build/WSL-GCC-Debug/_deps/remote_command-src" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/../linux/out/build/x64-Debug/_deps/openssl-src" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/../msvc/out/build/x64-Debug/_deps/googletest-src" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/../msvc/out/build/x64-Debug/_deps/kiotty_discover-src" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/../msvc/out/build/x64-Debug/_deps/openssl-src" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/../msvc/out/build/x64-Debug/_deps/remote_command-src" vcs="Git" />
   </component>
 </project>

@@ -122,7 +122,7 @@ if (BUILD_SECURITYSOCKET_TEST)
     FetchContent_Declare(
         remote_command
         GIT_REPOSITORY https://github.com/bn3monkey/remote-command.git
-        GIT_TAG 1.0.1
+        GIT_TAG 1.2.3
     )
     FETCHCONTENT_MAKEAVAILABLE(remote_command)
 
