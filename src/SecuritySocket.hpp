@@ -186,9 +186,9 @@ namespace Bn3Monkey
         TLS_AES_128_CCM8_SHA256 = 1 << 4
 	};
     enum class SocketTLSClientAuthenticationMode {
-        NONE,
-        OPTIONAL,
-        REQUIRED
+        AUTH_MODE_NONE,
+        AUTH_MODE_OPTIONAL,
+        AUTH_MODE_REQUIRED
 	};
 
     class SECURITYSOCKET_API SocketTLSClientConfiguration
@@ -280,7 +280,7 @@ namespace Bn3Monkey
             const char* server_key_file_path = nullptr,
             const char* server_key_password = nullptr,
 
-			SocketTLSClientAuthenticationMode client_authentication_mode = SocketTLSClientAuthenticationMode::NONE,
+			SocketTLSClientAuthenticationMode client_authentication_mode = SocketTLSClientAuthenticationMode::AUTH_MODE_NONE,
             const char* client_trust_store_path = nullptr
 		) : _client_authentication_mode(client_authentication_mode)
         {
@@ -324,7 +324,7 @@ namespace Bn3Monkey
 		int32_t _tls_versions{ 0 };
 		int32_t _tls_1_2_cipher_suites{ 0 };
 		int32_t _tls_1_3_cipher_suites{ 0 };
-		SocketTLSClientAuthenticationMode _client_authentication_mode{ SocketTLSClientAuthenticationMode::NONE };
+		SocketTLSClientAuthenticationMode _client_authentication_mode{ SocketTLSClientAuthenticationMode::AUTH_MODE_NONE };
 
         char _client_trust_store_path[256]{ 0 };
         char _server_cert_file_path[256]{ 0 };

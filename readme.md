@@ -19,6 +19,7 @@ It is compatible for Windows(MSVC, MinGW Compiler), Android (Clang), Linux (gcc)
     - [SocketTLS1\_3CipherSuite](#sockettls1_3ciphersuite)
     - [SocketTLSClientAuthenticationMode](#sockettlsclientauthenticationmode)
     - [SocketTLSClientConfiguration](#sockettlsclientconfiguration)
+      - [TLS Event Callback](#tls-event-callback)
     - [SocketTLSServerConfiguration](#sockettlsserverconfiguration)
   - [Specification](#specification)
     - [Recommended C++ Version](#recommended-c-version)
@@ -382,7 +383,7 @@ int main()
         "/path/to/server.crt",                                     // server certificate path
         "/path/to/server.key",                                     // server private key path
         "keypassword",                                             // private key password (nullptr if not encrypted)
-        SocketTLSClientAuthenticationMode::OPTIONAL,               // client auth: NONE / OPTIONAL / REQUIRED
+        SocketTLSClientAuthenticationMode::AUTH_MODE_OPTIONAL,               // client auth: AUTH_MODE_NONE / AUTH_MODE_OPTIONAL / AUTH_MODE_REQUIRED
         "/path/to/ca.crt"                                          // CA certificate path for verifying clients
     };
 
@@ -556,9 +557,9 @@ Controls whether the server requires a certificate from connecting clients (used
 
 | Value      | Description                                                                |
 | ---------- | -------------------------------------------------------------------------- |
-| `NONE`     | No client certificate requested                                            |
-| `OPTIONAL` | Request a client certificate but allow connection even if none is provided |
-| `REQUIRED` | Reject the connection if the client does not provide a valid certificate   |
+| `AUTH_MODE_NONE`     | No client certificate requested                                            |
+| `AUTH_MODE_OPTIONAL` | Request a client certificate but allow connection even if none is provided |
+| `AUTH_MODE_REQUIRED` | Reject the connection if the client does not provide a valid certificate   |
 
 ### SocketTLSClientConfiguration
 
@@ -601,7 +602,7 @@ SocketTLSServerConfiguration tls_config{
     const char* server_cert_file_path = nullptr,   // server certificate path (.crt / .pem)
     const char* server_key_file_path = nullptr,    // server private key path (.key / .pem)
     const char* server_key_password = nullptr,     // private key password (nullptr if not encrypted)
-    SocketTLSClientAuthenticationMode client_authentication_mode = SocketTLSClientAuthenticationMode::NONE,
+    SocketTLSClientAuthenticationMode client_authentication_mode = SocketTLSClientAuthenticationMode::AUTH_MODE_NONE,
     const char* client_trust_store_path = nullptr  // path to CA certificate file for client verification
 };
 ```
@@ -694,4 +695,4 @@ C++ 14
   - Mutual TLS (mTLS): client certificate authentication
   - Encrypted private key support (password-protected `.key` files)
   - TLS event callback (`setOnTLSEvent`) for handshake diagnostics
-- Add `SocketTLSClientAuthenticationMode` (`NONE` / `OPTIONAL` / `REQUIRED`) for server-side client authentication control
+- Add `SocketTLSClientAuthenticationMode` (`AUTH_MODE_NONE` / `AUTH_MODE_OPTIONAL` / `AUTH_MODE_REQUIRED`) for server-side client authentication control
