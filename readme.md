@@ -8,10 +8,20 @@ It is compatible for Windows(MSVC, MinGW Compiler), Android (Clang), Linux (gcc)
     - [Option](#option)
   - [Example](#example)
     - [Using Client](#using-client)
+    - [Using TLS Client](#using-tls-client)
     - [Using Request Server](#using-request-server)
+    - [Using TLS Request Server](#using-tls-request-server)
     - [Using Notification Server](#using-notification-server)
-  - [Speicifcation](#speicifcation)
-    - [Recommanded C++ Version](#recommanded-c-version)
+    - [Using TLS Notification Server](#using-tls-notification-server)
+  - [TLS Configuration](#tls-configuration)
+    - [SocketTLSVersion](#sockettlsversion)
+    - [SocketTLS1\_2CipherSuite](#sockettls1_2ciphersuite)
+    - [SocketTLS1\_3CipherSuite](#sockettls1_3ciphersuite)
+    - [SocketTLSClientAuthenticationMode](#sockettlsclientauthenticationmode)
+    - [SocketTLSClientConfiguration](#sockettlsclientconfiguration)
+    - [SocketTLSServerConfiguration](#sockettlsserverconfiguration)
+  - [Specification](#specification)
+    - [Recommended C++ Version](#recommended-c-version)
     - [Supported Compiler](#supported-compiler)
   - [Revision History](#revision-history)
     - [1.0.0 / 2024.6.16](#100--2024616)
@@ -25,11 +35,12 @@ It is compatible for Windows(MSVC, MinGW Compiler), Android (Clang), Linux (gcc)
     - [2.1.0 / 2025.09.09](#210--20250909)
     - [2.1.1 / 2025.09.09](#211--20250909)
     - [2.1.2 / 2026.01.02](#212--20260102)
+    - [2.2.0 / 2026.02.25](#220--20260225)
 
 ## Build
 
-This project is using CMake as main build system.  
-You can import this project into your CMake project by utilizing FetchContent.  
+This project is using CMake as main build system.
+You can import this project into your CMake project by utilizing FetchContent.
 So, Please use **CMake version 3.16** or higher
 
 ```cmake
@@ -39,7 +50,7 @@ cmake_minimum_required (VERSION 3.16)
 include(FetchContent)
 FetchContent_Declear(SecuritySocket
     GIT_REPOSITORY https://github.com/bn3monkey/securitysocket
-    GIT_TAG v2.1.2)
+    GIT_TAG v2.2.0)
 FetchContent_MakeAvailable(SecuritySocket)
 
 ...
@@ -82,7 +93,7 @@ option(BUILD_SECURITYSOCKET_TEST OFF CACHE BOOL "Build Security socket test" FOR
 
 FetchContent_Declear(SecuritySocket
     GIT_REPOSITORY https://github.com/bn3monkey/securitysocket
-    GIT_TAG v2.0.0)
+    GIT_TAG v2.2.0)
 
 FetchContent_MakeAvailable(SecuritySocket)
 
@@ -139,7 +150,7 @@ int main()
         auto result = client.read(buffer, 14);
         if (result.code() != SocketCode::SUCCESS)
         {
-            printf(result.messsage());
+            printf(result.message());
             return -1;
         }
     }
@@ -150,6 +161,88 @@ int main()
     return 0;
 }
 
+```
+
+### Using TLS Client
+
+```cpp
+#include <SecuritySocket.hpp>
+#include <cstring>
+
+int main()
+{
+    initializeSecuritySocket();
+
+    using namespace Bn3Monkey;
+
+    SocketConfiguration config{ "127.0.0.1", 5000 };
+
+    // TLS 1.2/1.3 with server certificate verification and mutual TLS (mTLS)
+    SocketTLSClientConfiguration tls_config{
+        { SocketTLSVersion::TLS1_2, SocketTLSVersion::TLS1_3 },    // supported TLS versions
+        { SocketTLS1_2CipherSuite::ECDHE_RSA_AES256_GCM_SHA384 },  // TLS 1.2 cipher suites
+        { SocketTLS1_3CipherSuite::TLS_AES_256_GCM_SHA384 },       // TLS 1.3 cipher suites
+        true,                    // verify server certificate
+        true,                    // verify hostname
+        "/path/to/ca.crt",       // CA certificate (trust store) path
+        true,                    // use client certificate (mTLS)
+        "/path/to/client.crt",   // client certificate path
+        "/path/to/client.key",   // client private key path
+        "keypassword"            // private key password (nullptr if not encrypted)
+    };
+
+    // Optional: register a callback to receive TLS handshake event messages
+    tls_config.setOnTLSEvent([](const char* message) {
+        printf("[TLS] %s\n", message);
+    });
+
+    SocketClient client{ config, tls_config };
+
+    {
+        auto result = client.open();
+        if (result.code() != SocketCode::SUCCESS)
+        {
+            printf(result.message());
+            return -1;
+        }
+    }
+
+    {
+        auto result = client.connect();
+        if (result.code() != SocketCode::SUCCESS)
+        {
+            printf(result.message());
+            return -1;
+        }
+    }
+
+    {
+        char buffer[4096] {0};
+        strncpy(buffer, "Hello, World!", 4096);
+        size_t size = strlen(buffer);
+        auto result = client.write(buffer, size);
+        if (result.code() != SocketCode::SUCCESS)
+        {
+            printf(result.message());
+            return -1;
+        }
+    }
+
+    {
+        char buffer[4096] {0};
+        auto result = client.read(buffer, 14);
+        if (result.code() != SocketCode::SUCCESS)
+        {
+            printf(result.message());
+            return -1;
+        }
+    }
+
+    client.close();
+
+    releaseSecuritySocket();
+    return 0;
+}
 ```
 
 ### Using Request Server
@@ -269,6 +362,57 @@ int main()
 }
 ```
 
+### Using TLS Request Server
+
+```cpp
+#include <SecuritySocket.hpp>
+#include <cstdio>
+
+int main()
+{
+    using namespace Bn3Monkey;
+
+    SocketConfiguration config{ "127.0.0.1", 20000 };
+
+    // TLS server with optional client certificate authentication (mTLS)
+    SocketTLSServerConfiguration tls_config{
+        { SocketTLSVersion::TLS1_2, SocketTLSVersion::TLS1_3 },   // supported TLS versions
+        { SocketTLS1_2CipherSuite::ECDHE_RSA_AES256_GCM_SHA384 }, // TLS 1.2 cipher suites
+        { SocketTLS1_3CipherSuite::TLS_AES_256_GCM_SHA384 },      // TLS 1.3 cipher suites
+        "/path/to/server.crt",                                     // server certificate path
+        "/path/to/server.key",                                     // server private key path
+        "keypassword",                                             // private key password (nullptr if not encrypted)
+        SocketTLSClientAuthenticationMode::OPTIONAL,               // client auth: NONE / OPTIONAL / REQUIRED
+        "/path/to/ca.crt"                                          // CA certificate path for verifying clients
+    };
+
+    // Optional: register a callback to receive TLS handshake event messages
+    tls_config.setOnTLSEvent([](const char* message) {
+        printf("[TLS] %s\n", message);
+    });
+
+    struct EchoRequestHandler : public Bn3Monkey::SocketRequestHandler
+    {
+        // ... (same as non-TLS example above)
+    };
+
+    EchoRequestHandler handler;
+
+    SocketRequestServer server{ config, tls_config };
+    auto result = server.open(&handler, 4);
+    if (result.code() != SocketCode::SUCCESS)
+    {
+        printf(result.message());
+        return -1;
+    }
+
+    // Sleep Thread
+
+    server.close();
+    return 0;
+}
+```
+
 ### Using Notification Server
 
 ```cpp
@@ -314,9 +458,165 @@ int main()
 }
 ```
 
-## Speicifcation
+### Using TLS Notification Server
 
-### Recommanded C++ Version
+```cpp
+#include <SecuritySocket.hpp>
+#include <cstdio>
+
+int main()
+{
+    using namespace Bn3Monkey;
+
+    SocketConfiguration config{ "127.0.0.1", 20000 };
+
+    // TLS server requiring client certificate authentication (mTLS)
+    SocketTLSServerConfiguration tls_config{
+        { SocketTLSVersion::TLS1_2, SocketTLSVersion::TLS1_3 },
+        {},                                                        // use default TLS 1.2 cipher suites
+        {},                                                        // use default TLS 1.3 cipher suites
+        "/path/to/server.crt",
+        "/path/to/server.key",
+        nullptr,                                                   // no key password
+        SocketTLSClientAuthenticationMode::REQUIRED,               // require client certificate
+        "/path/to/ca.crt"
+    };
+
+    SocketBroadcastServer server{ config, tls_config };
+
+    {
+        auto result = server.open(4);
+        if (SocketCode::SUCCESS != result.code())
+        {
+            printf("%s", result.message());
+            return -1;
+        }
+    }
+
+    {
+        auto result = server.enumerate();
+        if (SocketCode::SUCCESS != result.code())
+        {
+            printf("%s", result.message());
+            return -1;
+        }
+    }
+
+    for (size_t i = 0; i < 20; i++)
+    {
+        server.write("Event", strlen("Event"));
+    }
+
+    server.close();
+    return 0;
+}
+```
+
+## TLS Configuration
+
+### SocketTLSVersion
+
+Specifies the TLS protocol versions the socket should support.
+
+| Value    | Description |
+| -------- | ----------- |
+| `TLS1_2` | TLS 1.2     |
+| `TLS1_3` | TLS 1.3     |
+
+Multiple versions can be combined using an initializer list: `{ SocketTLSVersion::TLS1_2, SocketTLSVersion::TLS1_3 }`
+
+### SocketTLS1_2CipherSuite
+
+Cipher suites available for TLS 1.2.
+If no cipher suites are specified, OpenSSL default cipher suites are used.
+
+| Value                            | Cipher Suite                   |
+| -------------------------------- | ------------------------------ |
+| `ECDHE_ECDSA_AES256_GCM_SHA384`  | ECDHE-ECDSA-AES256-GCM-SHA384  |
+| `ECDHE_RSA_AES256_GCM_SHA384`    | ECDHE-RSA-AES256-GCM-SHA384    |
+| `ECDHE_ECDSA_CHACHA20_POLY1305`  | ECDHE-ECDSA-CHACHA20-POLY1305  |
+| `ECDHE_RSA_CHACHA20_POLY1305`    | ECDHE-RSA-CHACHA20-POLY1305    |
+
+### SocketTLS1_3CipherSuite
+
+Cipher suites available for TLS 1.3.
+If no cipher suites are specified, OpenSSL default cipher suites are used.
+
+| Value                          | Cipher Suite                  |
+| ------------------------------ | ----------------------------- |
+| `TLS_AES_128_GCM_SHA256`       | TLS-AES-128-GCM-SHA256        |
+| `TLS_AES_256_GCM_SHA384`       | TLS-AES-256-GCM-SHA384        |
+| `TLS_CHACHA20_POLY1305_SHA256` | TLS-CHACHA20-POLY1305-SHA256  |
+| `TLS_AES_128_CCM_SHA256`       | TLS-AES-128-CCM-SHA256        |
+| `TLS_AES_128_CCM8_SHA256`      | TLS-AES-128-CCM8-SHA256       |
+
+### SocketTLSClientAuthenticationMode
+
+Controls whether the server requires a certificate from connecting clients (used in `SocketTLSServerConfiguration`).
+
+| Value      | Description                                                                |
+| ---------- | -------------------------------------------------------------------------- |
+| `NONE`     | No client certificate requested                                            |
+| `OPTIONAL` | Request a client certificate but allow connection even if none is provided |
+| `REQUIRED` | Reject the connection if the client does not provide a valid certificate   |
+
+### SocketTLSClientConfiguration
+
+Configuration for the TLS client. Passed as the second argument to `SocketClient`.
+
+```cpp
+SocketTLSClientConfiguration tls_config{
+    std::initializer_list<SocketTLSVersion> support_versions,      // required: TLS versions to support
+    std::initializer_list<SocketTLS1_2CipherSuite> tls_1_2_cipher_suites = {},  // optional
+    std::initializer_list<SocketTLS1_3CipherSuite> tls_1_3_cipher_suites = {},  // optional
+    bool verify_server = false,              // verify the server's certificate
+    bool verify_hostname = false,            // verify that the server hostname matches the certificate CN/SAN
+    const char* server_trust_store_path = nullptr,  // path to CA certificate file for server verification
+    bool use_client_certificate = false,     // enable mTLS (send client certificate to server)
+    const char* client_cert_file_path = nullptr,    // client certificate path (.crt / .pem)
+    const char* client_key_file_path = nullptr,     // client private key path (.key / .pem)
+    const char* client_key_password = nullptr       // private key password (nullptr if not encrypted)
+};
+```
+
+#### TLS Event Callback
+
+You can register a callback to receive diagnostic messages during the TLS handshake:
+
+```cpp
+tls_config.setOnTLSEvent([](const char* message) {
+    printf("[TLS] %s\n", message);
+});
+```
+
+### SocketTLSServerConfiguration
+
+Configuration for the TLS server. Passed as the second argument to `SocketRequestServer` or `SocketBroadcastServer`.
+
+```cpp
+SocketTLSServerConfiguration tls_config{
+    std::initializer_list<SocketTLSVersion> support_versions,      // required: TLS versions to support
+    std::initializer_list<SocketTLS1_2CipherSuite> tls_1_2_cipher_suites = {},  // optional
+    std::initializer_list<SocketTLS1_3CipherSuite> tls_1_3_cipher_suites = {},  // optional
+    const char* server_cert_file_path = nullptr,   // server certificate path (.crt / .pem)
+    const char* server_key_file_path = nullptr,    // server private key path (.key / .pem)
+    const char* server_key_password = nullptr,     // private key password (nullptr if not encrypted)
+    SocketTLSClientAuthenticationMode client_authentication_mode = SocketTLSClientAuthenticationMode::NONE,
+    const char* client_trust_store_path = nullptr  // path to CA certificate file for client verification
+};
+```
+
+You can register a callback to receive diagnostic messages during the TLS handshake:
+
+```cpp
+tls_config.setOnTLSEvent([](const char* message) {
+    printf("[TLS] %s\n", message);
+});
+```
+
+## Specification
+
+### Recommended C++ Version
 
 C++ 14
 
@@ -336,8 +636,8 @@ C++ 14
 ### 2.0.0 / 2025.02.17
 
 - Change existing interfaces
-- Add request server (it supports only TLS functiionality. not TLS)
-- Add notification server (it supports only TLS functiionality. not TLS)
+- Add request server (it supports only TCP functionality, not TLS)
+- Add notification server (it supports only TCP functionality, not TLS)
 
 ### 2.0.1 / 2025.02.18
 
@@ -383,3 +683,15 @@ C++ 14
 ### 2.1.2 / 2026.01.02
 
 - fix warnings in gcc and msvc
+
+### 2.2.0 / 2026.02.25
+
+- Add TLS support to request server and notification (broadcast) server
+- Add `SocketTLSClientConfiguration` and `SocketTLSServerConfiguration` with explicit control over:
+  - TLS version selection (TLS 1.2, TLS 1.3, or both)
+  - TLS 1.2 / TLS 1.3 cipher suite selection
+  - Server certificate verification (`verify_server`, `verify_hostname`)
+  - Mutual TLS (mTLS): client certificate authentication
+  - Encrypted private key support (password-protected `.key` files)
+  - TLS event callback (`setOnTLSEvent`) for handshake diagnostics
+- Add `SocketTLSClientAuthenticationMode` (`NONE` / `OPTIONAL` / `REQUIRED`) for server-side client authentication control
