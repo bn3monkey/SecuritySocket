@@ -143,6 +143,8 @@ void Bn3Monkey::SocketConnection::routine()
 			_cv.wait(lock, [&]() {
 				return !(_is_running && _tasks.empty());
 				});
+			if (!_is_running && _tasks.empty())
+				break;
 			task = std::move(_tasks.front());
 			_tasks.pop();
 		}

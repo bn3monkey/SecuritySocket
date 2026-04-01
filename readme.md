@@ -37,6 +37,7 @@ It is compatible for Windows(MSVC, MinGW Compiler), Android (Clang), Linux (gcc)
     - [2.1.1 / 2025.09.09](#211--20250909)
     - [2.1.2 / 2026.01.02](#212--20260102)
     - [2.2.0 / 2026.02.25](#220--20260225)
+    - [2.2.1 / 2026.04.01](#221--20260401)
 
 ## Build
 
@@ -696,3 +697,14 @@ C++ 14
   - Encrypted private key support (password-protected `.key` files)
   - TLS event callback (`setOnTLSEvent`) for handshake diagnostics
 - Add `SocketTLSClientAuthenticationMode` (`AUTH_MODE_NONE` / `AUTH_MODE_OPTIONAL` / `AUTH_MODE_REQUIRED`) for server-side client authentication control
+
+### 2.2.1 / 2026.04.01
+
+- Fix `setBlockingMode()` using wrong bitwise operator (`|` → `&`) with `~O_NONBLOCK`, which corrupted socket flags and prevented blocking mode restoration
+- Fix `setTimeout()` copy-paste bug where write timeout values were assigned to `read_timeout` instead of `write_timeout`
+- Fix `SocketConnection::routine()` crash when accessing empty task queue on worker thread shutdown
+- Fix `TLSClientActiveSocket` null pointer dereference when `SSL_new()` fails but TLS event callback is set
+- Fix `TLSServerActiveSocket` destructor double scope resolution causing compilation errors
+- Fix `ClientActiveSocket` destructor not calling `close()`, causing socket file descriptor leaks
+- Fix `SocketConnection::state` member variable left uninitialized
+- Fix `ObjectPool::release()` off-by-one error preventing the last pooled object from being reused

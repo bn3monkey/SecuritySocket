@@ -31,7 +31,7 @@ inline void setBlockingMode(int32_t socket)
 	ioctlsocket(socket, FIONBIO, &mode);
 #else
 	int _flags = fcntl(socket, F_GETFL, 0);
-	fcntl(socket, F_SETFL, _flags | ~O_NONBLOCK);
+	fcntl(socket, F_SETFL, _flags & ~O_NONBLOCK);
 
 #endif
 }
@@ -49,8 +49,8 @@ inline void setTimeout(int32_t socket, uint32_t read_timeout_ms, uint32_t write_
 	setsockopt(socket, SOL_SOCKET, SO_RCVTIMEO, &read_timeout, sizeof(read_timeout));
 
 	timeval write_timeout;
-	read_timeout.tv_sec = (time_t)write_timeout_ms / (time_t)1000;
-	read_timeout.tv_usec = (suseconds_t)write_timeout_ms * (suseconds_t)1000 - (suseconds_t)(write_timeout.tv_sec * (suseconds_t)1000000);
+	write_timeout.tv_sec = (time_t)write_timeout_ms / (time_t)1000;
+	write_timeout.tv_usec = (suseconds_t)write_timeout_ms * (suseconds_t)1000 - (suseconds_t)(write_timeout.tv_sec * (suseconds_t)1000000);
 
 	setsockopt(socket, SOL_SOCKET, SO_SNDTIMEO, &write_timeout, sizeof(write_timeout));
 

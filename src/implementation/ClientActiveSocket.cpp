@@ -39,6 +39,7 @@ Bn3Monkey::ClientActiveSocket::ClientActiveSocket(bool is_unix_domain, const Soc
 }
 Bn3Monkey::ClientActiveSocket::~ClientActiveSocket()
 {
+	close();
 }
 
 void ClientActiveSocket::close() {
@@ -221,6 +222,7 @@ Bn3Monkey::TLSClientActiveSocket::TLSClientActiveSocket(bool is_unix_domain, con
 		SSL_CTX_free(_context);
 		_context = nullptr;
 		_result = SocketResult(SocketCode::TLS_INITIALIZATION_FAIL);
+		return;
 	}
 
 	// TLS info tracking

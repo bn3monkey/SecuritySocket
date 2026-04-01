@@ -37,10 +37,10 @@ namespace Bn3Monkey
         {
             auto* pos = static_cast<ObjectType*>(object);
             auto* start_ptr = reinterpret_cast<ObjectType*>(_objects.data());
-            auto* end_ptr = reinterpret_cast<ObjectType*>(_objects.data()) + _objects.size() -1;
+            auto* end_ptr = reinterpret_cast<ObjectType*>(_objects.data()) + _objects.size();
 
 
-            if (start_ptr<=pos && pos <= end_ptr)
+            if (start_ptr<=pos && pos < end_ptr)
             {
                 object->~ObjectType();
                 auto* ptr = reinterpret_cast<Container*>(object);

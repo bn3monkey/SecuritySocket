@@ -84,7 +84,7 @@ TLSServerActiveSocket::TLSServerActiveSocket(int32_t sock, void* addr, void* ssl
 
 	throw std::runtime_error("Not Implemented");
 }
-TLSServerActiveSocket::TLSServerActiveSocket::~TLSServerActiveSocket()
+TLSServerActiveSocket::~TLSServerActiveSocket()
 {
 	printf("Not Implemeneted\n");
 }

@@ -39,7 +39,7 @@ namespace Bn3Monkey
         void connectClient();
         void disconnectClient();
 
-        ProcessState state;
+        ProcessState state{ ProcessState::READING_HEADER };
 
         // false : READING_HEADER | true : READING_PAYLOAD
         ProcessState readHeader();

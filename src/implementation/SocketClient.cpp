@@ -225,6 +225,10 @@ SocketResult SocketClientImpl::write(const void* buffer, size_t size)
 			}
 			else if (result.code() == SocketCode::SOCKET_CONNECTION_NEED_TO_BE_BLOCKED)
 			{
+				// Intentional: do not increment i here.
+				// SOCKET_CONNECTION_NEED_TO_BE_BLOCKED means data is likely available soon,
+				// so we should keep retrying beyond max_retries rather than giving up
+				// on data that could still be received.
 			}
 			else if (result.code() != SocketCode::SUCCESS)
 				break;
