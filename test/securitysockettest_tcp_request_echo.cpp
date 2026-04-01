@@ -116,7 +116,7 @@ void runEchoClient(int32_t client_no)
 
     SocketConfiguration config{
         "127.0.0.1",
-        20000,
+        21345,
         false,
         5,
         1000,
@@ -167,7 +167,7 @@ TEST(TCPRequestEcho, runFourClient)
 
     SocketConfiguration config{
         "127.0.0.1",
-        20000,
+        21345,
         false,
         5,
         1000,

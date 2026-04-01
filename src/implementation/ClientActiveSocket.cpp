@@ -39,7 +39,12 @@ Bn3Monkey::ClientActiveSocket::ClientActiveSocket(bool is_unix_domain, const Soc
 }
 Bn3Monkey::ClientActiveSocket::~ClientActiveSocket()
 {
-	close();
+	// Do NOT call close() here.
+	// SocketContainer uses memcpy-based shallow copy and calls the destructor
+	// on temporary objects (e.g. during operator=). Closing the socket in the
+	// destructor would invalidate the fd that the surviving copy still holds,
+	// causing WSAENOTSOCK (10038) on subsequent operations.
+	// Resource cleanup is handled explicitly via SocketClientImpl::close().
 }
 
 void ClientActiveSocket::close() {

@@ -17,11 +17,14 @@ int startSecuritySocketTest(int argc, char** argv, const char* cwd)
     // Store the local working directory (Android internal storage or current dir).
     g_cwd = (cwd && cwd[0] != '\0') ? cwd : ".";
 
+    
+    ::testing::InitGoogleTest(&argc, argv);
+    
     // Ensure all TLS test certificates exist before any test runs.
     createCertificates();
-
-    ::testing::InitGoogleTest(&argc, argv);
     ::testing::GTEST_FLAG(filter) = "TLSConnection*";
+
+    //::testing::GTEST_FLAG(filter) = "-TLSConnection*";
 
     return RUN_ALL_TESTS();
 }

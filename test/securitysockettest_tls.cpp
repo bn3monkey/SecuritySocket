@@ -33,7 +33,7 @@ public:
     explicit TLSServerProcess(unsigned short port, const std::string& extra_args)
     {      
         
-        pid = Bn3Monkey::openProcess(getClient(), "openssl s_server -accept %d -trace -state %s", port, extra_args.c_str());
+        pid = Bn3Monkey::openProcess(getClient(), "openssl s_server -accept %d -state %s", port, extra_args.c_str());
         // pid = LocalProcess::openProcess("openssl s_server -accept %d -trace -state %s", port, extra_args.c_str());
 
         _started = pid != -1;

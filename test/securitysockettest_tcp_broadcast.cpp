@@ -38,7 +38,7 @@ void broadcastServerRoutine(BroadcastEventPatterns* patterns)
 
     SocketConfiguration config{
         "127.0.0.1",
-        20000,
+        21345,
         false,
         5,
         1000,
@@ -105,7 +105,7 @@ void broadcastSingleClientRoutine(BroadcastEventPatterns* patterns)
 
     SocketConfiguration config{
         "127.0.0.1",
-        20000,
+        21345,
         false,
         5,
         1000,
