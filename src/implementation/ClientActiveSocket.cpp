@@ -106,7 +106,8 @@ SocketResult Bn3Monkey::ClientActiveSocket::write(const void* buffer, size_t siz
 #else
 	ret = send(_socket, static_cast<const char*>(buffer), static_cast<int32_t>(size), 0);
 #endif
-	
+	if (ret == 0)
+		return SocketResult(SocketCode::SOCKET_CLOSED, 0);
 	return createResult(ret);
 }
 
@@ -114,6 +115,8 @@ SocketResult Bn3Monkey::ClientActiveSocket::read(void* buffer, size_t size)
 {
 	int32_t ret{ 0 };
 	ret = ::recv(_socket, static_cast<char*>(buffer), static_cast<int32_t>(size), 0);
+	if (ret == 0)
+		return SocketResult(SocketCode::SOCKET_CLOSED, 0);
 	return createResult(ret);
 }
 
