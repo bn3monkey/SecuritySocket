@@ -4,3 +4,6 @@ test/linux/out/
 test/windows/out/
 out/
 test/build-*/
+
+# generate-msvc-build-script.sh 가 생성하는 빌드 스크립트 (머신마다 절대경로가 다름)
+script/build.sh

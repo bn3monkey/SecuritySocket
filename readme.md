@@ -38,6 +38,7 @@ It is compatible for Windows(MSVC, MinGW Compiler), Android (Clang), Linux (gcc)
     - [2.1.2 / 2026.01.02](#212--20260102)
     - [2.2.0 / 2026.02.25](#220--20260225)
     - [2.2.1 / 2026.04.01](#221--20260401)
+    - [2.3.0 / 2026.04.29](#230--20260429)
 
 ## Build
 
@@ -52,7 +53,7 @@ cmake_minimum_required (VERSION 3.16)
 include(FetchContent)
 FetchContent_Declear(SecuritySocket
     GIT_REPOSITORY https://github.com/bn3monkey/securitysocket
-    GIT_TAG v2.2.0)
+    GIT_TAG v2.3.0)
 FetchContent_MakeAvailable(SecuritySocket)
 
 ...
@@ -95,7 +96,7 @@ option(BUILD_SECURITYSOCKET_TEST OFF CACHE BOOL "Build Security socket test" FOR
 
 FetchContent_Declear(SecuritySocket
     GIT_REPOSITORY https://github.com/bn3monkey/securitysocket
-    GIT_TAG v2.2.0)
+    GIT_TAG v2.3.0)
 
 FetchContent_MakeAvailable(SecuritySocket)
 
@@ -442,14 +443,6 @@ int main()
             }
         }
 
-        {
-            auto result = server.enumerate();
-            if(SocketCode::SUCCESS != result.code())
-            {
-                printf("%s", result.message());
-            }
-        }
-
         for (size_t i = 0; i < 20; i++)
         {
             server.write("Event", strlen("Event"));
@@ -488,15 +481,6 @@ int main()
 
     {
         auto result = server.open(4);
-        if (SocketCode::SUCCESS != result.code())
-        {
-            printf("%s", result.message());
-            return -1;
-        }
-    }
-
-    {
-        auto result = server.enumerate();
         if (SocketCode::SUCCESS != result.code())
         {
             printf("%s", result.message());
@@ -708,3 +692,10 @@ C++ 14
 - Fix `ClientActiveSocket` destructor not calling `close()`, causing socket file descriptor leaks
 - Fix `SocketConnection::state` member variable left uninitialized
 - Fix `ObjectPool::release()` off-by-one error preventing the last pooled object from being reused
+
+### 2.3.0 / 2026.04.29
+
+- Fix data race in `SocketBroadcastServer` between the accept-monitor thread and the broadcast caller. Replaced the unsynchronized double-buffer client list with a single-producer / single-consumer pending queue that the broadcast caller drains under a brief lock; the actual `write()` loop holds no lock during network I/O.
+- Auto-remove disconnected clients from the broadcast list during `write()` (detect `SOCKET_CLOSED` from listener / `send`, close the socket, and erase from the active list).
+- Make `SocketBroadcastServer::close()` safe to call before / after `open()` (null-guarded `_socket->close()`, idempotent monitor-thread shutdown).
+- Remove `SocketBroadcastServer::enumerate()` from the public API (breaking change — the call was previously declared but never implemented).

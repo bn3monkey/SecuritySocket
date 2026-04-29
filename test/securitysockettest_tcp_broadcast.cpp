@@ -32,198 +32,95 @@ struct BroadcastEventPatterns
 };
 
 
-void broadcastServerRoutine(BroadcastEventPatterns* patterns)
+// Repeated connect / disconnect cycles. write() skips when no client is
+// connected, so the test uses SimpleEvent to make sure the client has finished
+// connect() before the server starts writing each trial.
+TEST(TCPBroadcast, shouldHandleRepeatedClientConnectionsAndDisconnections)
 {
     using namespace Bn3Monkey;
 
+    BroadcastEventPatterns patterns;
+
+    Bn3Monkey::initializeSecuritySocket();
+
     SocketConfiguration config{
-        "127.0.0.1",
-        21345,
-        false,
-        5,
-        1000,
-        1000,
-        100,
-        8192
+       "127.0.0.1",
+       21345,
+       false,
+       5,
+       1000,
+       1000,
+       100,
+       8192
     };
-
-
 
     SocketBroadcastServer server{ config };
 
     {
-        {
-            auto result = server.open(1);
-            ASSERT_EQ(SocketCode::SUCCESS, result.code());
-        }
-
-        {
-            auto result = server.enumerate();
-            ASSERT_EQ(SocketCode::SUCCESS, result.code());
-        }
-
-        for (size_t i = 0; i < 20; i++)
-        {
-            auto* buffer = patterns->patterns[i].data();
-            printConcurrent("[Server 1 (%zu)] %s\n\n", i, buffer);
-            server.write(buffer, BroadcastEventPatterns::pattern_length);
-        }
-        server.close();
+        auto result = server.open(1);
+        ASSERT_EQ(SocketCode::SUCCESS, result.code());
     }
 
-    {
-        server.open(1);
-        server.enumerate();
+    SimpleEvent event;
+    std::thread _client([&event, &patterns]() {
+        std::this_thread::sleep_for(std::chrono::seconds(1));
 
-        for (size_t i = 0; i < 20; i++)
+        SocketConfiguration config{
+            "127.0.0.1",
+            21345,
+            false,
+            5,
+            1000,
+            1000,
+            100,
+            8192
+        };
+
+        SocketClient client{ config };
+
+        for (size_t trial = 0; trial < 3; trial++)
         {
-            auto* buffer = patterns->patterns[i].data();
-            printConcurrent("[Server 2 (%zu)] %s\n\n", i, buffer);
-            server.write(buffer, BroadcastEventPatterns::pattern_length);
-        }
-        server.close();
-    }
-
-    {
-        server.open(1);
-        server.enumerate();
-
-        for (size_t i = 0; i < 15; i++)
-        {
-            auto* buffer = patterns->patterns[i].data();
-            printConcurrent("[Server 3 (%zu)] %s\n\n", i, buffer);
-            server.write(buffer, BroadcastEventPatterns::pattern_length);
-        }
-        server.close();
-    }
-}
-void broadcastSingleClientRoutine(BroadcastEventPatterns* patterns)
-{
-    using namespace Bn3Monkey;
-
-    std::this_thread::sleep_for(std::chrono::seconds(1));
-
-    SocketConfiguration config{
-        "127.0.0.1",
-        21345,
-        false,
-        5,
-        1000,
-        1000,
-        100,
-        8192
-    };
-
-    SocketClient client{ config };
-
-    {
-        {
-            auto result = client.open();
-            ASSERT_EQ(SocketCode::SUCCESS, result.code());
-        }
-        {
-            auto result = client.connect();
-            ASSERT_EQ(SocketCode::SUCCESS, result.code());
-        }
-        for (size_t i = 0; i < 20; i++)
-        {
-            char buffer[8192]{ 0 };
-            auto* expected = patterns->patterns[i].data();
-            auto res = client.read(buffer, BroadcastEventPatterns::pattern_length);
-            printConcurrent("                    [Client 1 (%zu)] %s\n\n", i, buffer);
-            if (res.code() == SocketCode::SUCCESS)
             {
-                EXPECT_EQ(SocketCode::SUCCESS, res.code());
-                EXPECT_STREQ(expected, buffer);
+                auto result = client.open();
+                ASSERT_EQ(SocketCode::SUCCESS, result.code());
             }
-            else {
-                printConcurrent("Error : %s\n", res.message());
-            }
-        }
-        client.close();
-    }
-
-    {
-        {
-            auto result = client.open();
-            ASSERT_EQ(SocketCode::SUCCESS, result.code());
-        }
-        {
-            auto result = client.connect();
-            ASSERT_EQ(SocketCode::SUCCESS, result.code());
-        }
-        for (size_t i = 0; i < 15; i++)
-        {
-            char buffer[8192]{ 0 };
-            auto* expected = patterns->patterns[i].data();
-            auto res = client.read(buffer, BroadcastEventPatterns::pattern_length);
-            printConcurrent("                    [Client 2 (%zu)] %s\n\n", i, buffer);
-            if (res.code() == SocketCode::SUCCESS)
             {
-                EXPECT_EQ(SocketCode::SUCCESS, res.code());
-                EXPECT_STREQ(expected, buffer);
+                auto result = client.connect();
+                ASSERT_EQ(SocketCode::SUCCESS, result.code());
             }
-            else {
-                printConcurrent("Error : %s\n", res.message());
-            }
-        }
-        client.close();
-    }
+            event.wake();
 
-    {
-        {
-            auto result = client.open();
-            ASSERT_EQ(SocketCode::SUCCESS, result.code());
-        }
-        {
-            auto result = client.connect();
-            ASSERT_EQ(SocketCode::SUCCESS, result.code());
-        }
-        for (size_t i = 0; i < 20; i++)
-        {
-            char buffer[8192]{ 0 };
-            auto* expected = patterns->patterns[i].data();
-            auto res = client.read(buffer, BroadcastEventPatterns::pattern_length);
-            printConcurrent("                    [Client 3(%zu)] %s\n\n", i, buffer);
-
-            if (res.code() == SocketCode::SUCCESS)
+            for (size_t i = 0; i < 20; i++)
             {
-
-                EXPECT_EQ(SocketCode::SUCCESS, res.code());
-                EXPECT_STREQ(expected, buffer);
-            }
-            else {
-                if (i >= 15)
+                char buffer[8192]{ 0 };
+                auto* expected = patterns.patterns[i].data();
+                auto res = client.read(buffer, BroadcastEventPatterns::pattern_length);
+                printConcurrent("                    [Client %zu (%zu)] %s\n\n", trial, i, buffer);
+                if (res.code() == SocketCode::SUCCESS)
                 {
-                    printConcurrent("Server disconnected\n");
-                    EXPECT_NE(SocketCode::SUCCESS, res.code());
-                    break;
+                    EXPECT_STREQ(expected, buffer);
                 }
                 else {
                     printConcurrent("Error : %s\n", res.message());
                 }
             }
-
+            client.close();
         }
-        client.close();
+    });
+
+
+    for (size_t trial = 0; trial < 3; trial++) {
+        event.sleep();
+
+        for (size_t i = 0; i < 20; i++)
+        {
+            auto* buffer = patterns.patterns[i].data();
+            printConcurrent("[Server %zu (%zu)] %s\n\n", trial, i, buffer);
+            server.write(buffer, BroadcastEventPatterns::pattern_length);
+        }
     }
-}
 
-
-
-TEST(TCPBroadcast, runOneClient)
-{
-    return;
-
-    Bn3Monkey::initializeSecuritySocket();
-
-    BroadcastEventPatterns patterns;
-    std::thread server_thread{ broadcastServerRoutine, &patterns };
-    std::thread client_thread1{ broadcastSingleClientRoutine, &patterns };
-
-    client_thread1.join();
-
-    server_thread.join();
-
+    _client.join();
+    server.close();
     Bn3Monkey::releaseSecuritySocket();
 }

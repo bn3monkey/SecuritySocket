@@ -10,20 +10,23 @@
 #include "SocketConnection.hpp"
 #include "ObjectPool.hpp"
 
+#include <thread>
+#include <mutex>
+#include <atomic>
+#include <vector>
+
 namespace Bn3Monkey
 {
     class SocketBroadcastServerImpl
     {
     public:
 		SocketBroadcastServerImpl(const SocketConfiguration& configuration) : _configuration(configuration) {}
-        SocketBroadcastServerImpl(const SocketConfiguration& configuration, const SocketTLSServerConfiguration& tls_configuration) 
+        SocketBroadcastServerImpl(const SocketConfiguration& configuration, const SocketTLSServerConfiguration& tls_configuration)
             : _configuration(configuration), _tls_configuration(tls_configuration) {}
 
 		virtual ~SocketBroadcastServerImpl();
 
 		SocketResult open(size_t num_of_clients);
-
-        SocketResult enumerate();
         SocketResult write(const void* buffer, size_t size);
         void close();
 
@@ -34,10 +37,20 @@ namespace Bn3Monkey
         PassiveSocketContainer _container;
         PassiveSocket* _socket{ nullptr };
 
-        // Need to be vector with stack pool.
-        std::vector<ServerActiveSocketContainer> _client_containers[2];
-        std::vector<ServerActiveSocketContainer>* _front_client_containers{ &_client_containers[0]};
-        std::vector<ServerActiveSocketContainer>* _back_client_containers{ &_client_containers[1] };
+        std::thread _monitor_client;
+        std::atomic_bool _is_monitoring {false};
+        void monitorClient();
+
+        // Single-producer (monitor thread) / single-consumer (broadcast caller).
+        // Monitor pushes accepted clients into _pending_clients under _pending_mtx.
+        // Broadcast caller drains _pending_clients into _active_clients at the start
+        // of each write, then operates on _active_clients without any lock.
+        // The lock is held only for the brief drain, never during network I/O.
+        std::mutex _pending_mtx;
+        std::vector<ServerActiveSocketContainer> _pending_clients;
+        std::vector<ServerActiveSocketContainer> _active_clients;
+
+        void drainPending();
     };
 }
 

@@ -21,10 +21,10 @@ int startSecuritySocketTest(int argc, char** argv, const char* cwd)
     ::testing::InitGoogleTest(&argc, argv);
     
     // Ensure all TLS test certificates exist before any test runs.
-    createCertificates();
-    ::testing::GTEST_FLAG(filter) = "TLSConnection*";
-
+    // createCertificates();
+    //::testing::GTEST_FLAG(filter) = "TLSConnection*";
     //::testing::GTEST_FLAG(filter) = "-TLSConnection*";
+    ::testing::GTEST_FLAG(filter) = "TCPBroadcast*";
 
     return RUN_ALL_TESTS();
 }

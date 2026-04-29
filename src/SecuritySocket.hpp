@@ -28,7 +28,7 @@
 #define WIN32_LEAN_AND_MEAN
 
 #define BN3MONKEY_SECURITYSOCKET_VERSION_MAJOR 2
-#define BN3MONKEY_SECURITYSOCKET_VERSION_MINOR 2
+#define BN3MONKEY_SECURITYSOCKET_VERSION_MINOR 3
 #define BN3MONKEY_SECURITYSOCKET_VERSION_REVISION 0
 
 #define STRINGIFY(x) #x
@@ -452,7 +452,6 @@ namespace Bn3Monkey
         SocketResult open(size_t num_of_clients);
         void close();
 
-        SocketResult enumerate();
         SocketResult write(const void* buffer, size_t size);
     private:
         char _container[IMPLEMENTATION_SIZE]{ 0 };

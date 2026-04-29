@@ -133,11 +133,6 @@ void Bn3Monkey::SocketBroadcastServer::close()
 	SocketBroadcastServerImpl* impl = static_cast<SocketBroadcastServerImpl*>((void*)_container);
 	return impl->close();
 }
-SocketResult Bn3Monkey::SocketBroadcastServer::enumerate()
-{
-	SocketBroadcastServerImpl* impl = static_cast<SocketBroadcastServerImpl*>((void*)_container);
-	return impl->enumerate();
-}
 SocketResult Bn3Monkey::SocketBroadcastServer::write(const void* buffer, size_t size)
 {
 	SocketBroadcastServerImpl* impl = static_cast<SocketBroadcastServerImpl*>((void*)_container);
