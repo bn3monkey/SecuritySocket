@@ -14,6 +14,7 @@
 #include <mutex>
 #include <atomic>
 #include <vector>
+#include <condition_variable>
 
 namespace Bn3Monkey
 {
@@ -28,6 +29,10 @@ namespace Bn3Monkey
 
 		SocketResult open(size_t num_of_clients);
         SocketResult write(const void* buffer, size_t size);
+
+        SocketResult await(uint64_t timeout_ms);
+        SocketResult awaitClose(uint64_t timeout_ms);
+
         void close();
 
 	private:
@@ -47,6 +52,9 @@ namespace Bn3Monkey
         // of each write, then operates on _active_clients without any lock.
         // The lock is held only for the brief drain, never during network I/O.
         std::mutex _pending_mtx;
+        // Notified by monitor (after push) and close() (with _is_monitoring=false).
+        // await() waits on this so it doesn't have to poll.
+        std::condition_variable _pending_cv;
         std::vector<ServerActiveSocketContainer> _pending_clients;
         std::vector<ServerActiveSocketContainer> _active_clients;
 

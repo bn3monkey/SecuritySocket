@@ -39,6 +39,7 @@ It is compatible for Windows(MSVC, MinGW Compiler), Android (Clang), Linux (gcc)
     - [2.2.0 / 2026.02.25](#220--20260225)
     - [2.2.1 / 2026.04.01](#221--20260401)
     - [2.3.0 / 2026.04.29](#230--20260429)
+    - [2.3.1 / 2026.04.30](#231--20260430)
 
 ## Build
 
@@ -53,7 +54,7 @@ cmake_minimum_required (VERSION 3.16)
 include(FetchContent)
 FetchContent_Declear(SecuritySocket
     GIT_REPOSITORY https://github.com/bn3monkey/securitysocket
-    GIT_TAG v2.3.0)
+    GIT_TAG v2.3.1)
 FetchContent_MakeAvailable(SecuritySocket)
 
 ...
@@ -96,7 +97,7 @@ option(BUILD_SECURITYSOCKET_TEST OFF CACHE BOOL "Build Security socket test" FOR
 
 FetchContent_Declear(SecuritySocket
     GIT_REPOSITORY https://github.com/bn3monkey/securitysocket
-    GIT_TAG v2.3.0)
+    GIT_TAG v2.3.1)
 
 FetchContent_MakeAvailable(SecuritySocket)
 
@@ -699,3 +700,9 @@ C++ 14
 - Auto-remove disconnected clients from the broadcast list during `write()` (detect `SOCKET_CLOSED` from listener / `send`, close the socket, and erase from the active list).
 - Make `SocketBroadcastServer::close()` safe to call before / after `open()` (null-guarded `_socket->close()`, idempotent monitor-thread shutdown).
 - Remove `SocketBroadcastServer::enumerate()` from the public API (breaking change — the call was previously declared but never implemented).
+
+### 2.3.1 / 2026.04.30
+
+- Add `SocketBroadcastServer::await(uint64_t timeout_ms)` — block until at least one healthy client is connected. Stale entries (peer already closed) are health-checked and pruned so each successful return reflects a live peer.
+- Add `SocketBroadcastServer::awaitClose(uint64_t timeout_ms)` — block until every currently-active client has closed (peer FIN received). Use as an explicit barrier between broadcast rounds: after writing a batch, calling `awaitClose` ensures the round's clients have finished consuming and disconnected before the next `await()` runs, eliminating the cross-round race where a still-open previous client receives the next round's messages.
+- Internal: condition-variable wakeup from the accept-monitor on each new connection; `recv(MSG_PEEK)` fallback when the kernel reports peer-close via `POLLIN`+EOF rather than `POLLHUP`.

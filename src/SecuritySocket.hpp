@@ -29,7 +29,7 @@
 
 #define BN3MONKEY_SECURITYSOCKET_VERSION_MAJOR 2
 #define BN3MONKEY_SECURITYSOCKET_VERSION_MINOR 3
-#define BN3MONKEY_SECURITYSOCKET_VERSION_REVISION 0
+#define BN3MONKEY_SECURITYSOCKET_VERSION_REVISION 1
 
 #define STRINGIFY(x) #x
 #define TOSTRING(x) STRINGIFY(x)
@@ -453,6 +453,15 @@ namespace Bn3Monkey
         void close();
 
         SocketResult write(const void* buffer, size_t size);
+
+        // Block until at least one healthy client is connected, or until timeout_ms
+        // elapses. Stale clients (peer already closed) are detected and pruned as
+        // part of the wait, so each successful return reflects a live peer.
+        SocketResult await(uint64_t timeout_ms);
+        // Block until every currently-active client has closed (peer FIN received),
+        // or until timeout_ms elapses. Use as an explicit barrier between broadcast
+        // rounds so the next await() starts from a clean active list.
+        SocketResult awaitClose(uint64_t timeout_ms);
     private:
         char _container[IMPLEMENTATION_SIZE]{ 0 };
     };
