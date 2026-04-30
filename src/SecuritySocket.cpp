@@ -123,10 +123,10 @@ Bn3Monkey::SocketBroadcastServer::~SocketBroadcastServer()
 	impl->~SocketBroadcastServerImpl();
 }
 
-SocketResult Bn3Monkey::SocketBroadcastServer::open(size_t num_of_clients)
+SocketResult Bn3Monkey::SocketBroadcastServer::open(SocketBroadcastHandler* handler, size_t num_of_clients)
 {
 	SocketBroadcastServerImpl* impl = static_cast<SocketBroadcastServerImpl*>((void*)_container);
-	return impl->open(num_of_clients);
+	return impl->open(handler, num_of_clients);
 }
 void Bn3Monkey::SocketBroadcastServer::close()
 {

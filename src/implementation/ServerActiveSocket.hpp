@@ -27,7 +27,11 @@ namespace Bn3Monkey
         inline const char* ip() const { return _client_ip; }
         inline int port() const { return _client_port; }
 
-        void setSocketBufferSize(size_t size); 
+        void setSocketBufferSize(size_t size);
+        // Disable Nagle's algorithm on this connection. Call right after accept()
+        // for latency-sensitive servers (e.g. broadcast/event delivery) so each
+        // write() flushes immediately instead of being coalesced by the kernel.
+        void setNoDelay();
 
     protected:
         char _client_ip[22]{ 0 };

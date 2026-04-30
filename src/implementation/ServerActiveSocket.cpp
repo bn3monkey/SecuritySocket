@@ -80,6 +80,11 @@ void ServerActiveSocket::setSocketBufferSize(size_t size)
 	setsockopt(_socket, SOL_SOCKET, SO_SNDBUF, reinterpret_cast<const char*>(&size), sizeof(size));
 }
 
+void ServerActiveSocket::setNoDelay()
+{
+	::setNoDelay(_socket);
+}
+
 TLSServerActiveSocket::TLSServerActiveSocket(int32_t sock, void* addr, void* ssl_context)
 {
 	(void)sock;

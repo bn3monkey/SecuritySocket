@@ -9,6 +9,8 @@
 #include <fcntl.h>
 #include <sys/socket.h> // SOL_SOCKET
 #include <sys/time.h> // timeval
+#include <netinet/in.h>  // IPPROTO_TCP
+#include <netinet/tcp.h> // TCP_NODELAY
 #endif
 
 
@@ -21,6 +23,26 @@ inline void setNonBlockingMode(int32_t socket)
 #else
 	int _flags = fcntl(socket, F_GETFL, 0);
 	fcntl(socket, F_SETFL, _flags | O_NONBLOCK);
+#endif
+}
+
+// Disable Nagle's algorithm so each send() flushes immediately instead of
+// being held in the kernel waiting for additional data to coalesce. Critical
+// for event/broadcast servers where sub-millisecond delivery matters far
+// more than packet-coalescing throughput.
+//
+// Best-effort: setsockopt(IPPROTO_TCP, TCP_NODELAY) is a no-op (returns
+// ENOPROTOOPT) on AF_UNIX sockets, which have no Nagle-equivalent. Callers
+// don't need to special-case unix-domain — the failure is silently ignored.
+inline void setNoDelay(int32_t socket)
+{
+#ifdef _WIN32
+	BOOL flag = TRUE;
+	setsockopt(socket, IPPROTO_TCP, TCP_NODELAY,
+		reinterpret_cast<const char*>(&flag), sizeof(flag));
+#else
+	int flag = 1;
+	setsockopt(socket, IPPROTO_TCP, TCP_NODELAY, &flag, sizeof(flag));
 #endif
 }
 

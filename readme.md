@@ -433,11 +433,22 @@ int main()
         false
     };
 
+    // Optional: implement SocketBroadcastHandler to observe connect/disconnect
+    struct PrintingHandler : public SocketBroadcastHandler {
+        void onClientConnected(const char* ip, int port) override {
+            printf("client connected    %s:%d\n", ip, port);
+        }
+        void onClientDisconnected(const char* ip, int port) override {
+            printf("client disconnected %s:%d\n", ip, port);
+        }
+    };
+    PrintingHandler handler;
+
     SocketBroadcastServer server{ config };
 
     {
         {
-            auto result = server.open(1);
+            auto result = server.open(&handler, 1);  // pass nullptr if you don't need callbacks
             if(SocketCode::SUCCESS != result.code())
             {
                 printf("%s", result.message());
@@ -481,7 +492,7 @@ int main()
     SocketBroadcastServer server{ config, tls_config };
 
     {
-        auto result = server.open(4);
+        auto result = server.open(nullptr, 4);  // optional SocketBroadcastHandler*
         if (SocketCode::SUCCESS != result.code())
         {
             printf("%s", result.message());
@@ -703,6 +714,10 @@ C++ 14
 
 ### 2.3.1 / 2026.04.30
 
-- Add `SocketBroadcastServer::await(uint64_t timeout_ms)` — block until at least one healthy client is connected. Stale entries (peer already closed) are health-checked and pruned so each successful return reflects a live peer.
+- Add `SocketBroadcastServer::await(uint64_t timeout_ms)` — block until at least one client is connected.
 - Add `SocketBroadcastServer::awaitClose(uint64_t timeout_ms)` — block until every currently-active client has closed (peer FIN received). Use as an explicit barrier between broadcast rounds: after writing a batch, calling `awaitClose` ensures the round's clients have finished consuming and disconnected before the next `await()` runs, eliminating the cross-round race where a still-open previous client receives the next round's messages.
-- Internal: condition-variable wakeup from the accept-monitor on each new connection; `recv(MSG_PEEK)` fallback when the kernel reports peer-close via `POLLIN`+EOF rather than `POLLHUP`.
+- Add `SocketBroadcastHandler` interface with `onClientConnected(ip, port)` / `onClientDisconnected(ip, port)` callbacks for observing connection events on the broadcast server.
+- **Breaking**: `SocketBroadcastServer::open()` signature changed — it now takes a `SocketBroadcastHandler*` as its first argument: `open(SocketBroadcastHandler* handler, size_t num_of_clients)`. Pass `nullptr` if you don't need connection callbacks.
+- Rewrite `SocketBroadcastServer`'s accept-monitor on a single `SocketMultiEventListener` (mirrors the `SocketRequestServer` pattern) that owns both the accept fd and every accepted client fd. Peer-close is now detected by the kernel via `POLLHUP` / `POLLERR` and surfaced as a `DISCONNECTED` event — the previous pending-queue and `recv(MSG_PEEK)` health-check polling have been removed.
+- Auto-disable Nagle's algorithm (`TCP_NODELAY`) on accepted broadcast clients so each `write()` reaches the wire immediately. New `ServerActiveSocket::setNoDelay()` and free `setNoDelay()` helper in `SocketHelper.hpp` (Win32 + POSIX; silently no-op on AF_UNIX).
+- Internal: `await()` / `awaitClose()` are now simple `condition_variable::wait_for` predicates against the single active-client list. Broadcast `write()` snapshots that list under lock then streams bytes lock-free; `shared_ptr<BroadcastClient>` keeps each client alive across mid-broadcast `DISCONNECTED` removal.

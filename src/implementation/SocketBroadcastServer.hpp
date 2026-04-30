@@ -14,10 +14,19 @@
 #include <mutex>
 #include <atomic>
 #include <vector>
+#include <memory>
 #include <condition_variable>
 
 namespace Bn3Monkey
 {
+    // Per-client state used by the accept-monitor's SocketMultiEventListener.
+    // Inheriting SocketEventContext lets us downcast back to BroadcastClient
+    // when the listener fires DISCONNECTED for one of the registered fds.
+    struct BroadcastClient : public SocketEventContext
+    {
+        ServerActiveSocketContainer container;
+    };
+
     class SocketBroadcastServerImpl
     {
     public:
@@ -27,7 +36,7 @@ namespace Bn3Monkey
 
 		virtual ~SocketBroadcastServerImpl();
 
-		SocketResult open(size_t num_of_clients);
+		SocketResult open(SocketBroadcastHandler* handler, size_t num_of_clients);
         SocketResult write(const void* buffer, size_t size);
 
         SocketResult await(uint64_t timeout_ms);
@@ -42,23 +51,26 @@ namespace Bn3Monkey
         PassiveSocketContainer _container;
         PassiveSocket* _socket{ nullptr };
 
+        SocketBroadcastHandler* _handler{ nullptr };
+
         std::thread _monitor_client;
-        std::atomic_bool _is_monitoring {false};
+        std::atomic_bool _is_monitoring{ false };
         void monitorClient();
 
-        // Single-producer (monitor thread) / single-consumer (broadcast caller).
-        // Monitor pushes accepted clients into _pending_clients under _pending_mtx.
-        // Broadcast caller drains _pending_clients into _active_clients at the start
-        // of each write, then operates on _active_clients without any lock.
-        // The lock is held only for the brief drain, never during network I/O.
-        std::mutex _pending_mtx;
-        // Notified by monitor (after push) and close() (with _is_monitoring=false).
-        // await() waits on this so it doesn't have to poll.
-        std::condition_variable _pending_cv;
-        std::vector<ServerActiveSocketContainer> _pending_clients;
-        std::vector<ServerActiveSocketContainer> _active_clients;
-
-        void drainPending();
+        // Single mutex protecting _active_clients. The accept-monitor mutates
+        // it on ACCEPT/DISCONNECTED events; broadcast callers snapshot it on
+        // write() and observe its size on await/awaitClose.
+        //
+        // shared_ptr ownership lets write() snapshot the live set under lock,
+        // then drop the lock and stream bytes — even if the monitor erases an
+        // entry during the broadcast, the snapshot keeps the BroadcastClient
+        // alive for the duration of the network I/O.
+        //
+        // _clients_cv is notified by both the monitor (on every change) and
+        // close(); await() waits for non-empty, awaitClose() waits for empty.
+        std::mutex _clients_mtx;
+        std::condition_variable _clients_cv;
+        std::vector<std::shared_ptr<BroadcastClient>> _active_clients;
     };
 }
 

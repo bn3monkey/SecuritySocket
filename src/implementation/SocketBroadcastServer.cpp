@@ -2,53 +2,14 @@
 #include <stdexcept>
 #include <algorithm>
 
-#ifdef _WIN32
-#include <winsock2.h>
-#else
-#include <sys/socket.h>
-#endif
-
 using namespace Bn3Monkey;
-
-namespace
-{
-	// Health check probe used by SocketBroadcastServerImpl::await() to decide
-	// whether an entry in _active_clients still corresponds to a live peer.
-	//
-	// Detection covers both reliable signals of a graceful close:
-	//   1. POLLHUP — peer's FIN was received and surfaced by the kernel.
-	//      Reported by the project's SocketEventListener as SOCKET_CLOSED.
-	//   2. POLLIN + 0-byte peek — some kernels deliver EOF only via POLLIN
-	//      (without HUP). recv(MSG_PEEK) returning 0 means the peer closed
-	//      its write side without sending data.
-	//
-	// Anything else (timeout, peeked >0 bytes, EAGAIN) is treated as alive.
-	// Application-level pings are intentionally avoided so this stays
-	// transparent to broadcast-listener clients.
-	bool isPeerClosed(Bn3Monkey::ServerActiveSocket* sock, uint32_t timeout_ms)
-	{
-		Bn3Monkey::SocketEventListener listener;
-		listener.open(*sock, Bn3Monkey::SocketEventType::READ);
-		auto r = listener.wait(timeout_ms);
-		if (r.code() == Bn3Monkey::SocketCode::SOCKET_CLOSED)
-			return true;
-		if (r.code() == Bn3Monkey::SocketCode::SUCCESS)
-		{
-			char b;
-			int n = ::recv(sock->descriptor(), &b, 1, MSG_PEEK);
-			if (n == 0)
-				return true;
-		}
-		return false;
-	}
-}
 
 SocketBroadcastServerImpl::~SocketBroadcastServerImpl()
 {
     close();
 }
 
-SocketResult SocketBroadcastServerImpl::open(size_t num_of_clients)
+SocketResult SocketBroadcastServerImpl::open(SocketBroadcastHandler* handler, size_t num_of_clients)
 {
 	(void)num_of_clients;
 
@@ -79,9 +40,11 @@ SocketResult SocketBroadcastServerImpl::open(size_t num_of_clients)
 		return result;
 	}
 
+	_handler = handler;
+
 	if (!_is_monitoring) {
 		_is_monitoring = true;
-		_monitor_client = std::thread { &Bn3Monkey::SocketBroadcastServerImpl::monitorClient, this};
+		_monitor_client = std::thread{ &Bn3Monkey::SocketBroadcastServerImpl::monitorClient, this };
 	}
 
 	return result;
@@ -89,53 +52,129 @@ SocketResult SocketBroadcastServerImpl::open(size_t num_of_clients)
 
 void Bn3Monkey::SocketBroadcastServerImpl::monitorClient()
 {
-	SocketEventListener listener;
-	listener.open(*_socket, SocketEventType::ACCEPT);
+	// Mirror the SocketRequestServer pattern: a single multi-event listener
+	// owns both the accept fd and every accepted client fd. The kernel folds
+	// peer-close (POLLHUP / POLLERR) into a DISCONNECTED event for us, so we
+	// don't have to poll, peek, or run health checks elsewhere — connect and
+	// disconnect detection live entirely in this loop.
+	SocketMultiEventListener listener;
+	listener.open();
 
-	while (_is_monitoring) {
-		auto result = listener.wait(_configuration.read_timeout());
-		if (result.code() == SocketCode::SOCKET_TIMEOUT) {
+	SocketEventContext server_context;
+	server_context.fd = _socket->descriptor();
+	listener.addEvent(&server_context, SocketEventType::ACCEPT);
+
+	while (_is_monitoring)
+	{
+		auto eventlist = listener.wait(_configuration.read_timeout());
+		if (eventlist.result.code() == SocketCode::SOCKET_TIMEOUT)
 			continue;
-		}
-		else if (result.code() != SocketCode::SUCCESS)
+		if (eventlist.result.code() != SocketCode::SUCCESS)
 			break;
 
-		auto client_container = _socket->accept();
+		for (auto* context : eventlist.contexts)
 		{
-			std::lock_guard<std::mutex> lk(_pending_mtx);
-			_pending_clients.push_back(client_container);
+			switch (context->type)
+			{
+			case SocketEventType::ACCEPT:
+			{
+				auto socket_container = _socket->accept();
+				auto* client_socket = socket_container.get();
+				if (client_socket->result().code() != SocketCode::SUCCESS)
+					break;
+
+				// Broadcast latency > coalescing throughput: disable Nagle so
+				// each write() reaches the wire immediately.
+				client_socket->setNoDelay();
+
+				auto client = std::make_shared<BroadcastClient>();
+				client->container = socket_container;
+				client->fd = client_socket->descriptor();
+				listener.addEvent(client.get(), SocketEventType::READ);
+
+				char ip_buf[22];
+				int port = client_socket->port();
+				std::snprintf(ip_buf, sizeof(ip_buf), "%s", client_socket->ip());
+
+				{
+					std::lock_guard<std::mutex> lk(_clients_mtx);
+					_active_clients.push_back(std::move(client));
+				}
+				_clients_cv.notify_all();
+
+				if (_handler)
+					_handler->onClientConnected(ip_buf, port);
+			}
+			break;
+
+			case SocketEventType::DISCONNECTED:
+			{
+				auto* client = static_cast<BroadcastClient*>(context);
+				listener.removeEvent(client);
+
+				char ip_buf[22];
+				int port = 0;
+				if (auto* sock = client->container.get()) {
+					std::snprintf(ip_buf, sizeof(ip_buf), "%s", sock->ip());
+					port = sock->port();
+				}
+
+				std::shared_ptr<BroadcastClient> erased;
+				{
+					std::lock_guard<std::mutex> lk(_clients_mtx);
+					auto it = std::find_if(
+						_active_clients.begin(), _active_clients.end(),
+						[client](const std::shared_ptr<BroadcastClient>& sp) {
+							return sp.get() == client;
+						});
+					if (it != _active_clients.end())
+					{
+						erased = *it;
+						_active_clients.erase(it);
+					}
+				}
+				if (erased) {
+					if (auto* sock = erased->container.get()) sock->close();
+				}
+				_clients_cv.notify_all();
+
+				if (_handler)
+					_handler->onClientDisconnected(ip_buf, port);
+			}
+			break;
+
+			default:
+				break;
+			}
 		}
-		// Wake any await() blocked on _pending_cv.
-		_pending_cv.notify_all();
 	}
-}
 
-void SocketBroadcastServerImpl::drainPending()
-{
-	std::lock_guard<std::mutex> lk(_pending_mtx);
-	if (_pending_clients.empty())
-		return;
-	_active_clients.insert(_active_clients.end(),
-		_pending_clients.begin(), _pending_clients.end());
-	_pending_clients.clear();
+	listener.close();
 }
-
 
 SocketResult SocketBroadcastServerImpl::write(const void* buffer, size_t size)
 {
-	drainPending();
+	// Snapshot the active list under lock, then stream bytes lock-free.
+	// Using shared_ptr ensures that even if the monitor erases an entry
+	// mid-broadcast (DISCONNECTED), the BroadcastClient stays alive for
+	// the rest of this call.
+	std::vector<std::shared_ptr<BroadcastClient>> snapshot;
+	{
+		std::lock_guard<std::mutex> lk(_clients_mtx);
+		snapshot = _active_clients;
+	}
 
-	if (_active_clients.empty())
+	if (snapshot.empty())
 		return SocketResult(SocketCode::SUCCESS, 0);
 
 	SocketResult result{ SocketCode::SUCCESS };
 
-	for (auto it = _active_clients.begin(); it != _active_clients.end(); )
+	for (auto& client : snapshot)
 	{
-		auto* sock = it->get();
-		bool alive = true;
-		SocketResult per_client_result{ SocketCode::SUCCESS };
+		auto* sock = client->container.get();
+		if (!sock) continue;
 
+		SocketResult per_client_result{ SocketCode::SUCCESS };
 		SocketEventListener listener;
 		listener.open(*sock, SocketEventType::WRITE);
 		size_t written_size = 0;
@@ -148,52 +187,52 @@ SocketResult SocketBroadcastServerImpl::write(const void* buffer, size_t size)
 				i++;
 				continue;
 			}
-			else if (inner_result.code() == SocketCode::SOCKET_CLOSED)
+			if (inner_result.code() == SocketCode::SOCKET_CLOSED)
 			{
-				alive = false;
+				// Peer closed mid-broadcast. The monitor's listener will fire
+				// DISCONNECTED for the same fd, so we just stop targeting this
+				// client here — no list mutation from the broadcast caller.
+				per_client_result = SocketResult(SocketCode::SOCKET_CLOSED,
+					static_cast<int32_t>(written_size));
 				break;
 			}
-			else if (inner_result.code() != SocketCode::SUCCESS)
+			if (inner_result.code() != SocketCode::SUCCESS)
 			{
-				per_client_result = SocketResult(inner_result.code(), static_cast<int32_t>(written_size));
+				per_client_result = SocketResult(inner_result.code(),
+					static_cast<int32_t>(written_size));
 				break;
 			}
 
-			inner_result = sock->write((char*)buffer + written_size, size - written_size);
+			inner_result = sock->write(static_cast<const char*>(buffer) + written_size,
+				size - written_size);
 			if (inner_result.code() == SocketCode::SOCKET_TIMEOUT)
 			{
 				i++;
 				continue;
 			}
-			else if (inner_result.code() == SocketCode::SOCKET_CLOSED)
+			if (inner_result.code() == SocketCode::SOCKET_CLOSED)
 			{
-				alive = false;
+				per_client_result = SocketResult(SocketCode::SOCKET_CLOSED,
+					static_cast<int32_t>(written_size));
 				break;
 			}
-			else if (inner_result.code() != SocketCode::SUCCESS)
+			if (inner_result.code() != SocketCode::SUCCESS)
 			{
-				per_client_result = SocketResult(inner_result.code(), static_cast<int32_t>(written_size));
+				per_client_result = SocketResult(inner_result.code(),
+					static_cast<int32_t>(written_size));
 				break;
 			}
 
 			written_size += static_cast<size_t>(inner_result.bytes());
 			if (written_size >= size)
 			{
-				per_client_result = SocketResult(SocketCode::SUCCESS, static_cast<int32_t>(written_size));
+				per_client_result = SocketResult(SocketCode::SUCCESS,
+					static_cast<int32_t>(written_size));
 				break;
 			}
 		}
 
-		if (!alive)
-		{
-			sock->close();
-			it = _active_clients.erase(it);
-		}
-		else
-		{
-			result = per_client_result;
-			++it;
-		}
+		result = per_client_result;
 	}
 
 	return result;
@@ -201,59 +240,15 @@ SocketResult SocketBroadcastServerImpl::write(const void* buffer, size_t size)
 
 SocketResult SocketBroadcastServerImpl::await(uint64_t timeout_ms)
 {
-	// Two-phase wait:
-	//   Phase 1 — health-check existing _active_clients. Each one is given a
-	//             brief grace window to surface a peer-close (FIN). Without
-	//             this grace, a stale client from a previous round could be
-	//             classified as alive simply because its FIN hasn't been
-	//             observed yet by the kernel.
-	//   Phase 2 — if nothing in _active_clients survived (or it was empty to
-	//             begin with), block on _pending_cv until a new client
-	//             connects, close() is called, or the timeout elapses.
-	//
-	// The total wall-clock cost is bounded by `timeout_ms`: phase 1 burns at
-	// most `health_grace_ms` per active client, and phase 2 uses what's left.
-	auto deadline = std::chrono::steady_clock::now()
-		+ std::chrono::milliseconds(timeout_ms);
-
-	drainPending();
-
-	constexpr uint32_t health_grace_ms = 100;
-	for (auto it = _active_clients.begin(); it != _active_clients.end(); )
-	{
-		if (isPeerClosed(it->get(), health_grace_ms))
-		{
-			it->get()->close();
-			it = _active_clients.erase(it);
-		}
-		else
-		{
-			++it;
-		}
-	}
-
-	if (!_active_clients.empty())
-		return SocketResult(SocketCode::SUCCESS,
-			static_cast<int32_t>(_active_clients.size()));
-
-	auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
-		deadline - std::chrono::steady_clock::now());
-	if (remaining.count() <= 0)
-		return SocketResult(SocketCode::SOCKET_TIMEOUT);
-
-	std::unique_lock<std::mutex> lk(_pending_mtx);
-	_pending_cv.wait_for(lk, remaining,
-		[this] { return !_pending_clients.empty() || !_is_monitoring; });
+	std::unique_lock<std::mutex> lk(_clients_mtx);
+	_clients_cv.wait_for(lk,
+		std::chrono::milliseconds(timeout_ms),
+		[this] { return !_active_clients.empty() || !_is_monitoring; });
 
 	if (!_is_monitoring)
 		return SocketResult(SocketCode::SOCKET_CLOSED);
-	if (_pending_clients.empty())
+	if (_active_clients.empty())
 		return SocketResult(SocketCode::SOCKET_TIMEOUT);
-
-	// Drain inline — we already hold the lock.
-	_active_clients.insert(_active_clients.end(),
-		_pending_clients.begin(), _pending_clients.end());
-	_pending_clients.clear();
 
 	return SocketResult(SocketCode::SUCCESS,
 		static_cast<int32_t>(_active_clients.size()));
@@ -261,93 +256,45 @@ SocketResult SocketBroadcastServerImpl::await(uint64_t timeout_ms)
 
 SocketResult SocketBroadcastServerImpl::awaitClose(uint64_t timeout_ms)
 {
-	// Block until every currently-active client has closed (peer FIN received),
-	// or until the timeout elapses. Used by the caller as an explicit barrier
-	// between broadcast rounds: it ensures the previous round's clients have
-	// finished consuming and disconnected before the next await() starts.
-	//
-	// Strategy:
-	//   - drainPending(): treat just-accepted clients as "active to drain" too,
-	//     so they don't sneak through the barrier in pending state.
-	//   - First pass with grace=0: prune clients whose FIN already arrived. If
-	//     all of _active_clients are gone after this, return immediately —
-	//     that's user's "if all dead, exit without waiting".
-	//   - Otherwise, poll each remaining client in short steps (50 ms) until
-	//     either everyone leaves or the deadline is reached.
-	auto deadline = std::chrono::steady_clock::now()
-		+ std::chrono::milliseconds(timeout_ms);
+	std::unique_lock<std::mutex> lk(_clients_mtx);
+	_clients_cv.wait_for(lk,
+		std::chrono::milliseconds(timeout_ms),
+		[this] { return _active_clients.empty() || !_is_monitoring; });
 
-	auto remaining_ms = [&]() -> int64_t {
-		auto r = std::chrono::duration_cast<std::chrono::milliseconds>(
-			deadline - std::chrono::steady_clock::now()).count();
-		return r > 0 ? r : 0;
-	};
+	if (!_is_monitoring)
+		return SocketResult(SocketCode::SOCKET_CLOSED);
+	if (!_active_clients.empty())
+		return SocketResult(SocketCode::SOCKET_TIMEOUT,
+			static_cast<int32_t>(_active_clients.size()));
 
-	auto sweep_dead = [&](uint32_t per_check_ms) {
-		drainPending();
-		for (auto it = _active_clients.begin(); it != _active_clients.end(); )
-		{
-			if (isPeerClosed(it->get(), per_check_ms))
-			{
-				it->get()->close();
-				it = _active_clients.erase(it);
-			}
-			else
-			{
-				++it;
-			}
-		}
-	};
-
-	// First pass: zero-wait probe.
-	sweep_dead(0);
-	if (_active_clients.empty())
-		return SocketResult(SocketCode::SUCCESS, 0);
-
-	// Subsequent passes: short blocking probes until empty or deadline.
-	constexpr uint32_t step_ms = 50;
-	while (remaining_ms() > 0)
-	{
-		auto step = static_cast<uint32_t>(std::min<int64_t>(remaining_ms(), step_ms));
-		sweep_dead(step);
-		if (_active_clients.empty())
-			return SocketResult(SocketCode::SUCCESS, 0);
-		if (!_is_monitoring)
-			return SocketResult(SocketCode::SOCKET_CLOSED);
-	}
-
-	return SocketResult(SocketCode::SOCKET_TIMEOUT,
-		static_cast<int32_t>(_active_clients.size()));
+	return SocketResult(SocketCode::SUCCESS, 0);
 }
 
 void SocketBroadcastServerImpl::close()
 {
 	if (_is_monitoring) {
 		_is_monitoring = false;
-		// Wake any await() blocked on _pending_cv so it returns SOCKET_CLOSED
-		// instead of waiting out its timeout.
-		_pending_cv.notify_all();
+		// Wake any await/awaitClose waiters so they return SOCKET_CLOSED
+		// instead of waiting out their timeout.
+		_clients_cv.notify_all();
 		if (_monitor_client.joinable())
 			_monitor_client.join();
 	}
 
-	// Monitor thread is joined; no more producer. Lock kept for memory ordering
-	// and to keep the access pattern uniform.
+	// Monitor has joined — no more producers. Close any remaining client
+	// fds the test/caller didn't drain via awaitClose first.
 	{
-		std::lock_guard<std::mutex> lk(_pending_mtx);
-		for (auto& c : _pending_clients) {
-			if (auto* s = c.get()) s->close();
+		std::lock_guard<std::mutex> lk(_clients_mtx);
+		for (auto& client : _active_clients) {
+			if (auto* sock = client->container.get()) sock->close();
 		}
-		_pending_clients.clear();
+		_active_clients.clear();
 	}
-
-	for (auto& c : _active_clients) {
-		if (auto* s = c.get()) s->close();
-	}
-	_active_clients.clear();
 
 	if (_socket) {
 		_socket->close();
 		_socket = nullptr;
 	}
+
+	_handler = nullptr;
 }

@@ -422,7 +422,14 @@ namespace Bn3Monkey
             size_t input_size
         ) = 0;
     };
-    
+
+    struct SECURITYSOCKET_API SocketBroadcastHandler {
+        virtual ~SocketBroadcastHandler() = default;
+        virtual void onClientConnected(const char* ip, int port) = 0;
+        virtual void onClientDisconnected(const char* ip, int port) = 0;
+    };
+
+
 
     class SECURITYSOCKET_API SocketRequestServer
     {
@@ -449,7 +456,7 @@ namespace Bn3Monkey
         explicit SocketBroadcastServer(const SocketConfiguration& configuration, const SocketTLSServerConfiguration& tls_configuration);
         virtual ~SocketBroadcastServer();
 
-        SocketResult open(size_t num_of_clients);
+        SocketResult open(SocketBroadcastHandler* handler, size_t num_of_clients);
         void close();
 
         SocketResult write(const void* buffer, size_t size);

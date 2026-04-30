@@ -31,6 +31,19 @@ struct BroadcastEventPatterns
     }
 };
 
+// Minimal handler that prints connect/disconnect events as the broadcast
+// server's accept-monitor observes them — used to verify the new event
+// detection path end-to-end.
+struct PrintingBroadcastHandler : public Bn3Monkey::SocketBroadcastHandler
+{
+    void onClientConnected(const char* ip, int port) override {
+        printConcurrent("[Server] client connected    %s:%d\n", ip, port);
+    }
+    void onClientDisconnected(const char* ip, int port) override {
+        printConcurrent("[Server] client disconnected %s:%d\n", ip, port);
+    }
+};
+
 
 // Repeated connect / disconnect cycles. write() skips when no client is
 // connected, so the test uses SimpleEvent to make sure the client has finished
@@ -57,7 +70,8 @@ TEST(TCPBroadcast, shouldHandleRepeatedClientConnectionsAndDisconnections)
     SocketBroadcastServer server{ config };
 
     {
-        auto result = server.open(1);
+        PrintingBroadcastHandler handler;
+        auto result = server.open(&handler, 1);
         ASSERT_EQ(SocketCode::SUCCESS, result.code());
     }
 
@@ -153,9 +167,10 @@ TEST(TCPBroadcast, shouldSynchronizeViaAwaitAndAwaitClose)
     };
 
     SocketBroadcastServer server{ config };
+    PrintingBroadcastHandler handler;
 
     {
-        auto result = server.open(1);
+        auto result = server.open(&handler, 1);
         ASSERT_EQ(SocketCode::SUCCESS, result.code());
     }
 
