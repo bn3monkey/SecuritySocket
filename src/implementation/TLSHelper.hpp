@@ -39,6 +39,11 @@ inline int32_t SSL_connect(SSL* ssl)
     (void)ssl;
     return 0;
 }
+inline int32_t SSL_accept(SSL* ssl)
+{
+    (void)ssl;
+    return 0;
+}
 inline void SSL_shutdown(SSL* ssl)
 {
     (void)ssl;
@@ -130,11 +135,12 @@ inline int SSL_set1_host(SSL*, const char*) { return 1; }
 using X509 = void;
 
 // X.509 verify result codes
-static constexpr long X509_V_OK                      = 0;
-static constexpr long X509_V_ERR_HOSTNAME_MISMATCH   = 62;
+static constexpr long X509_V_OK                                 = 0;
+static constexpr long X509_V_ERR_DEPTH_ZERO_SELF_SIGNED_CERT    = 18;
+static constexpr long X509_V_ERR_HOSTNAME_MISMATCH              = 62;
 // Returned when the peer's IP address does not match the certificate's IP SAN.
 // (Distinct from X509_V_ERR_HOSTNAME_MISMATCH which covers DNS names.)
-static constexpr long X509_V_ERR_IP_ADDRESS_MISMATCH = 64;
+static constexpr long X509_V_ERR_IP_ADDRESS_MISMATCH            = 64;
 
 // SSL reason codes (used with ERR_GET_REASON)
 static constexpr int SSL_R_UNSUPPORTED_PROTOCOL                 = 258;
@@ -163,6 +169,42 @@ inline void*        SSL_get_current_cipher(const SSL*) { return nullptr; }
 
 // Returns the certificate configured for this SSL session, or nullptr if none.
 inline X509*        SSL_get_certificate(const SSL*)  { return nullptr; }
+
+// ---- Handshake info-callback support -------------------------------------
+// These constants/functions back the OpenSSL handshake-progress callback that
+// the project registers via SSL_CTX_set_info_callback. With TLS disabled the
+// callback never fires, but the symbols must still resolve so the code that
+// references them compiles.
+
+// State machine flags (the high bits of `where` passed to the info callback).
+static constexpr int SSL_ST_CONNECT          = 0x1000;
+static constexpr int SSL_ST_ACCEPT           = 0x2000;
+// Mask used to strip the callback-event bits from `where` and recover the
+// pure state-machine bits (e.g., `where & ~SSL_ST_MASK`).
+static constexpr int SSL_ST_MASK             = 0x0FFF;
+
+// Callback-event flags (the low bits of `where`).
+static constexpr int SSL_CB_LOOP             = 0x01;
+static constexpr int SSL_CB_EXIT             = 0x02;
+static constexpr int SSL_CB_READ             = 0x04;
+static constexpr int SSL_CB_WRITE            = 0x08;
+static constexpr int SSL_CB_ALERT            = 0x4000;
+static constexpr int SSL_CB_HANDSHAKE_START  = 0x10;
+static constexpr int SSL_CB_HANDSHAKE_DONE   = 0x20;
+
+// SSL_CTX info callback signature (matches OpenSSL).
+using SSL_info_callback_fn = void (*)(const SSL*, int, int);
+inline void SSL_CTX_set_info_callback(SSL_CTX*, SSL_info_callback_fn) {}
+
+// Per-session diagnostic strings.
+inline const char* SSL_state_string_long(const SSL*)       { return ""; }
+inline const char* SSL_alert_type_string_long(int)         { return ""; }
+inline const char* SSL_alert_desc_string_long(int)         { return ""; }
+
+// Per-session user data slots used by the info callback to recover the
+// project's TlsEventCallback pointer at runtime.
+inline int   SSL_set_ex_data(SSL*, int, void*)             { return 1; }
+inline void* SSL_get_ex_data(const SSL*, int)              { return nullptr; }
 
 #endif // USING_TLS
 
