@@ -148,6 +148,11 @@ SocketResult Bn3Monkey::SocketBroadcastServer::awaitClose(uint64_t timeout_ms)
 	SocketBroadcastServerImpl* impl = static_cast<SocketBroadcastServerImpl*>((void*)_container);
 	return impl->awaitClose(timeout_ms);
 }
+void Bn3Monkey::SocketBroadcastServer::dropAll()
+{
+	SocketBroadcastServerImpl* impl = static_cast<SocketBroadcastServerImpl*>((void*)_container);
+	impl->dropAll();
+}
 
 static size_t appendCipherString(const char* cipher_str, size_t offset, char* dest)
 {

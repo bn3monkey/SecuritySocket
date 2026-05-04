@@ -42,6 +42,14 @@ SocketResult SocketBroadcastServerImpl::open(SocketBroadcastHandler* handler, si
 
 	_handler = handler;
 
+	// Listener is now a member so dropAll() can call removeEvent on it from
+	// the broadcast caller's thread. Register the accept fd here, before the
+	// monitor thread starts polling.
+	_listener.open();
+	_server_context = SocketEventContext{};
+	_server_context.fd = _socket->descriptor();
+	_listener.addEvent(&_server_context, SocketEventType::ACCEPT);
+
 	if (!_is_monitoring) {
 		_is_monitoring = true;
 		_monitor_client = std::thread{ &Bn3Monkey::SocketBroadcastServerImpl::monitorClient, this };
@@ -52,21 +60,27 @@ SocketResult SocketBroadcastServerImpl::open(SocketBroadcastHandler* handler, si
 
 void Bn3Monkey::SocketBroadcastServerImpl::monitorClient()
 {
-	// Mirror the SocketRequestServer pattern: a single multi-event listener
-	// owns both the accept fd and every accepted client fd. The kernel folds
-	// peer-close (POLLHUP / POLLERR) into a DISCONNECTED event for us, so we
-	// don't have to poll, peek, or run health checks elsewhere — connect and
-	// disconnect detection live entirely in this loop.
-	SocketMultiEventListener listener;
-	listener.open();
-
-	SocketEventContext server_context;
-	server_context.fd = _socket->descriptor();
-	listener.addEvent(&server_context, SocketEventType::ACCEPT);
+	// A single multi-event listener owns both the accept fd and every accepted
+	// client fd. The kernel folds peer-close (POLLHUP / POLLERR) into a
+	// DISCONNECTED event for us, so connect and disconnect detection live
+	// entirely in this loop.
+	//
+	// The listener and the accept-context are members (initialized in open())
+	// rather than locals, so dropAll() can call _listener.removeEvent() from
+	// the broadcast caller's thread.
 
 	while (_is_monitoring)
 	{
-		auto eventlist = listener.wait(_configuration.read_timeout());
+		// Release the strong refs held by dropAll() from the previous round.
+		// Safe here: the previous wait+dispatch cycle (which may have held
+		// stale context pointers in its local snapshot) is fully done by the
+		// time control reaches the top of the loop.
+		{
+			std::lock_guard<std::mutex> lk(_clients_mtx);
+			_pending_destruction.clear();
+		}
+
+		auto eventlist = _listener.wait(_configuration.read_timeout());
 		if (eventlist.result.code() == SocketCode::SOCKET_TIMEOUT)
 			continue;
 		if (eventlist.result.code() != SocketCode::SUCCESS)
@@ -90,7 +104,7 @@ void Bn3Monkey::SocketBroadcastServerImpl::monitorClient()
 				auto client = std::make_shared<BroadcastClient>();
 				client->container = socket_container;
 				client->fd = client_socket->descriptor();
-				listener.addEvent(client.get(), SocketEventType::READ);
+				_listener.addEvent(client.get(), SocketEventType::READ);
 
 				char ip_buf[22];
 				int port = client_socket->port();
@@ -110,7 +124,7 @@ void Bn3Monkey::SocketBroadcastServerImpl::monitorClient()
 			case SocketEventType::DISCONNECTED:
 			{
 				auto* client = static_cast<BroadcastClient*>(context);
-				listener.removeEvent(client);
+				_listener.removeEvent(client);
 
 				char ip_buf[22];
 				int port = 0;
@@ -133,13 +147,16 @@ void Bn3Monkey::SocketBroadcastServerImpl::monitorClient()
 						_active_clients.erase(it);
 					}
 				}
+				// Only fire close + handler if we actually owned this client.
+				// If dropAll() already drained it, we get a stale DISCONNECTED
+				// for a context now sitting in _pending_destruction — handler
+				// already ran inside dropAll, so skip here to avoid double-fire.
 				if (erased) {
 					if (auto* sock = erased->container.get()) sock->close();
+					if (_handler)
+						_handler->onClientDisconnected(ip_buf, port);
 				}
 				_clients_cv.notify_all();
-
-				if (_handler)
-					_handler->onClientDisconnected(ip_buf, port);
 			}
 			break;
 
@@ -148,8 +165,46 @@ void Bn3Monkey::SocketBroadcastServerImpl::monitorClient()
 			}
 		}
 	}
+}
 
-	listener.close();
+void SocketBroadcastServerImpl::dropAll()
+{
+	// Atomically detach every active client from both the listener and the
+	// active list. The listener.removeEvent calls happen under _clients_mtx
+	// so no concurrent monitor dispatch can re-find these contexts in the
+	// active list mid-mutation.
+	std::vector<std::shared_ptr<BroadcastClient>> dropped;
+	{
+		std::lock_guard<std::mutex> lk(_clients_mtx);
+		dropped.swap(_active_clients);
+		for (auto& client : dropped) {
+			_listener.removeEvent(client.get());
+		}
+		// Hand off the strong refs to _pending_destruction. The monitor
+		// clears that list at the top of its next iteration — by which time
+		// any in-flight wait+dispatch cycle holding stale snapshot pointers
+		// is finished. Releasing the refs synchronously here would race that
+		// dispatch and risk dereferencing freed BroadcastClients.
+		_pending_destruction.insert(_pending_destruction.end(),
+			dropped.begin(), dropped.end());
+	}
+
+	// Wake any await/awaitClose waiter — active list is now empty.
+	_clients_cv.notify_all();
+
+	// Close fds and fire handler outside the lock to avoid re-entrancy
+	// surprises (handler is user code; might call back into the server).
+	for (auto& client : dropped) {
+		char ip_buf[22]{ 0 };
+		int port = 0;
+		if (auto* sock = client->container.get()) {
+			std::snprintf(ip_buf, sizeof(ip_buf), "%s", sock->ip());
+			port = sock->port();
+			sock->close();
+		}
+		if (_handler)
+			_handler->onClientDisconnected(ip_buf, port);
+	}
 }
 
 SocketResult SocketBroadcastServerImpl::write(const void* buffer, size_t size)
@@ -240,16 +295,21 @@ SocketResult SocketBroadcastServerImpl::write(const void* buffer, size_t size)
 
 SocketResult SocketBroadcastServerImpl::await(uint64_t timeout_ms)
 {
-	std::unique_lock<std::mutex> lk(_clients_mtx);
-	_clients_cv.wait_for(lk,
-		std::chrono::milliseconds(timeout_ms),
-		[this] { return !_active_clients.empty() || !_is_monitoring; });
+	{
+		std::unique_lock<std::mutex> lk(_clients_mtx);
+		_clients_cv.wait_for(lk,
+			std::chrono::milliseconds(timeout_ms),
+			[this] { return !_active_clients.empty() || !_is_monitoring; });
 
+		if (!_is_monitoring)
+			return SocketResult(SocketCode::SOCKET_CLOSED);
+		if (_active_clients.empty())
+			return SocketResult(SocketCode::SOCKET_TIMEOUT);
+	}
+
+	std::lock_guard<std::mutex> lk(_clients_mtx);
 	if (!_is_monitoring)
 		return SocketResult(SocketCode::SOCKET_CLOSED);
-	if (_active_clients.empty())
-		return SocketResult(SocketCode::SOCKET_TIMEOUT);
-
 	return SocketResult(SocketCode::SUCCESS,
 		static_cast<int32_t>(_active_clients.size()));
 }
@@ -282,14 +342,19 @@ void SocketBroadcastServerImpl::close()
 	}
 
 	// Monitor has joined — no more producers. Close any remaining client
-	// fds the test/caller didn't drain via awaitClose first.
+	// fds the test/caller didn't drain via awaitClose / dropAll first, and
+	// release the deferred-destruction list now that the monitor can no
+	// longer reach those context pointers.
 	{
 		std::lock_guard<std::mutex> lk(_clients_mtx);
 		for (auto& client : _active_clients) {
 			if (auto* sock = client->container.get()) sock->close();
 		}
 		_active_clients.clear();
+		_pending_destruction.clear();
 	}
+
+	_listener.close();
 
 	if (_socket) {
 		_socket->close();

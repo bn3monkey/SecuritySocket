@@ -40,6 +40,7 @@ It is compatible for Windows(MSVC, MinGW Compiler), Android (Clang), Linux (gcc)
     - [2.2.1 / 2026.04.01](#221--20260401)
     - [2.3.0 / 2026.04.29](#230--20260429)
     - [2.3.1 / 2026.04.30](#231--20260430)
+    - [2.3.2 / 2026.05.04](#232--20260504)
 
 ## Build
 
@@ -54,7 +55,7 @@ cmake_minimum_required (VERSION 3.16)
 include(FetchContent)
 FetchContent_Declear(SecuritySocket
     GIT_REPOSITORY https://github.com/bn3monkey/securitysocket
-    GIT_TAG v2.3.1)
+    GIT_TAG v2.3.2)
 FetchContent_MakeAvailable(SecuritySocket)
 
 ...
@@ -97,7 +98,7 @@ option(BUILD_SECURITYSOCKET_TEST OFF CACHE BOOL "Build Security socket test" FOR
 
 FetchContent_Declear(SecuritySocket
     GIT_REPOSITORY https://github.com/bn3monkey/securitysocket
-    GIT_TAG v2.3.1)
+    GIT_TAG v2.3.2)
 
 FetchContent_MakeAvailable(SecuritySocket)
 
@@ -721,3 +722,10 @@ C++ 14
 - Rewrite `SocketBroadcastServer`'s accept-monitor on a single `SocketMultiEventListener` (mirrors the `SocketRequestServer` pattern) that owns both the accept fd and every accepted client fd. Peer-close is now detected by the kernel via `POLLHUP` / `POLLERR` and surfaced as a `DISCONNECTED` event — the previous pending-queue and `recv(MSG_PEEK)` health-check polling have been removed.
 - Auto-disable Nagle's algorithm (`TCP_NODELAY`) on accepted broadcast clients so each `write()` reaches the wire immediately. New `ServerActiveSocket::setNoDelay()` and free `setNoDelay()` helper in `SocketHelper.hpp` (Win32 + POSIX; silently no-op on AF_UNIX).
 - Internal: `await()` / `awaitClose()` are now simple `condition_variable::wait_for` predicates against the single active-client list. Broadcast `write()` snapshots that list under lock then streams bytes lock-free; `shared_ptr<BroadcastClient>` keeps each client alive across mid-broadcast `DISCONNECTED` removal.
+
+### 2.3.2 / 2026.05.04
+
+- Add `SocketBroadcastServer::dropAll()` — forcibly disconnect every currently-active client. Closes each client socket, fires `onClientDisconnected` for each, and clears the active list. Use when a peer abandons its socket without sending FIN (e.g., reconnecting via a fresh socket without closing the old one); the kernel never reports `POLLHUP` for those, so the accept-monitor has no signal to clean them up on its own.
+- Treat `POLLNVAL` as `DISCONNECTED` in `SocketMultiEventListener::wait()` on both Linux and Windows. Without this, an fd closed under the listener kept firing the same `revents` on every subsequent `poll()` / `WSAPoll()` and the cleanup path never ran.
+- Internal: promote the broadcast server's `SocketMultiEventListener` and accept `SocketEventContext` from monitor-thread locals to members so `dropAll()` can call `removeEvent()` from the broadcast caller's thread. Add a `_pending_destruction` list that holds dropped clients until the monitor's next loop iteration — releasing the strong refs synchronously would race the in-flight wait+dispatch step that still dereferences context pointers.
+- Internal: tighten `SocketBroadcastServer::await()` to re-check `_is_monitoring` and `_active_clients.empty()` under the lock after `wait_for`, so a `close()` or `dropAll()` racing the wake returns the correct result code instead of a stale success.

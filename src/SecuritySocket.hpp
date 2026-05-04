@@ -469,6 +469,14 @@ namespace Bn3Monkey
         // or until timeout_ms elapses. Use as an explicit barrier between broadcast
         // rounds so the next await() starts from a clean active list.
         SocketResult awaitClose(uint64_t timeout_ms);
+
+        // Forcibly disconnect every currently-active client. Closes each socket,
+        // fires onClientDisconnected for each, and clears the active list. Use
+        // when a peer is known to have abandoned its socket without sending FIN
+        // (e.g., reconnecting via a fresh socket without closing the old one) —
+        // the kernel reports no POLLHUP for those, so the accept-monitor has no
+        // signal to clean them up on its own.
+        void dropAll();
     private:
         char _container[IMPLEMENTATION_SIZE]{ 0 };
     };

@@ -197,8 +197,11 @@ SocketEventResult SocketMultiEventListener::wait(uint32_t timeout_ms)
             }
 
 
-            if (event_type & POLLERR || event_type & POLLHUP)
+            if (event_type & POLLERR || event_type & POLLHUP || event_type & POLLNVAL)
             {
+                // POLLNVAL: fd no longer valid (closed under us). Treat as
+                // disconnect so the cleanup path runs and the fd doesn't keep
+                // firing the same revents on every subsequent WSAPoll().
                 context->type = SocketEventType::DISCONNECTED;
             }
             else if (_server_socket == event_fd && event_type & POLLIN)
