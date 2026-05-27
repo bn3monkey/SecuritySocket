@@ -9,6 +9,7 @@
 #include <ws2tcpip.h>
 #elif __linux__
 #include <poll.h>
+#include <sys/epoll.h>
 #endif
 
 #include <vector>
@@ -60,24 +61,36 @@ namespace Bn3Monkey
     {
     public:
         SocketResult open();
-        void close();        
+        void close();
         SocketResult addEvent(SocketEventContext* context, SocketEventType eventType);
         SocketResult modifyEvent(SocketEventContext* context, SocketEventType eventType);
         SocketResult removeEvent(SocketEventContext* context);
+        // Unblock any thread currently in wait(). Safe to call from any thread.
+        // Use for shutdown or to force a re-evaluation of registered fds.
+        // add/modify/removeEvent also call this internally so a concurrent
+        // wait()er observes the change on its next entry rather than after the
+        // current timeout.
+        void wake();
         SocketEventResult wait(uint32_t timeout_ms);
 
     private:
         int32_t _server_socket {0};
         std::mutex _mtx;
-        std::vector<SocketEventContext*> _contexts;
-    
+
 #if defined(_WIN32)
+        // poll-based snapshot model. _handle and _contexts are index-parallel:
+        // _handle[i] corresponds to _contexts[i]. Slot 0 is always the wakeup
+        // read end with a nullptr context sentinel.
         std::vector<pollfd> _handle;
-        // void *_handle;
-    #elif defined __linux__
-        std::vector<pollfd> _handle;
-        // int32_t _handle;
-    #endif
+        std::vector<SocketEventContext*> _contexts;
+        SOCKET _wakeup_read  { INVALID_SOCKET };
+        SOCKET _wakeup_write { INVALID_SOCKET };
+#elif defined(__linux__)
+        // epoll keeps the watch list in the kernel. ev.data.ptr stores the
+        // SocketEventContext* directly (nullptr for the wakeup eventfd).
+        int _epfd      { -1 };
+        int _wakeup_fd { -1 };
+#endif
     };
 
 }

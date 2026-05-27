@@ -6,9 +6,16 @@
 #
 # 자동 탐색 항목:
 #   1) 프로젝트 루트          : 스크립트 상위에서 CMakeLists.txt 가 있는 디렉토리
-#   2) Launch-VsDevShell.ps1  : "Program Files\Microsoft Visual Studio" 하위 검색
-#   3) CMake 빌드 디렉토리    : <project_root>/out/build/*/CMakeCache.txt 검색
-#   4) 아키텍처               : 기본값 amd64 (인자로 override 가능)
+#   2) VsDevCmd.bat           : "Program Files\Microsoft Visual Studio" 하위 검색
+#                                (Launch-VsDevShell.ps1 은 일부 VS 18 Insiders
+#                                빌드에서 깨져있음 — vswhere PowerShell 호출 실패.
+#                                underlying batch 인 VsDevCmd.bat 는 안정적이라
+#                                cmd /c 로 직접 호출한다.)
+#   3) cmake.exe              : VS 번들 cmake (Common7\IDE\CommonExtensions\
+#                                Microsoft\CMake\CMake\bin) 우선, 없으면 PATH
+#                                fallback. 절대 경로로 build.sh 에 박는다.
+#   4) CMake 빌드 디렉토리    : <project_root>/out/build/*/CMakeCache.txt 검색
+#   5) 아키텍처               : 기본값 amd64 (인자로 override 가능)
 #
 # 출력:
 #   - 기본 출력 경로 : <project_root>/script/build.sh
@@ -31,7 +38,8 @@ Usage: generate-build-script.sh [options]
 
   --output <path>      생성될 build.sh 경로 (기본: <project_root>/script/build.sh)
   --arch <arch>        대상 아키텍처 (기본: amd64; 예: amd64, x86, arm64)
-  --vs-path <path>     Launch-VsDevShell.ps1 경로 직접 지정 (자동검색 건너뜀)
+  --vs-path <path>     VsDevCmd.bat 경로 직접 지정 (자동검색 건너뜀)
+  --cmake-path <path>  cmake.exe 경로 직접 지정 (자동검색 건너뜀)
   --build-dir <path>   CMake 빌드 디렉토리 직접 지정 (자동검색 건너뜀)
   --project-root <p>   프로젝트 루트 직접 지정 (자동검색 건너뜀)
   -h, --help           이 도움말 표시
@@ -39,6 +47,7 @@ Usage: generate-build-script.sh [options]
 예시:
   ./script/generate-build-script.sh
   ./script/generate-build-script.sh --output ./script/build.sh
+  ./script/generate-build-script.sh --cmake-path '/c/Program Files/CMake/bin/cmake.exe'
   ./script/generate-build-script.sh --build-dir /c/repo/out/build/x64-Release
 USAGE
 }
@@ -48,7 +57,8 @@ USAGE
 # (기본 경로 = <project_root>/script/build.sh — .gitignore 에 의해 추적되지 않음)
 OUTPUT=""
 ARCH="amd64"
-VS_PATH=""        # 비어있으면 자동검색
+VS_PATH=""        # VsDevCmd.bat 경로 — 비어있으면 자동검색
+CMAKE_PATH=""     # cmake.exe 경로 — 비어있으면 자동검색
 BUILD_DIR=""      # 비어있으면 자동검색
 PROJECT_ROOT=""   # 비어있으면 자동검색
 
@@ -58,6 +68,7 @@ while [[ $# -gt 0 ]]; do
         --output)        OUTPUT="$2";       shift 2 ;;
         --arch)          ARCH="$2";         shift 2 ;;
         --vs-path)       VS_PATH="$2";      shift 2 ;;
+        --cmake-path)    CMAKE_PATH="$2";   shift 2 ;;
         --build-dir)     BUILD_DIR="$2";    shift 2 ;;
         --project-root)  PROJECT_ROOT="$2"; shift 2 ;;
         -h|--help)       usage; exit 0 ;;
@@ -68,7 +79,7 @@ done
 # ----- 경로 변환 헬퍼 --------------------------------------------------------
 # msys / git-bash 의 /c/foo/bar 같은 경로를 Windows 형식으로 변환한다.
 # - to_win_fwd : 슬래시 형식 (예: c:/foo/bar) — CMake 인자에 적합.
-# - to_win_bs  : 백슬래시 형식 (예: C:\foo\bar) — PowerShell 호출에 친숙.
+# - to_win_bs  : 백슬래시 형식 (예: C:\foo\bar) — cmd.exe 호출에 친숙.
 to_win_fwd() {
     if command -v cygpath >/dev/null 2>&1; then
         # cygpath -w 는 백슬래시를 주므로 슬래시로 다시 치환한다.
@@ -112,18 +123,20 @@ if [[ -z "$OUTPUT" ]]; then
     OUTPUT="$PROJECT_ROOT/script/build.sh"
 fi
 
-# ----- 2. Launch-VsDevShell.ps1 검색 -----------------------------------------
+# ----- 2. VsDevCmd.bat 검색 --------------------------------------------------
+# Launch-VsDevShell.ps1 은 일부 VS 빌드 (특히 18 Insiders) 에서 vswhere 호출이
+# 깨져있어 `\Common was unexpected at this time.` 류 에러로 실패한다. underlying
+# batch 인 VsDevCmd.bat 는 안정적이므로 직접 cmd /c 로 호출한다.
 if [[ -z "$VS_PATH" ]]; then
-    # 후보 루트 — 일반적으로 64bit 머신에 설치되는 두 위치를 모두 확인한다.
     SEARCH_ROOTS=(
         "/c/Program Files/Microsoft Visual Studio"
         "/c/Program Files (x86)/Microsoft Visual Studio"
     )
     for root in "${SEARCH_ROOTS[@]}"; do
         [[ -d "$root" ]] || continue
-        # maxdepth 5: <root>/<버전>/<에디션>/Common7/Tools/Launch-VsDevShell.ps1
+        # maxdepth 5: <root>/<버전>/<에디션>/Common7/Tools/VsDevCmd.bat
         # sort -V 로 버전 자연 정렬 후 가장 최신 것을 채택한다.
-        found="$(find "$root" -maxdepth 5 -name 'Launch-VsDevShell.ps1' 2>/dev/null | sort -V | tail -n 1)"
+        found="$(find "$root" -maxdepth 5 -name 'VsDevCmd.bat' 2>/dev/null | sort -V | tail -n 1)"
         if [[ -n "$found" ]]; then
             VS_PATH="$found"
             break
@@ -131,41 +144,75 @@ if [[ -z "$VS_PATH" ]]; then
     done
 fi
 if [[ -z "$VS_PATH" || ! -f "$VS_PATH" ]]; then
-    echo "[ERROR] Launch-VsDevShell.ps1 를 찾지 못했습니다." >&2
+    echo "[ERROR] VsDevCmd.bat 를 찾지 못했습니다." >&2
     echo "        Visual Studio 가 설치되어 있는지 확인하거나 --vs-path 로 지정하세요." >&2
     exit 1
 fi
-echo "[INFO] VsDevShell    : $VS_PATH"
+echo "[INFO] VsDevCmd      : $VS_PATH"
+
+# ----- 2-1. cmake.exe 검색 ---------------------------------------------------
+# VS 번들 cmake 가 일반적으로 동작 검증된 버전이라 우선 채택한다. VS 번들이
+# 없으면 system PATH 에서 찾고, 그것도 없으면 사용자 지정을 요구한다.
+if [[ -z "$CMAKE_PATH" ]]; then
+    # 후보 1: VS install 의 번들 cmake.
+    #   Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe
+    #   VsDevCmd.bat 의 grandparent 인 VS install root 에서 위 경로를 합친다.
+    if [[ -n "$VS_PATH" ]]; then
+        # VsDevCmd.bat 의 위치는 <VS_root>/Common7/Tools/VsDevCmd.bat
+        # → <VS_root> 는 두 단계 위.
+        VS_ROOT="$(dirname "$(dirname "$(dirname "$VS_PATH")")")"
+        cand="$VS_ROOT/Common7/IDE/CommonExtensions/Microsoft/CMake/CMake/bin/cmake.exe"
+        if [[ -f "$cand" ]]; then
+            CMAKE_PATH="$cand"
+        fi
+    fi
+fi
+if [[ -z "$CMAKE_PATH" ]]; then
+    # 후보 2: PATH 에서 찾기.
+    if command -v cmake >/dev/null 2>&1; then
+        CMAKE_PATH="$(command -v cmake)"
+    fi
+fi
+if [[ -z "$CMAKE_PATH" || ! -f "$CMAKE_PATH" ]]; then
+    echo "[ERROR] cmake.exe 를 찾지 못했습니다." >&2
+    echo "        VS 번들 cmake (Common7\\IDE\\CommonExtensions\\Microsoft\\CMake\\CMake\\bin)" >&2
+    echo "        도 PATH 에도 없습니다. --cmake-path 로 절대 경로를 지정하세요." >&2
+    exit 1
+fi
+echo "[INFO] cmake         : $CMAKE_PATH"
 
 # ----- 3. 빌드 디렉토리 검색 -------------------------------------------------
+# 1) --build-dir 로 명시 받았으면 그 값을 그대로 채택. 디렉토리가 없으면 생성.
+#    CMakeCache.txt 부재는 OK — build.sh 의 do_configure 가 fresh 구성한다.
+# 2) 자동탐색 모드: out/build/<config>/CMakeCache.txt 중 가장 최근 mtime 채택.
+#    cache 가 하나도 없으면 표준 기본값 (out/build/x64-Debug) 으로 fallback.
 if [[ -z "$BUILD_DIR" ]]; then
-    # out/build/<config>/ 중 CMakeCache.txt 가 있는 디렉토리를 모두 모은 뒤
-    # 가장 최근에 수정된 것을 우선 채택한다(가장 최근에 구성된 빌드).
     candidates=()
     for d in "$PROJECT_ROOT"/out/build/*/; do
         [[ -f "${d}CMakeCache.txt" ]] && candidates+=("${d%/}")
     done
     if [[ ${#candidates[@]} -gt 0 ]]; then
-        # mtime 내림차순으로 정렬하여 가장 최근 빌드 디렉토리를 선택.
-        # ls -1dt 는 디렉토리 자체의 mtime 기준으로 정렬한다.
         BUILD_DIR="$(ls -1dt "${candidates[@]}" | head -n 1)"
+    else
+        # cache 가 모두 비어있을 때 — --rebuild 직후 등 — 표준 경로로 fallback.
+        BUILD_DIR="$PROJECT_ROOT/out/build/x64-Debug"
+        echo "[WARN] 활성 cache 없음 — 표준 경로로 fallback: $BUILD_DIR"
     fi
 fi
-if [[ -z "$BUILD_DIR" || ! -f "$BUILD_DIR/CMakeCache.txt" ]]; then
-    echo "[ERROR] CMake 빌드 디렉토리를 찾지 못했습니다." >&2
-    echo "        먼저 CMake configure 를 실행하거나 --build-dir 로 지정하세요." >&2
-    exit 1
+if [[ ! -d "$BUILD_DIR" ]]; then
+    mkdir -p "$BUILD_DIR"
+    echo "[INFO] 빌드 디렉토리 생성: $BUILD_DIR"
 fi
 echo "[INFO] 빌드 디렉토리 : $BUILD_DIR"
 echo "[INFO] 아키텍처      : $ARCH"
 
 # ----- 3-1. CMake 캐시에서 reconfigure 에 필요한 값 추출 ---------------------
-# --rebuild / cache 분실 후 재구성을 위해 generator 와 build type 을 보존한다.
-# 추출 실패 시 합리적 기본값(Ninja / Debug) 으로 대체한다.
+# cache 가 있으면 generator / build type 을 추출, 없으면 표준 기본값 (Ninja / Debug).
+# build.sh 가 cache 분실 시 do_configure 로 재생성할 때 이 값을 사용한다.
 read_cache() {
     # CMakeCache.txt 항목 형식:  KEY:TYPE=VALUE
-    # 예) CMAKE_GENERATOR:INTERNAL=Ninja
     local key="$1"
+    [[ -f "$BUILD_DIR/CMakeCache.txt" ]] || return 0
     grep -E "^${key}:[A-Z]+=" "$BUILD_DIR/CMakeCache.txt" 2>/dev/null \
         | head -n 1 \
         | sed -E "s/^${key}:[A-Z]+=//"
@@ -178,9 +225,10 @@ echo "[INFO] 제너레이터    : $CMAKE_GENERATOR_VALUE"
 echo "[INFO] 빌드 타입     : $CMAKE_BUILD_TYPE_VALUE"
 
 # ----- 4. Windows 형식 경로로 변환 -------------------------------------------
-# PowerShell 호출 인자(VsDevShell)는 백슬래시 형식이 가독성이 좋고,
-# CMake --build 인자(빌드/소스 디렉토리)는 슬래시 형식을 그대로 받는다.
+# cmd 안에서 호출할 인자 (VsDevCmd.bat / cmake.exe) 는 백슬래시 형식이 자연스럽고,
+# CMake --build / -S / -B 인자 (빌드/소스 디렉토리) 는 슬래시 형식을 그대로 받는다.
 VS_PATH_WIN="$(to_win_bs "$VS_PATH")"
+CMAKE_PATH_WIN="$(to_win_bs "$CMAKE_PATH")"
 BUILD_DIR_WIN="$(to_win_fwd "$BUILD_DIR")"
 PROJECT_ROOT_WIN="$(to_win_fwd "$PROJECT_ROOT")"
 
@@ -206,10 +254,15 @@ cat > "$OUTPUT" <<EOF
 # 직접 수정하지 말고, 환경이 변경되면 generate-build-script.sh 를 다시 실행하세요.
 # 생성 시각: ${GEN_TIME}
 #
-# 동작:
-#   1) PowerShell 로 Visual Studio 개발자 셸을 활성화한다.
-#   2) 같은 PowerShell 세션에서 cmake configure(필요 시) / build 를 호출한다.
-#   3) 표준 에러도 표준 출력으로 합쳐서 한 줄 단위로 보이도록 한다.
+# 동작 (PS quoting 우회 — 임시 .bat 파일 패턴):
+#   1) 임시 .bat 파일을 생성한다. 그 안에서:
+#      a) PATH 를 system minimal (System32 + WindowsPowerShell) 로 sanitize.
+#         ※ 호출 측 bash 의 PATH 가 ssh-agent 출력 등으로 오염되어 있어도
+#           VsDevCmd.bat 의 PATH 파싱이 깨지지 않도록 하기 위함.
+#      b) call VsDevCmd.bat — MSVC 환경변수를 같은 cmd 세션에 주입.
+#      c) cmake.exe (절대 경로) 로 configure / build 호출.
+#   2) cmd.exe //c 로 그 .bat 파일을 한 번에 실행 (인자 0 — 인자 quoting 문제 zero).
+#   3) 종료 후 .bat 파일 삭제.
 #
 # 인자:
 #   (없음)        \$BUILD_DIR 에 cache 가 있으면 그대로 빌드, 없으면 자동 재구성 후 빌드.
@@ -224,7 +277,8 @@ cat > "$OUTPUT" <<EOF
 set -euo pipefail
 
 # ----- 빌드 환경 (자동 검색 결과) -------------------------------------------
-VS_DEV_SHELL='${VS_PATH_WIN}'
+VS_DEV_CMD='${VS_PATH_WIN}'
+CMAKE_PATH='${CMAKE_PATH_WIN}'
 BUILD_DIR='${BUILD_DIR_WIN}'
 PROJECT_ROOT='${PROJECT_ROOT_WIN}'
 ARCH='${ARCH}'
@@ -249,7 +303,8 @@ done
 # Claude/에이전트가 로그를 파싱하기 쉽도록 [BUILD] 접두사로 통일한다.
 echo "[BUILD] 시작        \$(date '+%Y-%m-%d %H:%M:%S')"
 echo "[BUILD] Mode        \$MODE"
-echo "[BUILD] VsDevShell  \$VS_DEV_SHELL"
+echo "[BUILD] VsDevCmd    \$VS_DEV_CMD"
+echo "[BUILD] CMake       \$CMAKE_PATH"
 echo "[BUILD] BuildDir    \$BUILD_DIR"
 echo "[BUILD] ProjectRoot \$PROJECT_ROOT"
 echo "[BUILD] Arch        \$ARCH"
@@ -270,21 +325,42 @@ do_clean() {
     fi
 }
 
-# configure: cache 가 사라진 경우 generate-build-script.sh 시점에 추출한
-# generator / build type 으로 재구성한다. cache 가 살아있으면 호출하지 않는다.
-do_configure() {
-    echo "[BUILD] Configure   cmake -G '\$CMAKE_GENERATOR_NAME' -DCMAKE_BUILD_TYPE=\$CMAKE_BUILD_TYPE_NAME"
-    powershell.exe -ExecutionPolicy Bypass -Command "& '\$VS_DEV_SHELL' -Arch \$ARCH -HostArch \$ARCH -SkipAutomaticLocation | Out-Null; cmake -S '\$PROJECT_ROOT' -B '\$BUILD_DIR' -G '\$CMAKE_GENERATOR_NAME' -DCMAKE_BUILD_TYPE=\$CMAKE_BUILD_TYPE_NAME 2>&1"
+# 임시 .bat 파일을 만들어 cmd.exe 한 번에 실행하는 헬퍼.
+#   - PATH 를 system minimal 로 sanitize (호출 측 bash 의 PATH 오염 무력화).
+#   - VsDevCmd.bat 환경 주입 후 cmake.exe 호출까지 한 cmd 세션에서.
+#   - .bat 파일은 trap 으로 종료 시 자동 삭제.
+#
+# \$1 = cmake 호출 라인 (예: '"\$CMAKE_PATH" -S ... -B ...')
+run_in_vs_env() {
+    local cmake_cmd="\$1"
+    local bat_file
+    bat_file="\$(mktemp --suffix=.bat)"
+    # heredoc — 안에서 \$VAR 는 즉시 확장되어 .bat 안에 박히고,
+    # %errorlevel% 같은 cmd-side 변수는 그대로 유지된다.
+    cat > "\$bat_file" <<BATEOF
+@echo off
+set PATH=C:\\Windows\\System32;C:\\Windows;C:\\Windows\\System32\\WindowsPowerShell\\v1.0
+call "\$VS_DEV_CMD" -arch=\$ARCH -host_arch=\$ARCH -no_logo
+if errorlevel 1 exit /b %errorlevel%
+\$cmake_cmd
+exit /b %errorlevel%
+BATEOF
+    local win_bat
+    win_bat="\$(cygpath -w "\$bat_file")"
+    local rc=0
+    cmd.exe //c "\$win_bat" 2>&1 || rc=\$?
+    rm -f "\$bat_file" 2>/dev/null || true
+    return \$rc
 }
 
-# build:
-# - Launch-VsDevShell.ps1 : 현 PowerShell 세션에 MSVC 도구체인 환경변수를 주입.
-# - -SkipAutomaticLocation : 셸이 임의로 cwd 를 바꾸지 않도록 한다.
-# - Out-Null               : 셸 활성화 메시지를 버려 출력을 cmake 로그에 집중.
-# - 2>&1                   : 에러 출력도 stdout 으로 합쳐 한 줄 단위로 본다.
+do_configure() {
+    echo "[BUILD] Configure   cmake -G '\$CMAKE_GENERATOR_NAME' -DCMAKE_BUILD_TYPE=\$CMAKE_BUILD_TYPE_NAME"
+    run_in_vs_env "\"\$CMAKE_PATH\" -S \"\$PROJECT_ROOT\" -B \"\$BUILD_DIR\" -G \"\$CMAKE_GENERATOR_NAME\" -DCMAKE_BUILD_TYPE=\$CMAKE_BUILD_TYPE_NAME"
+}
+
 do_build() {
     echo "[BUILD] Build       cmake --build '\$BUILD_DIR'"
-    powershell.exe -ExecutionPolicy Bypass -Command "& '\$VS_DEV_SHELL' -Arch \$ARCH -HostArch \$ARCH -SkipAutomaticLocation | Out-Null; cmake --build '\$BUILD_DIR' 2>&1"
+    run_in_vs_env "\"\$CMAKE_PATH\" --build \"\$BUILD_DIR\""
 }
 
 # ----- 모드 디스패치 ---------------------------------------------------------
