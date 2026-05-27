@@ -37,7 +37,7 @@ struct BroadcastEventPatterns
 // Prints connect/disconnect events from the broadcast server's accept-monitor,
 // and (optionally) records the same events into a shared TimeWatch so they
 // line up with the server/client write/read marks in the final timeline.
-struct PrintingBroadcastHandler : public Bn3Monkey::SocketBroadcastHandler
+struct PrintingBroadcastHandler : public Bn3Monkey::BroadcastHandler
 {
     TimeWatch* tw{ nullptr };
     explicit PrintingBroadcastHandler(TimeWatch* tw_ = nullptr) : tw(tw_) {}
@@ -65,7 +65,7 @@ TEST(TCPBroadcast, shouldHandleRepeatedClientConnectionsAndDisconnections)
 
     Bn3Monkey::initializeSecuritySocket();
 
-    SocketConfiguration config{
+    NetworkConfiguration config{
        "127.0.0.1",
        21345,
        false,
@@ -76,14 +76,14 @@ TEST(TCPBroadcast, shouldHandleRepeatedClientConnectionsAndDisconnections)
        8192
     };
 
-    SocketBroadcastServer server{ config };
+    BroadcastServer server{ config };
     // Hoisted out of the inner brace so the accept-monitor doesn't dereference
     // a destroyed handler when a client connects later in the test.
     PrintingBroadcastHandler handler{ &tw };
 
     {
         auto result = server.open(&handler, 1);
-        ASSERT_EQ(SocketCode::SUCCESS, result.code());
+        ASSERT_EQ(NetworkResultCode::SUCCESS, result.code());
     }
 
     SimpleEvent event;
@@ -91,7 +91,7 @@ TEST(TCPBroadcast, shouldHandleRepeatedClientConnectionsAndDisconnections)
         std::this_thread::sleep_for(std::chrono::seconds(1));
         tw.mark("[C] startup sleep done");
 
-        SocketConfiguration config{
+        NetworkConfiguration config{
             "127.0.0.1",
             21345,
             false,
@@ -102,19 +102,19 @@ TEST(TCPBroadcast, shouldHandleRepeatedClientConnectionsAndDisconnections)
             8192
         };
 
-        SocketClient client{ config };
+        Client client{ config };
 
         for (size_t trial = 0; trial < 3; trial++)
         {
             tw.markf("[C] T%zu open begin", trial);
             {
                 auto result = client.open();
-                ASSERT_EQ(SocketCode::SUCCESS, result.code());
+                ASSERT_EQ(NetworkResultCode::SUCCESS, result.code());
             }
             tw.markf("[C] T%zu connect begin", trial);
             {
                 auto result = client.connect();
-                ASSERT_EQ(SocketCode::SUCCESS, result.code());
+                ASSERT_EQ(NetworkResultCode::SUCCESS, result.code());
             }
             tw.markf("[C] T%zu connect end", trial);
             event.wake();
@@ -125,7 +125,7 @@ TEST(TCPBroadcast, shouldHandleRepeatedClientConnectionsAndDisconnections)
                 auto* expected = patterns.patterns[i].data();
                 auto res = readFully(client, buffer, BroadcastEventPatterns::LENGTH_OF_PATTERN);
                 tw.markf("[C] T%zu R%03zu done", trial, i);
-                if (res.code() == SocketCode::SUCCESS)
+                if (res.code() == NetworkResultCode::SUCCESS)
                 {
                     EXPECT_STREQ(expected, buffer);
                 }
@@ -179,7 +179,7 @@ TEST(TCPBroadcast, shouldSynchronizeViaAwaitAndAwaitClose)
 
     Bn3Monkey::initializeSecuritySocket();
 
-    SocketConfiguration config{
+    NetworkConfiguration config{
        "127.0.0.1",
        21346,
        false,
@@ -190,16 +190,16 @@ TEST(TCPBroadcast, shouldSynchronizeViaAwaitAndAwaitClose)
        8192
     };
 
-    SocketBroadcastServer server{ config };
+    BroadcastServer server{ config };
     PrintingBroadcastHandler handler{ &tw };
 
     {
         auto result = server.open(&handler, 1);
-        ASSERT_EQ(SocketCode::SUCCESS, result.code());
+        ASSERT_EQ(NetworkResultCode::SUCCESS, result.code());
     }
 
     std::thread _client([&patterns, &tw]() {
-        SocketConfiguration config{
+        NetworkConfiguration config{
             "127.0.0.1",
             21346,
             false,
@@ -210,19 +210,19 @@ TEST(TCPBroadcast, shouldSynchronizeViaAwaitAndAwaitClose)
             8192
         };
 
-        SocketClient client{ config };
+        Client client{ config };
 
         for (size_t trial = 0; trial < 3; trial++)
         {
             tw.markf("[C] T%zu open begin", trial);
             {
                 auto result = client.open();
-                ASSERT_EQ(SocketCode::SUCCESS, result.code());
+                ASSERT_EQ(NetworkResultCode::SUCCESS, result.code());
             }
             tw.markf("[C] T%zu connect begin", trial);
             {
                 auto result = client.connect();
-                ASSERT_EQ(SocketCode::SUCCESS, result.code());
+                ASSERT_EQ(NetworkResultCode::SUCCESS, result.code());
             }
             tw.markf("[C] T%zu connect end", trial);
 
@@ -232,7 +232,7 @@ TEST(TCPBroadcast, shouldSynchronizeViaAwaitAndAwaitClose)
                 auto* expected = patterns.patterns[i].data();
                 auto res = readFully(client, buffer, BroadcastEventPatterns::LENGTH_OF_PATTERN);
                 tw.markf("[C] T%zu R%03zu done", trial, i);
-                if (res.code() == SocketCode::SUCCESS)
+                if (res.code() == NetworkResultCode::SUCCESS)
                 {
                     EXPECT_STREQ(expected, buffer);
                 }
@@ -252,7 +252,7 @@ TEST(TCPBroadcast, shouldSynchronizeViaAwaitAndAwaitClose)
         auto await_res = server.await(5000);
         // std::this_thread::sleep_for(std::chrono::milliseconds(50));
         tw.markf("[S] T%zu await end (code=%d)", trial, (int)await_res.code());
-        ASSERT_EQ(SocketCode::SUCCESS, await_res.code());
+        ASSERT_EQ(NetworkResultCode::SUCCESS, await_res.code());
 
         for (size_t i = 0; i < BroadcastEventPatterns::NUM_OF_PATTERNS; i++)
         {
@@ -267,7 +267,7 @@ TEST(TCPBroadcast, shouldSynchronizeViaAwaitAndAwaitClose)
         tw.markf("[S] T%zu awaitClose begin", trial);
         auto close_res = server.awaitClose(5000);
         tw.markf("[S] T%zu awaitClose end (code=%d)", trial, (int)close_res.code());
-        EXPECT_EQ(SocketCode::SUCCESS, close_res.code());
+        EXPECT_EQ(NetworkResultCode::SUCCESS, close_res.code());
     }
 
     _client.join();
@@ -285,10 +285,10 @@ TEST(TCPBroadcast, shouldSynchronizeViaAwaitAndAwaitClose)
 // frees the slot.
 //
 // This test simulates the abandoned-socket scenario by intentionally leaking
-// the SocketClient instance every round (its destructor would otherwise call
+// the Client instance every round (its destructor would otherwise call
 // close() and FIN the server, which is exactly the cleanup signal we need to
 // be absent). Each round the client thread calls server.dropAll() to clean
-// up server-side state, then opens a fresh SocketClient on the same port to
+// up server-side state, then opens a fresh Client on the same port to
 // verify the server can accept and broadcast to it.
 TEST(TCPBroadcast, shouldRecoverViaDropAllWhenClientsAbandonSockets)
 {
@@ -302,7 +302,7 @@ TEST(TCPBroadcast, shouldRecoverViaDropAllWhenClientsAbandonSockets)
     constexpr uint32_t kPort = 21347;
     constexpr size_t kTrials = 3;
 
-    SocketConfiguration config{
+    NetworkConfiguration config{
        "127.0.0.1",
        kPort,
        false,
@@ -313,12 +313,12 @@ TEST(TCPBroadcast, shouldRecoverViaDropAllWhenClientsAbandonSockets)
        8192
     };
 
-    SocketBroadcastServer server{ config };
+    BroadcastServer server{ config };
     PrintingBroadcastHandler handler{ &tw };
 
     {
         auto result = server.open(&handler, 1);
-        ASSERT_EQ(SocketCode::SUCCESS, result.code());
+        ASSERT_EQ(NetworkResultCode::SUCCESS, result.code());
     }
 
     // Per-round "received all" signal. SimpleEvent isn't usable here:
@@ -340,7 +340,7 @@ TEST(TCPBroadcast, shouldRecoverViaDropAllWhenClientsAbandonSockets)
     std::thread _client([&server, &received, &patterns, &tw, kPort, kTrials]() {
         using namespace Bn3Monkey;
 
-        SocketConfiguration config{
+        NetworkConfiguration config{
             "127.0.0.1",
             kPort,
             false,
@@ -352,26 +352,26 @@ TEST(TCPBroadcast, shouldRecoverViaDropAllWhenClientsAbandonSockets)
         };
 
         // Heap-allocate every client and intentionally leak. Letting the
-        // SocketClient destructor run would call close() (FIN the server),
+        // Client destructor run would call close() (FIN the server),
         // which is exactly the cleanup signal this test must NOT have —
         // we're verifying that dropAll() can recover the server when peers
         // walk away from their sockets without sending FIN.
-        std::vector<SocketClient*> leaked_clients;
+        std::vector<Client*> leaked_clients;
 
         for (size_t trial = 0; trial < kTrials; trial++)
         {
-            auto* client = new SocketClient{ config };
+            auto* client = new Client{ config };
             leaked_clients.push_back(client);
 
             tw.markf("[C] T%zu open begin", trial);
             {
                 auto result = client->open();
-                ASSERT_EQ(SocketCode::SUCCESS, result.code());
+                ASSERT_EQ(NetworkResultCode::SUCCESS, result.code());
             }
             tw.markf("[C] T%zu connect begin", trial);
             {
                 auto result = client->connect();
-                ASSERT_EQ(SocketCode::SUCCESS, result.code());
+                ASSERT_EQ(NetworkResultCode::SUCCESS, result.code());
             }
             tw.markf("[C] T%zu connect end", trial);
 
@@ -381,7 +381,7 @@ TEST(TCPBroadcast, shouldRecoverViaDropAllWhenClientsAbandonSockets)
                 auto* expected = patterns.patterns[i].data();
                 auto res = readFully(*client, buffer, BroadcastEventPatterns::LENGTH_OF_PATTERN);
                 tw.markf("[C] T%zu R%03zu done", trial, i);
-                if (res.code() == SocketCode::SUCCESS)
+                if (res.code() == NetworkResultCode::SUCCESS)
                 {
                     EXPECT_STREQ(expected, buffer);
                 }
@@ -410,7 +410,7 @@ TEST(TCPBroadcast, shouldRecoverViaDropAllWhenClientsAbandonSockets)
         tw.markf("[S] T%zu await begin", trial);
         auto await_res = server.await(5000);
         tw.markf("[S] T%zu await end (code=%d)", trial, (int)await_res.code());
-        ASSERT_EQ(SocketCode::SUCCESS, await_res.code());
+        ASSERT_EQ(NetworkResultCode::SUCCESS, await_res.code());
 
         for (size_t i = 0; i < BroadcastEventPatterns::NUM_OF_PATTERNS; i++)
         {
@@ -433,7 +433,7 @@ TEST(TCPBroadcast, shouldRecoverViaDropAllWhenClientsAbandonSockets)
         tw.markf("[S] T%zu awaitClose begin", trial);
         auto close_res = server.awaitClose(5000);
         tw.markf("[S] T%zu awaitClose end (code=%d)", trial, (int)close_res.code());
-        EXPECT_EQ(SocketCode::SUCCESS, close_res.code());
+        EXPECT_EQ(NetworkResultCode::SUCCESS, close_res.code());
     }
 
     _client.join();

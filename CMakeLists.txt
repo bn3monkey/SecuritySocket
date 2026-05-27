@@ -50,7 +50,12 @@ endif()
 
 message("-- Security Socket CMake Initialization -- ")
 
-file(GLOB_RECURSE securitysocket_source_files 
+# Recursive glob — pulls in `src/implementation/thirdparty/**` (e.g. the
+# vendored picohttpparser .c/.h) the same way it pulls in our own sources.
+# The same list is reused for the test library below so tests can exercise
+# vendored code directly without having to re-export symbols through the
+# public DLL surface.
+file(GLOB_RECURSE securitysocket_source_files
     ${source_dir}/*.h
     ${source_dir}/*.hpp
     ${source_dir}/*.c
@@ -73,7 +78,9 @@ if (SECURITYSOCKET_USING_TLS)
 endif()
 
 target_include_directories(
-    securitysocket PRIVATE "${OPENSSL_INCLUDE_DIR}"
+    securitysocket PRIVATE
+        "${OPENSSL_INCLUDE_DIR}"
+        "${source_dir}/implementation/thirdparty/picohttpparser"
 )
 
 
@@ -138,10 +145,18 @@ if (BUILD_SECURITYSOCKET_TEST)
         "${SECURITYSOCKET_TEST_DIR}/*.cpp")
     message(STATUS "SECURITYSOCKET_TEST_FILES = ${SECURITYSOCKET_TEST_FILES}")
 
+    # Vendored third-party sources (e.g. picohttpparser) are compiled
+    # directly into securitysockettest as well, so tests can call into them
+    # without having to re-export their symbols through the securitysocket
+    # DLL surface.
+    set(SECURITYSOCKET_THIRDPARTY_FILES ${securitysocket_source_files})
+    list(FILTER SECURITYSOCKET_THIRDPARTY_FILES INCLUDE REGEX "/thirdparty/")
+    message(STATUS "SECURITYSOCKET_THIRDPARTY_FILES = ${SECURITYSOCKET_THIRDPARTY_FILES}")
+
     if (BUILD_SECURITYSOCKETTEST_SHARED)
         add_library(securitysockettest SHARED
-            ${source_dir}
             ${SECURITYSOCKET_TEST_FILES}
+            ${SECURITYSOCKET_THIRDPARTY_FILES}
             ${SECURITYSOCKET_UTILS_FILES})
         target_compile_definitions(securitysockettest PRIVATE SECURITYSOCKETTEST_EXPORTS)
 
@@ -149,8 +164,8 @@ if (BUILD_SECURITYSOCKET_TEST)
     else()
         add_library(securitysockettest
             STATIC
-            ${source_dir}
             ${SECURITYSOCKET_TEST_FILES}
+            ${SECURITYSOCKET_THIRDPARTY_FILES}
             ${SECURITYSOCKET_UTILS_FILES})
         target_compile_definitions(securitysockettest PUBLIC SECURITYSOCKETTEST_STATIC)
 
@@ -163,6 +178,7 @@ if (BUILD_SECURITYSOCKET_TEST)
     target_include_directories(securitysockettest
         PRIVATE
         ${source_dir}
+        "${source_dir}/implementation/thirdparty/picohttpparser"
         "${gtest_SOURCE_DIR}/include"
         "${gmock_SOURCE_DIR}/include")
 

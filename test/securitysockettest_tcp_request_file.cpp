@@ -79,7 +79,7 @@ struct FileCloseResponse {
 };
 
 
-struct FileRequestHandler : public Bn3Monkey::SocketRequestHandler
+struct FileRequestHandler : public Bn3Monkey::CustomProtocolRequestHandler
 {
     size_t getHeaderSize() override {
         return sizeof(FileRequestHeader);
@@ -89,20 +89,20 @@ struct FileRequestHandler : public Bn3Monkey::SocketRequestHandler
     }
 
 
-    Bn3Monkey::SocketRequestMode onModeClassified(const char* header) override {
+    Bn3Monkey::RequestProcessingMode onModeClassified(const char* header) override {
         auto* derived_header = reinterpret_cast<const FileRequestHeader*>(header);
         switch (derived_header->request_type) {
         case FileRequestType::CREATE_HANDLE:
         case FileRequestType::CREATE_FILE:
         case FileRequestType::OPEN_FILE:
         case FileRequestType::CLOSE_FILE:
-            return Bn3Monkey::SocketRequestMode::FAST;
+            return Bn3Monkey::RequestProcessingMode::FAST;
         case FileRequestType::READ_FILE:
-            return Bn3Monkey::SocketRequestMode::READ_STREAM;
+            return Bn3Monkey::RequestProcessingMode::READ_STREAM;
         case FileRequestType::WRITE_FILE:
-            return Bn3Monkey::SocketRequestMode::WRITE_STREAM;
+            return Bn3Monkey::RequestProcessingMode::WRITE_STREAM;
         }
-        return Bn3Monkey::SocketRequestMode::FAST;
+        return Bn3Monkey::RequestProcessingMode::FAST;
     }
 
     void onClientConnected(const char* ip, int port) override {
@@ -227,7 +227,7 @@ void runFileClient(int32_t client_no)
 {
     using namespace Bn3Monkey;
 
-    SocketConfiguration config{
+    NetworkConfiguration config{
         "127.0.0.1",
         21345,
         false,
@@ -238,15 +238,15 @@ void runFileClient(int32_t client_no)
         8192
     };
 
-    SocketClient client{ config };
+    Client client{ config };
 
     {
         auto ret = client.open();
-        ASSERT_EQ(SocketCode::SUCCESS, ret.code());
+        ASSERT_EQ(NetworkResultCode::SUCCESS, ret.code());
     }
     {
         auto ret = client.connect();
-        ASSERT_EQ(SocketCode::SUCCESS, ret.code());
+        ASSERT_EQ(NetworkResultCode::SUCCESS, ret.code());
     }
 
     auto test_cases = createTestCases();
@@ -391,7 +391,7 @@ TEST(TCPRequestFile, runOneClient)
     initializeSecuritySocket();
 
 
-    SocketConfiguration config{
+    NetworkConfiguration config{
         "127.0.0.1",
         21345,
         false,
@@ -403,11 +403,11 @@ TEST(TCPRequestFile, runOneClient)
     };
 
     FileRequestHandler handler;
-    SocketRequestServer server{ config };
+    RequestServer server{ config };
 
 
     auto result = server.open(&handler, 4);
-    ASSERT_EQ(SocketCode::SUCCESS, result.code());
+    ASSERT_EQ(NetworkResultCode::SUCCESS, result.code());
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
 
     std::thread client1{ runFileClient, 1 };
@@ -427,7 +427,7 @@ TEST(TCPRequestFile, runFourClient)
     initializeSecuritySocket();
 
 
-    SocketConfiguration config{
+    NetworkConfiguration config{
         "127.0.0.1",
         21345,
         false,
@@ -439,12 +439,12 @@ TEST(TCPRequestFile, runFourClient)
     };
 
     FileRequestHandler handler;
-    SocketRequestServer server{ config };
+    RequestServer server{ config };
 
 
 
     auto result = server.open(&handler, 4);
-    ASSERT_EQ(SocketCode::SUCCESS, result.code());
+    ASSERT_EQ(NetworkResultCode::SUCCESS, result.code());
 
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
 

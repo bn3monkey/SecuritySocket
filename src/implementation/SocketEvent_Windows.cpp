@@ -38,16 +38,16 @@ void SocketEventListener::open(BaseSocket& sock, SocketEventType eventType)
             break;
     }
 }
-SocketResult SocketEventListener::wait(uint32_t timeout_ms)
+NetworkResult SocketEventListener::wait(uint32_t timeout_ms)
 {
-    SocketResult res {SocketCode::SUCCESS};
+    NetworkResult res {NetworkResultCode::SUCCESS};
     int ret = WSAPoll(&_handle, 1, timeout_ms);
     if (ret == 0)
     {
-        res = SocketResult(SocketCode::SOCKET_TIMEOUT);
+        res = NetworkResult(NetworkResultCode::SOCKET_TIMEOUT);
     }
     else if (ret <0) {
-        res = SocketResult(SocketCode::SOCKET_EVENT_ERROR);
+        res = NetworkResult(NetworkResultCode::SOCKET_EVENT_ERROR);
     }
     else {
         if (_handle.revents & POLLERR) {
@@ -56,14 +56,14 @@ SocketResult SocketEventListener::wait(uint32_t timeout_ms)
             getsockopt(_handle.fd, SOL_SOCKET, SO_ERROR, (char*) & error, &len);
             if (error == 0)
             {
-                res = SocketResult(SocketCode::SUCCESS);
+                res = NetworkResult(NetworkResultCode::SUCCESS);
             }
             else {
-                res = SocketResult(SocketCode::UNKNOWN_ERROR);
+                res = NetworkResult(NetworkResultCode::UNKNOWN_ERROR);
             }
         }
         else if (_handle.revents & POLLHUP) {
-            res = SocketResult(SocketCode::SOCKET_CLOSED);
+            res = NetworkResult(NetworkResultCode::SOCKET_CLOSED);
         }
     }
     return res;
@@ -146,13 +146,13 @@ static void drainWakeupSocket(SOCKET s)
     while (::recv(s, buf, sizeof(buf), 0) > 0) {}
 }
 
-SocketResult SocketMultiEventListener::open()
+NetworkResult SocketMultiEventListener::open()
 {
     _handle.reserve(16);
     _contexts.reserve(16);
 
     if (!createWakeupPair(_wakeup_read, _wakeup_write)) {
-        return SocketResult(SocketCode::SOCKET_EVENT_OBJECT_NOT_CREATED);
+        return NetworkResult(NetworkResultCode::SOCKET_EVENT_OBJECT_NOT_CREATED);
     }
 
     pollfd wakeup_pfd{};
@@ -162,7 +162,7 @@ SocketResult SocketMultiEventListener::open()
     std::lock_guard<std::mutex> lock(_mtx);
     _handle.push_back(wakeup_pfd);
     _contexts.push_back(nullptr);
-    return SocketResult();
+    return NetworkResult();
 }
 
 void SocketMultiEventListener::close()
@@ -192,7 +192,7 @@ void SocketMultiEventListener::wake()
     ::send(w, &b, 1, 0);
 }
 
-SocketResult SocketMultiEventListener::addEvent(SocketEventContext* context, SocketEventType eventType)
+NetworkResult SocketMultiEventListener::addEvent(SocketEventContext* context, SocketEventType eventType)
 {
     pollfd fd{};
     fd.fd = context->fd;
@@ -207,10 +207,10 @@ SocketResult SocketMultiEventListener::addEvent(SocketEventContext* context, Soc
         _contexts.push_back(context);
     }
     wake();
-    return SocketResult();
+    return NetworkResult();
 }
 
-SocketResult SocketMultiEventListener::modifyEvent(SocketEventContext* context, SocketEventType eventType)
+NetworkResult SocketMultiEventListener::modifyEvent(SocketEventContext* context, SocketEventType eventType)
 {
     short new_events = eventTypeToPollEvents(eventType);
     {
@@ -235,10 +235,10 @@ SocketResult SocketMultiEventListener::modifyEvent(SocketEventContext* context, 
         }
     }
     wake();
-    return SocketResult();
+    return NetworkResult();
 }
 
-SocketResult SocketMultiEventListener::removeEvent(SocketEventContext* context)
+NetworkResult SocketMultiEventListener::removeEvent(SocketEventContext* context)
 {
     {
         std::lock_guard<std::mutex> lock(_mtx);
@@ -253,7 +253,7 @@ SocketResult SocketMultiEventListener::removeEvent(SocketEventContext* context)
         }
     }
     wake();
-    return SocketResult();
+    return NetworkResult();
 }
 
 SocketEventResult SocketMultiEventListener::wait(uint32_t timeout_ms)
@@ -275,10 +275,10 @@ SocketEventResult SocketMultiEventListener::wait(uint32_t timeout_ms)
     int ret = WSAPoll(handle.data(), static_cast<ULONG>(handle.size()), timeout_ms);
     if (ret == 0)
     {
-        res.result = SocketResult(SocketCode::SOCKET_TIMEOUT);
+        res.result = NetworkResult(NetworkResultCode::SOCKET_TIMEOUT);
     }
     else if (ret <0) {
-        res.result = SocketResult(SocketCode::SOCKET_EVENT_ERROR);
+        res.result = NetworkResult(NetworkResultCode::SOCKET_EVENT_ERROR);
     }
     else {
         res.contexts.reserve(ret);

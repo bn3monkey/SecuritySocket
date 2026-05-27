@@ -1,5 +1,5 @@
 #include "ServerActiveSocket.hpp"
-#include "SocketResult.hpp"
+#include "NetworkResult.hpp"
 #include "SocketHelper.hpp"
 #include <stdexcept>
 
@@ -26,7 +26,7 @@ ServerActiveSocket::ServerActiveSocket(int32_t sock, void* addr, void* ssl_conte
     struct sockaddr_in* address = (struct sockaddr_in*)addr;
     _socket = sock;
     _result = createResult(_socket);
-    if (_result.code() != SocketCode::SUCCESS)
+    if (_result.code() != NetworkResultCode::SUCCESS)
     {
         return;
     }
@@ -53,15 +53,15 @@ void ServerActiveSocket::close()
 #endif
     _socket = -1;
 }
-SocketResult ServerActiveSocket::read(void* buffer, size_t size)
+NetworkResult ServerActiveSocket::read(void* buffer, size_t size)
 {
 	int32_t ret{ 0 };
 	ret = ::recv(_socket, static_cast<char*>(buffer), static_cast<int32_t>(size), 0);
 	if (ret == 0)
-		return SocketResult(SocketCode::SOCKET_CLOSED, 0);
+		return NetworkResult(NetworkResultCode::SOCKET_CLOSED, 0);
 	return createResult(ret);
 }
-SocketResult ServerActiveSocket::write(const void* buffer, size_t size)
+NetworkResult ServerActiveSocket::write(const void* buffer, size_t size)
 {
 	int32_t ret{0};
 #ifdef __linux__
@@ -70,7 +70,7 @@ SocketResult ServerActiveSocket::write(const void* buffer, size_t size)
 	ret = send(_socket, static_cast<const char*>(buffer), static_cast<int32_t>(size), 0);
 #endif
 	if (ret == 0)
-		return SocketResult(SocketCode::SOCKET_CLOSED, 0);
+		return NetworkResult(NetworkResultCode::SOCKET_CLOSED, 0);
 	return createResult(ret);
 }
 
@@ -85,7 +85,7 @@ void ServerActiveSocket::setNoDelay()
 	::setNoDelay(_socket);
 }
 
-TLSServerActiveSocket::TLSServerActiveSocket(int32_t sock, void* addr, void* ssl_context)
+TlsServerActiveSocket::TlsServerActiveSocket(int32_t sock, void* addr, void* ssl_context)
 {
 	(void)sock;
 	(void)addr;
@@ -93,22 +93,22 @@ TLSServerActiveSocket::TLSServerActiveSocket(int32_t sock, void* addr, void* ssl
 
 	throw std::runtime_error("Not Implemented");
 }
-TLSServerActiveSocket::~TLSServerActiveSocket()
+TlsServerActiveSocket::~TlsServerActiveSocket()
 {
 	printf("Not Implemeneted\n");
 }
 
-void TLSServerActiveSocket::close()
+void TlsServerActiveSocket::close()
 {
 	throw std::runtime_error("Not Implemented");
 }
-SocketResult TLSServerActiveSocket::read(void* buffer, size_t size)
+NetworkResult TlsServerActiveSocket::read(void* buffer, size_t size)
 {
 	(void)buffer;
 	(void)size;
 	throw std::runtime_error("Not Implemented");
 }
-SocketResult TLSServerActiveSocket::write(const void* buffer, size_t size)
+NetworkResult TlsServerActiveSocket::write(const void* buffer, size_t size)
 {
 	(void)buffer;
 	(void)size;

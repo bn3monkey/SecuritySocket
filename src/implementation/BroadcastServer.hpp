@@ -1,5 +1,5 @@
-#if !defined(__BN3MONKEY__SOCKETBROADCASTSERVER__)
-#define __BN3MONKEY__SOCKETBROADCASTSERVER__
+#if !defined(__BN3MONKEY_BROADCASTSERVER__)
+#define __BN3MONKEY_BROADCASTSERVER__
 #include "../SecuritySocket.hpp"
 
 #include "ServerActiveSocket.hpp"
@@ -27,20 +27,20 @@ namespace Bn3Monkey
         ServerActiveSocketContainer container;
     };
 
-    class SocketBroadcastServerImpl
+    class BroadcastServerImpl
     {
     public:
-		SocketBroadcastServerImpl(const SocketConfiguration& configuration) : _configuration(configuration) {}
-        SocketBroadcastServerImpl(const SocketConfiguration& configuration, const SocketTLSServerConfiguration& tls_configuration)
+		BroadcastServerImpl(const NetworkConfiguration& configuration) : _configuration(configuration) {}
+        BroadcastServerImpl(const NetworkConfiguration& configuration, const TlsServerConfiguration& tls_configuration)
             : _configuration(configuration), _tls_configuration(tls_configuration) {}
 
-		virtual ~SocketBroadcastServerImpl();
+		virtual ~BroadcastServerImpl();
 
-		SocketResult open(SocketBroadcastHandler* handler, size_t num_of_clients);
-        SocketResult write(const void* buffer, size_t size);
+		NetworkResult open(BroadcastHandler* handler, size_t num_of_clients);
+        NetworkResult write(const void* buffer, size_t size);
 
-        SocketResult await(uint64_t timeout_ms);
-        SocketResult awaitClose(uint64_t timeout_ms);
+        NetworkResult await(uint64_t timeout_ms);
+        NetworkResult awaitClose(uint64_t timeout_ms);
 
         // Forcibly disconnect every currently-active client. Closes each
         // client socket, fires onClientDisconnected for each, and clears the
@@ -53,13 +53,13 @@ namespace Bn3Monkey
         void close();
 
 	private:
-        SocketConfiguration _configuration;
-        SocketTLSServerConfiguration _tls_configuration;
+        NetworkConfiguration _configuration;
+        TlsServerConfiguration _tls_configuration;
 
         PassiveSocketContainer _container;
         PassiveSocket* _socket{ nullptr };
 
-        SocketBroadcastHandler* _handler{ nullptr };
+        BroadcastHandler* _handler{ nullptr };
 
         std::thread _monitor_client;
         std::atomic_bool _is_monitoring{ false };
@@ -101,4 +101,4 @@ namespace Bn3Monkey
     };
 }
 
-#endif // __BN3MONKEY__SOCKETEVENTSERVER__
+#endif // __BN3MONKEY_BROADCASTSERVER__

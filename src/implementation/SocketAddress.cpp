@@ -54,7 +54,7 @@ Bn3Monkey::SocketAddress::SocketAddress(const char* ip, const char* port, bool i
 		case EAI_MEMORY:
 		case EAI_NONAME:
 		case EAI_SERVICE:
-			_result = SocketResult{ SocketCode::ADDRESS_NOT_AVAILABLE };
+			_result = NetworkResult{ NetworkResultCode::ADDRESS_NOT_AVAILABLE };
 		}
 		return;
 	}

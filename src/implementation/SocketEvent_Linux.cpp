@@ -44,16 +44,16 @@ void SocketEventListener::open(BaseSocket& sock, SocketEventType eventType)
             break;
     }
 }
-SocketResult SocketEventListener::wait(uint32_t timeout_ms)
+NetworkResult SocketEventListener::wait(uint32_t timeout_ms)
 {
-    SocketResult res {SocketCode::SUCCESS};
+    NetworkResult res {NetworkResultCode::SUCCESS};
     int ret = ::poll(&_handle, 1, timeout_ms);
     if (ret == 0)
     {
-        res = SocketResult(SocketCode::SOCKET_TIMEOUT);
+        res = NetworkResult(NetworkResultCode::SOCKET_TIMEOUT);
     }
     else if (ret <0) {
-        res = SocketResult(SocketCode::SOCKET_EVENT_ERROR);
+        res = NetworkResult(NetworkResultCode::SOCKET_EVENT_ERROR);
     }
     else {
         if (_handle.revents & POLLERR) {
@@ -62,14 +62,14 @@ SocketResult SocketEventListener::wait(uint32_t timeout_ms)
             getsockopt(_handle.fd, SOL_SOCKET, SO_ERROR, (char*) & error, &len);
             if (error == 0)
             {
-                res = SocketResult(SocketCode::SUCCESS);
+                res = NetworkResult(NetworkResultCode::SUCCESS);
             }
             else {
                 res = createResultFromSocketError(error);
             }
         }
         else if (_handle.revents & POLLHUP) {
-            res = SocketResult(SocketCode::SOCKET_CLOSED);
+            res = NetworkResult(NetworkResultCode::SOCKET_CLOSED);
         }
     }
     return res;
@@ -104,16 +104,16 @@ static void drainWakeupEventfd(int fd)
     while (::read(fd, &v, sizeof(v)) == static_cast<ssize_t>(sizeof(v))) {}
 }
 
-SocketResult SocketMultiEventListener::open()
+NetworkResult SocketMultiEventListener::open()
 {
     _epfd = ::epoll_create1(EPOLL_CLOEXEC);
     if (_epfd < 0) {
-        return SocketResult(SocketCode::SOCKET_EVENT_OBJECT_NOT_CREATED);
+        return NetworkResult(NetworkResultCode::SOCKET_EVENT_OBJECT_NOT_CREATED);
     }
     _wakeup_fd = ::eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
     if (_wakeup_fd < 0) {
         ::close(_epfd); _epfd = -1;
-        return SocketResult(SocketCode::SOCKET_EVENT_OBJECT_NOT_CREATED);
+        return NetworkResult(NetworkResultCode::SOCKET_EVENT_OBJECT_NOT_CREATED);
     }
 
     // Register the wakeup fd with a nullptr data.ptr sentinel so wait() can
@@ -124,9 +124,9 @@ SocketResult SocketMultiEventListener::open()
     if (::epoll_ctl(_epfd, EPOLL_CTL_ADD, _wakeup_fd, &ev) < 0) {
         ::close(_wakeup_fd); _wakeup_fd = -1;
         ::close(_epfd); _epfd = -1;
-        return SocketResult(SocketCode::SOCKET_EVENT_OBJECT_NOT_CREATED);
+        return NetworkResult(NetworkResultCode::SOCKET_EVENT_OBJECT_NOT_CREATED);
     }
-    return SocketResult();
+    return NetworkResult();
 }
 
 void SocketMultiEventListener::close()
@@ -149,7 +149,7 @@ void SocketMultiEventListener::wake()
     (void)r;
 }
 
-SocketResult SocketMultiEventListener::addEvent(SocketEventContext* context, SocketEventType eventType)
+NetworkResult SocketMultiEventListener::addEvent(SocketEventContext* context, SocketEventType eventType)
 {
     if (eventType == SocketEventType::ACCEPT) {
         _server_socket = context->fd;
@@ -159,16 +159,16 @@ SocketResult SocketMultiEventListener::addEvent(SocketEventContext* context, Soc
     ev.events = eventTypeToEpollEvents(eventType);
     ev.data.ptr = context;
     if (::epoll_ctl(_epfd, EPOLL_CTL_ADD, context->fd, &ev) < 0) {
-        return SocketResult(SocketCode::SOCKET_EVENT_ERROR);
+        return NetworkResult(NetworkResultCode::SOCKET_EVENT_ERROR);
     }
     // epoll_ctl is kernel-thread-safe and a newly readable/writable fd will
     // wake a blocked epoll_wait on its own. Issue an explicit wake() anyway
     // so shutdown / "no-event-yet" cases also surface promptly.
     wake();
-    return SocketResult();
+    return NetworkResult();
 }
 
-SocketResult SocketMultiEventListener::modifyEvent(SocketEventContext* context, SocketEventType eventType)
+NetworkResult SocketMultiEventListener::modifyEvent(SocketEventContext* context, SocketEventType eventType)
 {
     epoll_event ev{};
     ev.events = eventTypeToEpollEvents(eventType);
@@ -178,23 +178,23 @@ SocketResult SocketMultiEventListener::modifyEvent(SocketEventContext* context, 
     if (::epoll_ctl(_epfd, EPOLL_CTL_MOD, context->fd, &ev) < 0) {
         if (errno == ENOENT) {
             if (::epoll_ctl(_epfd, EPOLL_CTL_ADD, context->fd, &ev) < 0) {
-                return SocketResult(SocketCode::SOCKET_EVENT_ERROR);
+                return NetworkResult(NetworkResultCode::SOCKET_EVENT_ERROR);
             }
         } else {
-            return SocketResult(SocketCode::SOCKET_EVENT_ERROR);
+            return NetworkResult(NetworkResultCode::SOCKET_EVENT_ERROR);
         }
     }
     wake();
-    return SocketResult();
+    return NetworkResult();
 }
 
-SocketResult SocketMultiEventListener::removeEvent(SocketEventContext* context)
+NetworkResult SocketMultiEventListener::removeEvent(SocketEventContext* context)
 {
     // EPOLL_CTL_DEL on an already-closed fd returns EBADF; tolerate it since
     // the caller may close the fd before unregistering.
     ::epoll_ctl(_epfd, EPOLL_CTL_DEL, context->fd, nullptr);
     wake();
-    return SocketResult();
+    return NetworkResult();
 }
 
 SocketEventResult SocketMultiEventListener::wait(uint32_t timeout_ms)
@@ -211,7 +211,7 @@ SocketEventResult SocketMultiEventListener::wait(uint32_t timeout_ms)
         server_socket = _server_socket;
     }
     if (epfd < 0) {
-        res.result = SocketResult(SocketCode::SOCKET_EVENT_ERROR);
+        res.result = NetworkResult(NetworkResultCode::SOCKET_EVENT_ERROR);
         return res;
     }
 
@@ -220,11 +220,11 @@ SocketEventResult SocketMultiEventListener::wait(uint32_t timeout_ms)
     int ret = ::epoll_wait(epfd, events, kMaxEvents,
                            static_cast<int>(timeout_ms));
     if (ret == 0) {
-        res.result = SocketResult(SocketCode::SOCKET_TIMEOUT);
+        res.result = NetworkResult(NetworkResultCode::SOCKET_TIMEOUT);
         return res;
     }
     if (ret < 0) {
-        res.result = SocketResult(SocketCode::SOCKET_EVENT_ERROR);
+        res.result = NetworkResult(NetworkResultCode::SOCKET_EVENT_ERROR);
         return res;
     }
 

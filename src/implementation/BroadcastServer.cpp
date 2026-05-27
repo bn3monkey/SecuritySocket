@@ -1,41 +1,41 @@
-#include "SocketBroadcastServer.hpp"
+#include "BroadcastServer.hpp"
 #include <stdexcept>
 #include <algorithm>
 
 using namespace Bn3Monkey;
 
-SocketBroadcastServerImpl::~SocketBroadcastServerImpl()
+BroadcastServerImpl::~BroadcastServerImpl()
 {
     close();
 }
 
-SocketResult SocketBroadcastServerImpl::open(SocketBroadcastHandler* handler, size_t num_of_clients)
+NetworkResult BroadcastServerImpl::open(BroadcastHandler* handler, size_t num_of_clients)
 {
 	(void)num_of_clients;
 
-	SocketResult result = SocketResult(SocketCode::SUCCESS);
+	NetworkResult result = NetworkResult(NetworkResultCode::SUCCESS);
 
 	_container = PassiveSocketContainer(_tls_configuration.valid(), _configuration.is_unix_domain());
 	_socket = _container.get();
 	result = _socket->valid();
-	if (result.code() != SocketCode::SUCCESS)
+	if (result.code() != NetworkResultCode::SUCCESS)
 	{
 		return result;
 	}
 
 	SocketAddress address{ _configuration.ip(), _configuration.port(), true, _configuration.is_unix_domain() };
 	result = address;
-	if (result.code() != SocketCode::SUCCESS) {
+	if (result.code() != NetworkResultCode::SUCCESS) {
 		return result;
 	}
 
 	result = _socket->bind(address);
-	if (result.code() != SocketCode::SUCCESS) {
+	if (result.code() != NetworkResultCode::SUCCESS) {
 		return result;
 	}
 
 	result = _socket->listen();
-	if (result.code() != SocketCode::SUCCESS)
+	if (result.code() != NetworkResultCode::SUCCESS)
 	{
 		return result;
 	}
@@ -52,13 +52,13 @@ SocketResult SocketBroadcastServerImpl::open(SocketBroadcastHandler* handler, si
 
 	if (!_is_monitoring) {
 		_is_monitoring = true;
-		_monitor_client = std::thread{ &Bn3Monkey::SocketBroadcastServerImpl::monitorClient, this };
+		_monitor_client = std::thread{ &Bn3Monkey::BroadcastServerImpl::monitorClient, this };
 	}
 
 	return result;
 }
 
-void Bn3Monkey::SocketBroadcastServerImpl::monitorClient()
+void Bn3Monkey::BroadcastServerImpl::monitorClient()
 {
 	// A single multi-event listener owns both the accept fd and every accepted
 	// client fd. The kernel folds peer-close (POLLHUP / POLLERR) into a
@@ -81,9 +81,9 @@ void Bn3Monkey::SocketBroadcastServerImpl::monitorClient()
 		}
 
 		auto eventlist = _listener.wait(_configuration.read_timeout());
-		if (eventlist.result.code() == SocketCode::SOCKET_TIMEOUT)
+		if (eventlist.result.code() == NetworkResultCode::SOCKET_TIMEOUT)
 			continue;
-		if (eventlist.result.code() != SocketCode::SUCCESS)
+		if (eventlist.result.code() != NetworkResultCode::SUCCESS)
 			break;
 
 		for (auto* context : eventlist.contexts)
@@ -94,7 +94,7 @@ void Bn3Monkey::SocketBroadcastServerImpl::monitorClient()
 			{
 				auto socket_container = _socket->accept();
 				auto* client_socket = socket_container.get();
-				if (client_socket->result().code() != SocketCode::SUCCESS)
+				if (client_socket->result().code() != NetworkResultCode::SUCCESS)
 					break;
 
 				// Broadcast latency > coalescing throughput: disable Nagle so
@@ -167,7 +167,7 @@ void Bn3Monkey::SocketBroadcastServerImpl::monitorClient()
 	}
 }
 
-void SocketBroadcastServerImpl::dropAll()
+void BroadcastServerImpl::dropAll()
 {
 	// Atomically detach every active client from both the listener and the
 	// active list. The listener.removeEvent calls happen under _clients_mtx
@@ -207,7 +207,7 @@ void SocketBroadcastServerImpl::dropAll()
 	}
 }
 
-SocketResult SocketBroadcastServerImpl::write(const void* buffer, size_t size)
+NetworkResult BroadcastServerImpl::write(const void* buffer, size_t size)
 {
 	// Snapshot the active list under lock, then stream bytes lock-free.
 	// Using shared_ptr ensures that even if the monitor erases an entry
@@ -220,16 +220,16 @@ SocketResult SocketBroadcastServerImpl::write(const void* buffer, size_t size)
 	}
 
 	if (snapshot.empty())
-		return SocketResult(SocketCode::SUCCESS, 0);
+		return NetworkResult(NetworkResultCode::SUCCESS, 0);
 
-	SocketResult result{ SocketCode::SUCCESS };
+	NetworkResult result{ NetworkResultCode::SUCCESS };
 
 	for (auto& client : snapshot)
 	{
 		auto* sock = client->container.get();
 		if (!sock) continue;
 
-		SocketResult per_client_result{ SocketCode::SUCCESS };
+		NetworkResult per_client_result{ NetworkResultCode::SUCCESS };
 		SocketEventListener listener;
 		listener.open(*sock, SocketEventType::WRITE);
 		size_t written_size = 0;
@@ -237,43 +237,43 @@ SocketResult SocketBroadcastServerImpl::write(const void* buffer, size_t size)
 		for (auto i = 0u; i < _configuration.max_retries(); )
 		{
 			auto inner_result = listener.wait(_configuration.write_timeout());
-			if (inner_result.code() == SocketCode::SOCKET_TIMEOUT)
+			if (inner_result.code() == NetworkResultCode::SOCKET_TIMEOUT)
 			{
 				i++;
 				continue;
 			}
-			if (inner_result.code() == SocketCode::SOCKET_CLOSED)
+			if (inner_result.code() == NetworkResultCode::SOCKET_CLOSED)
 			{
 				// Peer closed mid-broadcast. The monitor's listener will fire
 				// DISCONNECTED for the same fd, so we just stop targeting this
 				// client here — no list mutation from the broadcast caller.
-				per_client_result = SocketResult(SocketCode::SOCKET_CLOSED,
+				per_client_result = NetworkResult(NetworkResultCode::SOCKET_CLOSED,
 					static_cast<int32_t>(written_size));
 				break;
 			}
-			if (inner_result.code() != SocketCode::SUCCESS)
+			if (inner_result.code() != NetworkResultCode::SUCCESS)
 			{
-				per_client_result = SocketResult(inner_result.code(),
+				per_client_result = NetworkResult(inner_result.code(),
 					static_cast<int32_t>(written_size));
 				break;
 			}
 
 			inner_result = sock->write(static_cast<const char*>(buffer) + written_size,
 				size - written_size);
-			if (inner_result.code() == SocketCode::SOCKET_TIMEOUT)
+			if (inner_result.code() == NetworkResultCode::SOCKET_TIMEOUT)
 			{
 				i++;
 				continue;
 			}
-			if (inner_result.code() == SocketCode::SOCKET_CLOSED)
+			if (inner_result.code() == NetworkResultCode::SOCKET_CLOSED)
 			{
-				per_client_result = SocketResult(SocketCode::SOCKET_CLOSED,
+				per_client_result = NetworkResult(NetworkResultCode::SOCKET_CLOSED,
 					static_cast<int32_t>(written_size));
 				break;
 			}
-			if (inner_result.code() != SocketCode::SUCCESS)
+			if (inner_result.code() != NetworkResultCode::SUCCESS)
 			{
-				per_client_result = SocketResult(inner_result.code(),
+				per_client_result = NetworkResult(inner_result.code(),
 					static_cast<int32_t>(written_size));
 				break;
 			}
@@ -281,7 +281,7 @@ SocketResult SocketBroadcastServerImpl::write(const void* buffer, size_t size)
 			written_size += static_cast<size_t>(inner_result.bytes());
 			if (written_size >= size)
 			{
-				per_client_result = SocketResult(SocketCode::SUCCESS,
+				per_client_result = NetworkResult(NetworkResultCode::SUCCESS,
 					static_cast<int32_t>(written_size));
 				break;
 			}
@@ -293,7 +293,7 @@ SocketResult SocketBroadcastServerImpl::write(const void* buffer, size_t size)
 	return result;
 }
 
-SocketResult SocketBroadcastServerImpl::await(uint64_t timeout_ms)
+NetworkResult BroadcastServerImpl::await(uint64_t timeout_ms)
 {
 	{
 		std::unique_lock<std::mutex> lk(_clients_mtx);
@@ -302,19 +302,19 @@ SocketResult SocketBroadcastServerImpl::await(uint64_t timeout_ms)
 			[this] { return !_active_clients.empty() || !_is_monitoring; });
 
 		if (!_is_monitoring)
-			return SocketResult(SocketCode::SOCKET_CLOSED);
+			return NetworkResult(NetworkResultCode::SOCKET_CLOSED);
 		if (_active_clients.empty())
-			return SocketResult(SocketCode::SOCKET_TIMEOUT);
+			return NetworkResult(NetworkResultCode::SOCKET_TIMEOUT);
 	}
 
 	std::lock_guard<std::mutex> lk(_clients_mtx);
 	if (!_is_monitoring)
-		return SocketResult(SocketCode::SOCKET_CLOSED);
-	return SocketResult(SocketCode::SUCCESS,
+		return NetworkResult(NetworkResultCode::SOCKET_CLOSED);
+	return NetworkResult(NetworkResultCode::SUCCESS,
 		static_cast<int32_t>(_active_clients.size()));
 }
 
-SocketResult SocketBroadcastServerImpl::awaitClose(uint64_t timeout_ms)
+NetworkResult BroadcastServerImpl::awaitClose(uint64_t timeout_ms)
 {
 	std::unique_lock<std::mutex> lk(_clients_mtx);
 	_clients_cv.wait_for(lk,
@@ -322,15 +322,15 @@ SocketResult SocketBroadcastServerImpl::awaitClose(uint64_t timeout_ms)
 		[this] { return _active_clients.empty() || !_is_monitoring; });
 
 	if (!_is_monitoring)
-		return SocketResult(SocketCode::SOCKET_CLOSED);
+		return NetworkResult(NetworkResultCode::SOCKET_CLOSED);
 	if (!_active_clients.empty())
-		return SocketResult(SocketCode::SOCKET_TIMEOUT,
+		return NetworkResult(NetworkResultCode::SOCKET_TIMEOUT,
 			static_cast<int32_t>(_active_clients.size()));
 
-	return SocketResult(SocketCode::SUCCESS, 0);
+	return NetworkResult(NetworkResultCode::SUCCESS, 0);
 }
 
-void SocketBroadcastServerImpl::close()
+void BroadcastServerImpl::close()
 {
 	if (_is_monitoring) {
 		_is_monitoring = false;

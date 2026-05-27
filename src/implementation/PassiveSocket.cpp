@@ -1,6 +1,6 @@
 #include "PassiveSocket.hpp"
 
-#include "SocketResult.hpp"
+#include "NetworkResult.hpp"
 #include "SocketHelper.hpp"
 
 #include <stdexcept>
@@ -72,9 +72,9 @@ void PassiveSocket::close()
 	_socket = -1;	
 }
 
-SocketResult PassiveSocket::bind(const SocketAddress& address)
+NetworkResult PassiveSocket::bind(const SocketAddress& address)
 {
-    SocketResult res;
+    NetworkResult res;
 
 
     int opt = 1;
@@ -85,9 +85,9 @@ SocketResult PassiveSocket::bind(const SocketAddress& address)
     }
     return res;
 }
-SocketResult PassiveSocket::listen()
+NetworkResult PassiveSocket::listen()
 {
-    SocketResult res;
+    NetworkResult res;
 
     auto ret = ::listen(_socket, SOMAXCONN);
     if (ret < 0)
@@ -122,12 +122,12 @@ void TLSPassiveSocket::close()
 {
     throw std::runtime_error("Not Implemented");
 }
-SocketResult TLSPassiveSocket::bind(const SocketAddress& address)
+NetworkResult TLSPassiveSocket::bind(const SocketAddress& address)
 {
 	(void)address;
     throw std::runtime_error("Not Implemented");
 }
-SocketResult TLSPassiveSocket::listen()
+NetworkResult TLSPassiveSocket::listen()
 {
     throw std::runtime_error("Not Implemented");
 }

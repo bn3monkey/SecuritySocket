@@ -10,10 +10,10 @@ namespace Bn3Monkey
     {
     public:
         inline int descriptor() { return _socket; }
-        inline SocketResult valid() { return _result; }
+        inline NetworkResult valid() { return _result; }
     
     protected:
-        SocketResult _result{};
+        NetworkResult _result{};
         int32_t _socket{ 0 };
     };
 

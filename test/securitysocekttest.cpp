@@ -24,7 +24,7 @@ int startSecuritySocketTest(int argc, char** argv, const char* cwd)
     // createCertificates();
     //::testing::GTEST_FLAG(filter) = "TLSConnection*";
     //::testing::GTEST_FLAG(filter) = "-TLSConnection*";
-    ::testing::GTEST_FLAG(filter) = "TCPBroadcast*:TCPRequestEcho*:TCPRequestFile*";
+    ::testing::GTEST_FLAG(filter) = "PicoHttpParser*:TCPBroadcast*:TCPRequestEcho*:TCPRequestFile*";
 
     return RUN_ALL_TESTS();
 }

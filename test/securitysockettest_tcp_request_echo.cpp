@@ -55,7 +55,7 @@ struct EchoResponse
 };
 
 
-struct EchoRequestHandler : public Bn3Monkey::SocketRequestHandler
+struct EchoRequestHandler : public Bn3Monkey::CustomProtocolRequestHandler
 {
     size_t getHeaderSize() override {
         return sizeof(EchoRequestHeader);
@@ -63,13 +63,13 @@ struct EchoRequestHandler : public Bn3Monkey::SocketRequestHandler
     size_t getPayloadSize(const char* header) override {
         return reinterpret_cast<const EchoResponseHeader*>(header)->payload_size;
     }
-    Bn3Monkey::SocketRequestMode onModeClassified(const char* header) override {
+    Bn3Monkey::RequestProcessingMode onModeClassified(const char* header) override {
         auto* derived_header = reinterpret_cast<const EchoRequestHeader*>(header);
         switch (derived_header->request_type) {
         case 0:
-            return Bn3Monkey::SocketRequestMode::FAST;
+            return Bn3Monkey::RequestProcessingMode::FAST;
         }
-        return Bn3Monkey::SocketRequestMode::FAST;
+        return Bn3Monkey::RequestProcessingMode::FAST;
     }
 
     void onClientConnected(const char* ip, int port) override {
@@ -114,7 +114,7 @@ void runEchoClient(int32_t client_no)
 {
     using namespace Bn3Monkey;
 
-    SocketConfiguration config{
+    NetworkConfiguration config{
         "127.0.0.1",
         21345,
         false,
@@ -125,15 +125,15 @@ void runEchoClient(int32_t client_no)
         8192
     };
 
-    SocketClient client{ config };
+    Client client{ config };
     
     {
         auto ret = client.open();
-        ASSERT_EQ(SocketCode::SUCCESS, ret.code());
+        ASSERT_EQ(NetworkResultCode::SUCCESS, ret.code());
     }
     {
         auto ret = client.connect();
-        ASSERT_EQ(SocketCode::SUCCESS, ret.code());
+        ASSERT_EQ(NetworkResultCode::SUCCESS, ret.code());
     }
 
     int32_t count{ 0 };
@@ -165,7 +165,7 @@ TEST(TCPRequestEcho, runFourClient)
     initializeSecuritySocket();
 
 
-    SocketConfiguration config{
+    NetworkConfiguration config{
         "127.0.0.1",
         21345,
         false,
@@ -177,10 +177,10 @@ TEST(TCPRequestEcho, runFourClient)
     };
 
     EchoRequestHandler handler;
-    SocketRequestServer server{ config };
+    RequestServer server{ config };
 
     auto result = server.open(&handler, 4);
-    ASSERT_EQ(SocketCode::SUCCESS, result.code());
+    ASSERT_EQ(NetworkResultCode::SUCCESS, result.code());
 
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
 

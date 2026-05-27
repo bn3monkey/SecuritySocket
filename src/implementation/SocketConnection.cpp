@@ -85,7 +85,7 @@ void Bn3Monkey::SocketConnection::flush()
 	total_output_write_size = 0;
 }
 
-Bn3Monkey::SocketConnection::ProcessState Bn3Monkey::SocketConnection::runTask(SocketRequestMode mode, size_t payload_size)
+Bn3Monkey::SocketConnection::ProcessState Bn3Monkey::SocketConnection::runTask(RequestProcessingMode mode, size_t payload_size)
 {
 
 	auto* header = input_header_buffer.data();
@@ -93,24 +93,24 @@ Bn3Monkey::SocketConnection::ProcessState Bn3Monkey::SocketConnection::runTask(S
 
 
 	switch (mode) {
-	case SocketRequestMode::FAST:
+	case RequestProcessingMode::FAST:
 	{
 		_handler.onProcessed(header, payload, payload_size, output_buffer.data(), &response_size);
 		return ProcessState::WRITING_RESPONSE;
 	}
 	break;
-	case SocketRequestMode::SLOW:
+	case RequestProcessingMode::SLOW:
 	{
 		// @Todo
 	}
 	break;
-	case SocketRequestMode::READ_STREAM:
+	case RequestProcessingMode::READ_STREAM:
 	{
 		_handler.onProcessed(header, payload, payload_size, output_buffer.data(), &response_size);
 		return ProcessState::WRITING_RESPONSE;
 	}
 	break;
-	case SocketRequestMode::WRITE_STREAM:
+	case RequestProcessingMode::WRITE_STREAM:
 	{
 		_handler.onProcessedWithoutResponse(header, payload, payload_size);
 		return ProcessState::FINISH_PROCESS;

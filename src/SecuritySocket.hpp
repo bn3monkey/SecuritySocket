@@ -44,7 +44,7 @@
 namespace Bn3Monkey
 {
 
-    enum class SocketCode
+    enum class NetworkResultCode
     {
         SUCCESS,
 
@@ -105,23 +105,23 @@ namespace Bn3Monkey
 
         LENGTH,
     };
-    struct SECURITYSOCKET_API SocketResult
+    struct SECURITYSOCKET_API NetworkResult
     {
-        inline SocketCode code() { return _code; }
+        inline NetworkResultCode code() { return _code; }
         inline int32_t bytes() { return _bytes; }
         const char* message();
                 
-        SocketResult(
-            const SocketCode& code = SocketCode::SUCCESS,
+        NetworkResult(
+            const NetworkResultCode& code = NetworkResultCode::SUCCESS,
             int32_t bytes = -1) : _code(code), _bytes(bytes) {
             }
     private:
-        SocketCode _code;
+        NetworkResultCode _code;
         int32_t _bytes;
     };
 
 
-    class SECURITYSOCKET_API SocketConfiguration {
+    class SECURITYSOCKET_API NetworkConfiguration {
     public:
         constexpr static size_t MAX_PDU_SIZE = 65536;
 
@@ -135,7 +135,7 @@ namespace Bn3Monkey
         inline uint32_t time_between_retries() { return _time_between_retries;  }
 
 
-        explicit SocketConfiguration(
+        explicit NetworkConfiguration(
             const char* ip,
             uint32_t port,
             bool is_unix_domain = false,
@@ -168,36 +168,36 @@ namespace Bn3Monkey
     };
 
 
-    enum class SocketTLSVersion {
+    enum class TlsVersion {
         TLS1_2 = 1 << 0,
         TLS1_3 = 1 << 1,
 	};
-    enum class SocketTLS1_2CipherSuite {
+    enum class TlsV12CipherSuite {
         ECDHE_ECDSA_AES256_GCM_SHA384 = 1 << 0,
         ECDHE_RSA_AES256_GCM_SHA384 = 1 << 1,
         ECDHE_ECDSA_CHACHA20_POLY1305 = 1 << 2, 
         ECDHE_RSA_CHACHA20_POLY1305 = 1 << 3,
     };
-    enum class SocketTLS1_3CipherSuite {
+    enum class TlsV13CipherSuite {
         TLS_AES_128_GCM_SHA256 = 1 << 0,
         TLS_AES_256_GCM_SHA384 = 1 << 1,
         TLS_CHACHA20_POLY1305_SHA256 = 1 << 2,
         TLS_AES_128_CCM_SHA256 = 1 << 3,
         TLS_AES_128_CCM8_SHA256 = 1 << 4
 	};
-    enum class SocketTLSClientAuthenticationMode {
+    enum class TlsClientAuthMode {
         AUTH_MODE_NONE,
         AUTH_MODE_OPTIONAL,
         AUTH_MODE_REQUIRED
 	};
 
-    class SECURITYSOCKET_API SocketTLSClientConfiguration
+    class SECURITYSOCKET_API TlsClientConfiguration
     {
     public:
-        explicit SocketTLSClientConfiguration(
-            std::initializer_list<SocketTLSVersion> support_versions = { },
-            std::initializer_list<SocketTLS1_2CipherSuite> tls_1_2_cipher_suites = {},
-            std::initializer_list<SocketTLS1_3CipherSuite> tls_1_3_cipher_suites = {},
+        explicit TlsClientConfiguration(
+            std::initializer_list<TlsVersion> support_versions = { },
+            std::initializer_list<TlsV12CipherSuite> tls_1_2_cipher_suites = {},
+            std::initializer_list<TlsV13CipherSuite> tls_1_3_cipher_suites = {},
             bool verify_server = false,
             bool verify_hostname = false,
             const char* server_trust_store_path = nullptr,
@@ -239,7 +239,7 @@ namespace Bn3Monkey
 
 
         inline bool valid() const { return _tls_versions != 0; }
-        inline bool isVersionSupported(SocketTLSVersion version) const { return _tls_versions & static_cast<int32_t>(version); }
+        inline bool isVersionSupported(TlsVersion version) const { return _tls_versions & static_cast<int32_t>(version); }
         void generateTLS12CipherSuites(char* ret) const;
         void generateTLS13CipherSuites(char* ret) const;
         inline const char* serverTrustStorePath() const { return _server_trust_store_path; }
@@ -268,19 +268,19 @@ namespace Bn3Monkey
         TlsEventCallback _on_tls_event{ nullptr };
     };
 
-    class SECURITYSOCKET_API SocketTLSServerConfiguration
+    class SECURITYSOCKET_API TlsServerConfiguration
     {
     public:
-        explicit SocketTLSServerConfiguration(
-            std::initializer_list<SocketTLSVersion> support_versions = { },
-            std::initializer_list<SocketTLS1_2CipherSuite> tls_1_2_cipher_suites = {},
-            std::initializer_list<SocketTLS1_3CipherSuite> tls_1_3_cipher_suites = {},
+        explicit TlsServerConfiguration(
+            std::initializer_list<TlsVersion> support_versions = { },
+            std::initializer_list<TlsV12CipherSuite> tls_1_2_cipher_suites = {},
+            std::initializer_list<TlsV13CipherSuite> tls_1_3_cipher_suites = {},
 
             const char* server_cert_file_path = nullptr,
             const char* server_key_file_path = nullptr,
             const char* server_key_password = nullptr,
 
-			SocketTLSClientAuthenticationMode client_authentication_mode = SocketTLSClientAuthenticationMode::AUTH_MODE_NONE,
+			TlsClientAuthMode client_authentication_mode = TlsClientAuthMode::AUTH_MODE_NONE,
             const char* client_trust_store_path = nullptr
 		) : _client_authentication_mode(client_authentication_mode)
         {
@@ -311,20 +311,20 @@ namespace Bn3Monkey
             return _on_tls_event;
         }
         inline bool valid() const { return _tls_versions != 0; }
-        inline bool isVersionSupported(SocketTLSVersion version) const { return _tls_versions & static_cast<int32_t>(version); }
+        inline bool isVersionSupported(TlsVersion version) const { return _tls_versions & static_cast<int32_t>(version); }
         void generateTLS12CipherSuites(char* ret) const;
         void generateTLS13CipherSuites(char* ret) const;
         inline const char* clientTrustStorePath() const { return _client_trust_store_path; }
         inline const char* serverCertFilePath() const { return _server_cert_file_path; }
         inline const char* serverKeyFilePath() const { return _server_key_file_path; }
         inline const char* serverKeyPassword() const { return _server_key_password; }
-        inline SocketTLSClientAuthenticationMode clientAuthenticationMode() const { return _client_authentication_mode; }
+        inline TlsClientAuthMode clientAuthenticationMode() const { return _client_authentication_mode; }
 
     private:
 		int32_t _tls_versions{ 0 };
 		int32_t _tls_1_2_cipher_suites{ 0 };
 		int32_t _tls_1_3_cipher_suites{ 0 };
-		SocketTLSClientAuthenticationMode _client_authentication_mode{ SocketTLSClientAuthenticationMode::AUTH_MODE_NONE };
+		TlsClientAuthMode _client_authentication_mode{ TlsClientAuthMode::AUTH_MODE_NONE };
 
         char _client_trust_store_path[256]{ 0 };
         char _server_cert_file_path[256]{ 0 };
@@ -334,22 +334,22 @@ namespace Bn3Monkey
     };
 
 
-    class SECURITYSOCKET_API SocketClient
+    class SECURITYSOCKET_API Client
     {
     public:
         static constexpr size_t IMPLEMENTATION_SIZE = 2048;
 
-        explicit SocketClient(const SocketConfiguration& configuration);
-        explicit SocketClient(const SocketConfiguration& configuration, const SocketTLSClientConfiguration& tls_configuration);
-        virtual ~SocketClient();
+        explicit Client(const NetworkConfiguration& configuration);
+        explicit Client(const NetworkConfiguration& configuration, const TlsClientConfiguration& tls_configuration);
+        virtual ~Client();
 
-        SocketResult open();
+        NetworkResult open();
         void close();
 
-        SocketResult connect();
-        SocketResult read(void* buffer, size_t size);
-        SocketResult write(const void* buffer, size_t size);
-        SocketResult isConnected();
+        NetworkResult connect();
+        NetworkResult read(void* buffer, size_t size);
+        NetworkResult write(const void* buffer, size_t size);
+        NetworkResult isConnected();
 
     private:
         char _container[IMPLEMENTATION_SIZE]{ 0 };
@@ -357,7 +357,7 @@ namespace Bn3Monkey
 
 
     /*
-    struct SECURITYSOCKET_API SocketRequestHandler
+    struct SECURITYSOCKET_API CustomProtocolRequestHandler
     {
         enum class ProcessState
         {
@@ -388,7 +388,7 @@ namespace Bn3Monkey
     // 애초에 payload를 다른 쓰레드에서 read를 여러번하고 write를 하자
     // 금방 끝날 것은 이 쓰레드에서 처리하기.
         
-    enum class SocketRequestMode
+    enum class RequestProcessingMode
     {
         FAST,
         SLOW,
@@ -396,12 +396,12 @@ namespace Bn3Monkey
         WRITE_STREAM
     };
 
-    struct SECURITYSOCKET_API SocketRequestHandler
+    struct SECURITYSOCKET_API CustomProtocolRequestHandler
     {
         virtual size_t getHeaderSize() = 0;
         virtual size_t getPayloadSize(const char* header) = 0;
         
-        virtual SocketRequestMode onModeClassified(
+        virtual RequestProcessingMode onModeClassified(
             const char* header
         ) = 0;
         
@@ -423,52 +423,52 @@ namespace Bn3Monkey
         ) = 0;
     };
 
-    struct SECURITYSOCKET_API SocketBroadcastHandler {
-        virtual ~SocketBroadcastHandler() = default;
+    struct SECURITYSOCKET_API BroadcastHandler {
+        virtual ~BroadcastHandler() = default;
         virtual void onClientConnected(const char* ip, int port) = 0;
         virtual void onClientDisconnected(const char* ip, int port) = 0;
     };
 
 
 
-    class SECURITYSOCKET_API SocketRequestServer
+    class SECURITYSOCKET_API RequestServer
     {
     public:
         static constexpr size_t IMPLEMENTATION_SIZE = 2048;
 
-        explicit SocketRequestServer(const SocketConfiguration& configuration);
-        explicit SocketRequestServer(const SocketConfiguration& configuration, const SocketTLSServerConfiguration& tls_configuration);
-        virtual ~SocketRequestServer();
+        explicit RequestServer(const NetworkConfiguration& configuration);
+        explicit RequestServer(const NetworkConfiguration& configuration, const TlsServerConfiguration& tls_configuration);
+        virtual ~RequestServer();
 
-        SocketResult open(SocketRequestHandler* handler, size_t num_of_clients);
+        NetworkResult open(CustomProtocolRequestHandler* handler, size_t num_of_clients);
         void close();
 
     private:
         char _container[IMPLEMENTATION_SIZE]{ 0 };
     };
 
-    class SECURITYSOCKET_API SocketBroadcastServer
+    class SECURITYSOCKET_API BroadcastServer
     {
     public:
         static constexpr size_t IMPLEMENTATION_SIZE = 2048;
 
-        explicit SocketBroadcastServer(const SocketConfiguration& configuration);
-        explicit SocketBroadcastServer(const SocketConfiguration& configuration, const SocketTLSServerConfiguration& tls_configuration);
-        virtual ~SocketBroadcastServer();
+        explicit BroadcastServer(const NetworkConfiguration& configuration);
+        explicit BroadcastServer(const NetworkConfiguration& configuration, const TlsServerConfiguration& tls_configuration);
+        virtual ~BroadcastServer();
 
-        SocketResult open(SocketBroadcastHandler* handler, size_t num_of_clients);
+        NetworkResult open(BroadcastHandler* handler, size_t num_of_clients);
         void close();
 
-        SocketResult write(const void* buffer, size_t size);
+        NetworkResult write(const void* buffer, size_t size);
 
         // Block until at least one healthy client is connected, or until timeout_ms
         // elapses. Stale clients (peer already closed) are detected and pruned as
         // part of the wait, so each successful return reflects a live peer.
-        SocketResult await(uint64_t timeout_ms);
+        NetworkResult await(uint64_t timeout_ms);
         // Block until every currently-active client has closed (peer FIN received),
         // or until timeout_ms elapses. Use as an explicit barrier between broadcast
         // rounds so the next await() starts from a clean active list.
-        SocketResult awaitClose(uint64_t timeout_ms);
+        NetworkResult awaitClose(uint64_t timeout_ms);
 
         // Forcibly disconnect every currently-active client. Closes each socket,
         // fires onClientDisconnected for each, and clears the active list. Use

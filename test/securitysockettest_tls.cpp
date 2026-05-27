@@ -56,18 +56,18 @@ private:
 
 
 // =============================================================================
-// Helper: create a TLS SocketClient and attempt connect; returns SocketCode.
+// Helper: create a TLS Client and attempt connect; returns NetworkResultCode.
 // max_retries=1 prevents reusing a broken SSL object on failure.
 // =============================================================================
 // ip=nullptr → connect to the remote server's discovered address (default).
 // Pass an explicit IP string to test a specific address (e.g. "127.0.0.1").
-static SocketCode tryTLSConnect(unsigned short port,
-                                const SocketTLSClientConfiguration& tls_cfg,
+static NetworkResultCode tryTLSConnect(unsigned short port,
+                                const TlsClientConfiguration& tls_cfg,
                                 const char* ip = nullptr)
 {
     if (ip == nullptr)
         ip = Bn3Monkey::getRemoteCommandServerAddress(getClient());
-    SocketConfiguration config{
+    NetworkConfiguration config{
         ip,
         port,
         false,  // not unix domain
@@ -78,18 +78,18 @@ static SocketCode tryTLSConnect(unsigned short port,
         4096    // pdu_size
     };
 
-    SocketClient client{ config, tls_cfg };
+    Client client{ config, tls_cfg };
 
     {
-        SocketResult r = client.open();
-        if (r.code() != SocketCode::SUCCESS)
+        NetworkResult r = client.open();
+        if (r.code() != NetworkResultCode::SUCCESS)
         {
             printf("Open Fail : %s\n", r.message());
             return r.code();
         }
     }
 
-    SocketResult r = client.connect();
+    NetworkResult r = client.connect();
     client.close();
 
     printf("Connect Code : %s\n", r.message());
@@ -132,10 +132,10 @@ TEST(TLSConnection, ClientSupports_TLS12Only_ServerSupports_TLS12Only_Connection
         + " -no_tls1_3" };
     ASSERT_TRUE(server.started());
 
-    SocketTLSClientConfiguration tls{ {SocketTLSVersion::TLS1_2} };
+    TlsClientConfiguration tls{ {TlsVersion::TLS1_2} };
     tls.setOnTLSEvent(trackTLSEvent);
     auto ret = tryTLSConnect(port, tls);
-    EXPECT_EQ(SocketCode::SUCCESS, ret);
+    EXPECT_EQ(NetworkResultCode::SUCCESS, ret);
     Bn3Monkey::releaseSecuritySocket();
 }
 
@@ -148,10 +148,10 @@ TEST(TLSConnection, ClientSupports_TLS13Only_ServerSupports_TLS13Only_Connection
         + " -no_tls1_2" };
     ASSERT_TRUE(server.started());
 
-    SocketTLSClientConfiguration tls{ {SocketTLSVersion::TLS1_3} };
+    TlsClientConfiguration tls{ {TlsVersion::TLS1_3} };
     tls.setOnTLSEvent(trackTLSEvent);
     auto ret = tryTLSConnect(port, tls);
-    EXPECT_EQ(SocketCode::SUCCESS, ret);
+    EXPECT_EQ(NetworkResultCode::SUCCESS, ret);
     Bn3Monkey::releaseSecuritySocket();
 }
 
@@ -164,10 +164,10 @@ TEST(TLSConnection, ClientSupports_TLS12And13_ServerSupports_TLS12Only_Connectio
         + " -no_tls1_3" };
     ASSERT_TRUE(server.started());
 
-    SocketTLSClientConfiguration tls{ {SocketTLSVersion::TLS1_2, SocketTLSVersion::TLS1_3} };
+    TlsClientConfiguration tls{ {TlsVersion::TLS1_2, TlsVersion::TLS1_3} };
     tls.setOnTLSEvent(trackTLSEvent);
     auto ret = tryTLSConnect(port, tls);
-    EXPECT_EQ(SocketCode::SUCCESS, ret);
+    EXPECT_EQ(NetworkResultCode::SUCCESS, ret);
     Bn3Monkey::releaseSecuritySocket();
 }
 
@@ -180,10 +180,10 @@ TEST(TLSConnection, ClientSupports_TLS12And13_ServerSupports_TLS13Only_Connectio
         + " -no_tls1_2" };
     ASSERT_TRUE(server.started());
 
-    SocketTLSClientConfiguration tls{ {SocketTLSVersion::TLS1_2, SocketTLSVersion::TLS1_3} };
+    TlsClientConfiguration tls{ {TlsVersion::TLS1_2, TlsVersion::TLS1_3} };
     tls.setOnTLSEvent(trackTLSEvent);
     auto ret = tryTLSConnect(port, tls);
-    EXPECT_EQ(SocketCode::SUCCESS, ret);
+    EXPECT_EQ(NetworkResultCode::SUCCESS, ret);
     Bn3Monkey::releaseSecuritySocket();
 }
 
@@ -196,10 +196,10 @@ TEST(TLSConnection, ClientSupports_TLS12Only_ServerSupports_TLS13Only_Connection
         + " -no_tls1_2" };
     ASSERT_TRUE(server.started());
 
-    SocketTLSClientConfiguration tls{ {SocketTLSVersion::TLS1_2} };
+    TlsClientConfiguration tls{ {TlsVersion::TLS1_2} };
     tls.setOnTLSEvent(trackTLSEvent);
     auto ret = tryTLSConnect(port, tls);
-    EXPECT_EQ(SocketCode::TLS_VERSION_NOT_SUPPORTED, ret);
+    EXPECT_EQ(NetworkResultCode::TLS_VERSION_NOT_SUPPORTED, ret);
     Bn3Monkey::releaseSecuritySocket();
 }
 
@@ -212,10 +212,10 @@ TEST(TLSConnection, ClientSupports_TLS13Only_ServerSupports_TLS12Only_Connection
         + " -no_tls1_3" };
     ASSERT_TRUE(server.started());
 
-    SocketTLSClientConfiguration tls{ {SocketTLSVersion::TLS1_3} };
+    TlsClientConfiguration tls{ {TlsVersion::TLS1_3} };
     tls.setOnTLSEvent(trackTLSEvent);
     auto ret = tryTLSConnect(port, tls);
-    EXPECT_EQ(SocketCode::TLS_VERSION_NOT_SUPPORTED, ret);
+    EXPECT_EQ(NetworkResultCode::TLS_VERSION_NOT_SUPPORTED, ret);
     Bn3Monkey::releaseSecuritySocket();
 }
 
@@ -233,12 +233,12 @@ TEST(TLSConnection, ClientSpecifiesTLS12Cipher_ServerSupportsMatchingCipher_Conn
         + " -no_tls1_3 -cipher ECDHE-RSA-AES256-GCM-SHA384" };
     ASSERT_TRUE(server.started());
 
-    SocketTLSClientConfiguration tls{
-        {SocketTLSVersion::TLS1_2},
-        {SocketTLS1_2CipherSuite::ECDHE_RSA_AES256_GCM_SHA384}
+    TlsClientConfiguration tls{
+        {TlsVersion::TLS1_2},
+        {TlsV12CipherSuite::ECDHE_RSA_AES256_GCM_SHA384}
     };
 	auto ret = tryTLSConnect(port, tls);
-    EXPECT_EQ(SocketCode::SUCCESS, ret);
+    EXPECT_EQ(NetworkResultCode::SUCCESS, ret);
     Bn3Monkey::releaseSecuritySocket();
 }
 
@@ -251,13 +251,13 @@ TEST(TLSConnection, ClientSpecifiesTLS13Cipher_ServerSupportsMatchingCipher_Conn
         + " -no_tls1_2 -ciphersuites TLS_AES_256_GCM_SHA384" };
     ASSERT_TRUE(server.started());
 
-    SocketTLSClientConfiguration tls{
-        {SocketTLSVersion::TLS1_3},
+    TlsClientConfiguration tls{
+        {TlsVersion::TLS1_3},
         {},
-        {SocketTLS1_3CipherSuite::TLS_AES_256_GCM_SHA384}
+        {TlsV13CipherSuite::TLS_AES_256_GCM_SHA384}
     };
     auto ret = tryTLSConnect(port, tls);
-    EXPECT_EQ(SocketCode::SUCCESS, ret);
+    EXPECT_EQ(NetworkResultCode::SUCCESS, ret);
     Bn3Monkey::releaseSecuritySocket();
 }
 
@@ -271,13 +271,13 @@ TEST(TLSConnection, ClientSpecifiesTLS12Cipher_ServerDoesNotSupportCipher_Connec
         + " -no_tls1_3 -cipher ECDHE-RSA-AES128-GCM-SHA256" };
     ASSERT_TRUE(server.started());
 
-    SocketTLSClientConfiguration tls{
-        {SocketTLSVersion::TLS1_2},
-        {SocketTLS1_2CipherSuite::ECDHE_RSA_AES256_GCM_SHA384}
+    TlsClientConfiguration tls{
+        {TlsVersion::TLS1_2},
+        {TlsV12CipherSuite::ECDHE_RSA_AES256_GCM_SHA384}
     };
     tls.setOnTLSEvent(trackTLSEvent);
 	auto ret = tryTLSConnect(port, tls);
-    EXPECT_EQ(SocketCode::TLS_CIPHER_SUITE_MISMATCH, ret);
+    EXPECT_EQ(NetworkResultCode::TLS_CIPHER_SUITE_MISMATCH, ret);
     Bn3Monkey::releaseSecuritySocket();
 }
 
@@ -291,14 +291,14 @@ TEST(TLSConnection, ClientSpecifiesTLS13Cipher_ServerDoesNotSupportCipher_Connec
         + " -no_tls1_2 -ciphersuites TLS_AES_256_GCM_SHA384" };
     ASSERT_TRUE(server.started());
 
-    SocketTLSClientConfiguration tls{
-        {SocketTLSVersion::TLS1_3},
+    TlsClientConfiguration tls{
+        {TlsVersion::TLS1_3},
         {},
-        {SocketTLS1_3CipherSuite::TLS_AES_128_GCM_SHA256}
+        {TlsV13CipherSuite::TLS_AES_128_GCM_SHA256}
     };
     tls.setOnTLSEvent(trackTLSEvent);
     auto ret = tryTLSConnect(port, tls);
-    EXPECT_EQ(SocketCode::TLS_CIPHER_SUITE_MISMATCH, ret);
+    EXPECT_EQ(NetworkResultCode::TLS_CIPHER_SUITE_MISMATCH, ret);
     Bn3Monkey::releaseSecuritySocket();
 }
 
@@ -318,14 +318,14 @@ TEST(TLSConnection, ClientDoesNotVerifyServerCert_ServerHasSelfSignedCert_Connec
         + " -no_tls1_3" };
     ASSERT_TRUE(server.started());
 
-    SocketTLSClientConfiguration tls{
-        {SocketTLSVersion::TLS1_2},
+    TlsClientConfiguration tls{
+        {TlsVersion::TLS1_2},
         {}, {},
         false   // verify_server = false
     };
     tls.setOnTLSEvent(trackTLSEvent);
     auto ret = tryTLSConnect(port, tls);
-    EXPECT_EQ(SocketCode::SUCCESS, ret);
+    EXPECT_EQ(NetworkResultCode::SUCCESS, ret);
     Bn3Monkey::releaseSecuritySocket();
 }
 
@@ -338,8 +338,8 @@ TEST(TLSConnection, ClientVerifiesServerCert_ServerCertSignedByTrustedCA_Connect
         + " -no_tls1_3" };
     ASSERT_TRUE(server.started());
 
-    SocketTLSClientConfiguration tls{
-        {SocketTLSVersion::TLS1_2},
+    TlsClientConfiguration tls{
+        {TlsVersion::TLS1_2},
         {}, {},
         true,    // verify_server
         false,   // verify_hostname
@@ -347,7 +347,7 @@ TEST(TLSConnection, ClientVerifiesServerCert_ServerCertSignedByTrustedCA_Connect
     };
     tls.setOnTLSEvent(trackTLSEvent);
     auto ret = tryTLSConnect(port, tls);
-    EXPECT_EQ(SocketCode::SUCCESS, ret);
+    EXPECT_EQ(NetworkResultCode::SUCCESS, ret);
     Bn3Monkey::releaseSecuritySocket();
 }
 
@@ -360,8 +360,8 @@ TEST(TLSConnection, ClientVerifiesServerCert_ServerHasSelfSignedCert_ConnectionF
         + " -no_tls1_3" };
     ASSERT_TRUE(server.started());
 
-    SocketTLSClientConfiguration tls{
-        {SocketTLSVersion::TLS1_2},
+    TlsClientConfiguration tls{
+        {TlsVersion::TLS1_2},
         {}, {},
         true,    // verify_server
         false,   // verify_hostname
@@ -369,7 +369,7 @@ TEST(TLSConnection, ClientVerifiesServerCert_ServerHasSelfSignedCert_ConnectionF
     };
     tls.setOnTLSEvent(trackTLSEvent);
     auto ret = tryTLSConnect(port, tls);
-    EXPECT_EQ(SocketCode::TLS_SERVER_CERT_INVALID, ret);
+    EXPECT_EQ(NetworkResultCode::TLS_SERVER_CERT_INVALID, ret);
     Bn3Monkey::releaseSecuritySocket();
 }
 
@@ -382,8 +382,8 @@ TEST(TLSConnection, ClientVerifiesServerCert_ServerCertSignedByUntrustedCA_Conne
         + " -no_tls1_3" };
     ASSERT_TRUE(server.started());
 
-    SocketTLSClientConfiguration tls{
-        {SocketTLSVersion::TLS1_2},
+    TlsClientConfiguration tls{
+        {TlsVersion::TLS1_2},
         {}, {},
         true,              // verify_server
         false,             // verify_hostname
@@ -391,7 +391,7 @@ TEST(TLSConnection, ClientVerifiesServerCert_ServerCertSignedByUntrustedCA_Conne
     };
     tls.setOnTLSEvent(trackTLSEvent);
     auto ret = tryTLSConnect(port, tls);
-    EXPECT_EQ(SocketCode::TLS_SERVER_CERT_INVALID, ret);
+    EXPECT_EQ(NetworkResultCode::TLS_SERVER_CERT_INVALID, ret);
     Bn3Monkey::releaseSecuritySocket();
 }
 
@@ -404,14 +404,14 @@ TEST(TLSConnection, ClientDoesNotVerifyServerCert_ServerHasSelfSignedCert_Connec
         + " -no_tls1_2" };
     ASSERT_TRUE(server.started());
 
-    SocketTLSClientConfiguration tls{
-        {SocketTLSVersion::TLS1_3},
+    TlsClientConfiguration tls{
+        {TlsVersion::TLS1_3},
         {}, {},
         false   // verify_server = false
     };
     tls.setOnTLSEvent(trackTLSEvent);
     auto ret = tryTLSConnect(port, tls);
-    EXPECT_EQ(SocketCode::SUCCESS, ret);
+    EXPECT_EQ(NetworkResultCode::SUCCESS, ret);
     Bn3Monkey::releaseSecuritySocket();
 }
 
@@ -424,8 +424,8 @@ TEST(TLSConnection, ClientVerifiesServerCert_ServerCertSignedByTrustedCA_Connect
         + " -no_tls1_2" };
     ASSERT_TRUE(server.started());
 
-    SocketTLSClientConfiguration tls{
-        {SocketTLSVersion::TLS1_3},
+    TlsClientConfiguration tls{
+        {TlsVersion::TLS1_3},
         {}, {},
         true,    // verify_server
         false,   // verify_hostname
@@ -433,7 +433,7 @@ TEST(TLSConnection, ClientVerifiesServerCert_ServerCertSignedByTrustedCA_Connect
     };
     tls.setOnTLSEvent(trackTLSEvent);
     auto ret = tryTLSConnect(port, tls);
-    EXPECT_EQ(SocketCode::SUCCESS, ret);
+    EXPECT_EQ(NetworkResultCode::SUCCESS, ret);
     Bn3Monkey::releaseSecuritySocket();
 }
 
@@ -446,8 +446,8 @@ TEST(TLSConnection, ClientVerifiesServerCert_ServerHasSelfSignedCert_ConnectionF
         + " -no_tls1_2" };
     ASSERT_TRUE(server.started());
 
-    SocketTLSClientConfiguration tls{
-        {SocketTLSVersion::TLS1_3},
+    TlsClientConfiguration tls{
+        {TlsVersion::TLS1_3},
         {}, {},
         true,    // verify_server
         false,   // verify_hostname
@@ -455,7 +455,7 @@ TEST(TLSConnection, ClientVerifiesServerCert_ServerHasSelfSignedCert_ConnectionF
     };
     tls.setOnTLSEvent(trackTLSEvent);
     auto ret = tryTLSConnect(port, tls);
-    EXPECT_EQ(SocketCode::TLS_SERVER_CERT_INVALID, ret);
+    EXPECT_EQ(NetworkResultCode::TLS_SERVER_CERT_INVALID, ret);
     Bn3Monkey::releaseSecuritySocket();
 }
 
@@ -468,8 +468,8 @@ TEST(TLSConnection, ClientVerifiesServerCert_ServerCertSignedByUntrustedCA_Conne
         + " -no_tls1_2" };
     ASSERT_TRUE(server.started());
 
-    SocketTLSClientConfiguration tls{
-        {SocketTLSVersion::TLS1_3},
+    TlsClientConfiguration tls{
+        {TlsVersion::TLS1_3},
         {}, {},
         true,              // verify_server
         false,             // verify_hostname
@@ -477,7 +477,7 @@ TEST(TLSConnection, ClientVerifiesServerCert_ServerCertSignedByUntrustedCA_Conne
     };
     tls.setOnTLSEvent(trackTLSEvent);
     auto ret = tryTLSConnect(port, tls);
-    EXPECT_EQ(SocketCode::TLS_SERVER_CERT_INVALID, ret);
+    EXPECT_EQ(NetworkResultCode::TLS_SERVER_CERT_INVALID, ret);
     Bn3Monkey::releaseSecuritySocket();
 }
 
@@ -498,8 +498,8 @@ TEST(TLSConnection, ClientVerifiesHostname_ServerCertMatchesHostname_ConnectionS
         + " -no_tls1_3" };
     ASSERT_TRUE(server.started());
 
-    SocketTLSClientConfiguration tls{
-        {SocketTLSVersion::TLS1_2},
+    TlsClientConfiguration tls{
+        {TlsVersion::TLS1_2},
         {}, {},
         true,   // verify_server
         true,   // verify_hostname
@@ -509,13 +509,13 @@ TEST(TLSConnection, ClientVerifiesHostname_ServerCertMatchesHostname_ConnectionS
 
     // Remote IP: cert SAN includes the server's external IP → match
     auto ret = tryTLSConnect(port, tls);
-    EXPECT_EQ(SocketCode::SUCCESS, ret);
+    EXPECT_EQ(NetworkResultCode::SUCCESS, ret);
 
     // Localhost IP: cert SAN also includes 127.0.0.1 → match
     // (Requires the server to be reachable via 127.0.0.1 from the test machine)
     /*
     auto ret2 = tryTLSConnect(port, tls, "127.0.0.1");
-    EXPECT_EQ(SocketCode::SUCCESS, ret2);
+    EXPECT_EQ(NetworkResultCode::SUCCESS, ret2);
     */
     Bn3Monkey::releaseSecuritySocket();
 }
@@ -530,8 +530,8 @@ TEST(TLSConnection, ClientVerifiesHostname_ServerCertDoesNotMatchHostname_Connec
         + " -no_tls1_3" };
     ASSERT_TRUE(server.started());
 
-    SocketTLSClientConfiguration tls{
-        {SocketTLSVersion::TLS1_2},
+    TlsClientConfiguration tls{
+        {TlsVersion::TLS1_2},
         {}, {},
         true,   // verify_server
         true,   // verify_hostname
@@ -541,12 +541,12 @@ TEST(TLSConnection, ClientVerifiesHostname_ServerCertDoesNotMatchHostname_Connec
 
     // Remote IP: CN=wronghost does not match → mismatch
     auto ret = tryTLSConnect(port, tls);
-    EXPECT_EQ(SocketCode::TLS_HOSTNAME_MISMATCH, ret);
+    EXPECT_EQ(NetworkResultCode::TLS_HOSTNAME_MISMATCH, ret);
 
     /*
     // Localhost IP: CN=wronghost does not match 127.0.0.1 → mismatch
     auto ret2 = tryTLSConnect(port, tls, "127.0.0.1");
-    EXPECT_EQ(SocketCode::TLS_HOSTNAME_MISMATCH, ret2);
+    EXPECT_EQ(NetworkResultCode::TLS_HOSTNAME_MISMATCH, ret2);
     */
 
     Bn3Monkey::releaseSecuritySocket();
@@ -562,8 +562,8 @@ TEST(TLSConnection, ClientDoesNotVerifyHostname_ServerCertDoesNotMatchHostname_C
         + " -no_tls1_3" };
     ASSERT_TRUE(server.started());
 
-    SocketTLSClientConfiguration tls{
-        {SocketTLSVersion::TLS1_2},
+    TlsClientConfiguration tls{
+        {TlsVersion::TLS1_2},
         {}, {},
         true,   // verify_server (cert chain is valid — signed by CA)
         false,  // verify_hostname = false
@@ -573,12 +573,12 @@ TEST(TLSConnection, ClientDoesNotVerifyHostname_ServerCertDoesNotMatchHostname_C
 
     // Remote IP: hostname not checked → success despite CN mismatch
     auto ret = tryTLSConnect(port, tls);
-    EXPECT_EQ(SocketCode::SUCCESS, ret);
+    EXPECT_EQ(NetworkResultCode::SUCCESS, ret);
 
     /*
     // Localhost IP: hostname not checked → success
     auto ret2 = tryTLSConnect(port, tls, "127.0.0.1");
-    EXPECT_EQ(SocketCode::SUCCESS, ret2);
+    EXPECT_EQ(NetworkResultCode::SUCCESS, ret2);
     */
 
     Bn3Monkey::releaseSecuritySocket();
@@ -594,8 +594,8 @@ TEST(TLSConnection, ClientVerifiesHostname_ServerCertMatchesHostname_ConnectionS
         + " -no_tls1_2" };
     ASSERT_TRUE(server.started());
 
-    SocketTLSClientConfiguration tls{
-        {SocketTLSVersion::TLS1_3},
+    TlsClientConfiguration tls{
+        {TlsVersion::TLS1_3},
         {}, {},
         true,   // verify_server
         true,   // verify_hostname
@@ -605,12 +605,12 @@ TEST(TLSConnection, ClientVerifiesHostname_ServerCertMatchesHostname_ConnectionS
 
     // Remote IP: cert SAN includes the server's external IP → match
     auto ret = tryTLSConnect(port, tls);
-    EXPECT_EQ(SocketCode::SUCCESS, ret);
+    EXPECT_EQ(NetworkResultCode::SUCCESS, ret);
 
     /*
     // Localhost IP: cert SAN also includes 127.0.0.1 → match
     auto ret2 = tryTLSConnect(port, tls, "127.0.0.1");
-    EXPECT_EQ(SocketCode::SUCCESS, ret2);
+    EXPECT_EQ(NetworkResultCode::SUCCESS, ret2);
     */
 
     Bn3Monkey::releaseSecuritySocket();
@@ -626,8 +626,8 @@ TEST(TLSConnection, ClientVerifiesHostname_ServerCertDoesNotMatchHostname_Connec
         + " -no_tls1_2" };
     ASSERT_TRUE(server.started());
 
-    SocketTLSClientConfiguration tls{
-        {SocketTLSVersion::TLS1_3},
+    TlsClientConfiguration tls{
+        {TlsVersion::TLS1_3},
         {}, {},
         true,   // verify_server
         true,   // verify_hostname
@@ -637,12 +637,12 @@ TEST(TLSConnection, ClientVerifiesHostname_ServerCertDoesNotMatchHostname_Connec
 
     // Remote IP: CN=wronghost does not match → mismatch
     auto ret = tryTLSConnect(port, tls);
-    EXPECT_EQ(SocketCode::TLS_HOSTNAME_MISMATCH, ret);
+    EXPECT_EQ(NetworkResultCode::TLS_HOSTNAME_MISMATCH, ret);
 
     /*
     // Localhost IP: CN=wronghost does not match 127.0.0.1 → mismatch
     auto ret2 = tryTLSConnect(port, tls, "127.0.0.1");
-    EXPECT_EQ(SocketCode::TLS_HOSTNAME_MISMATCH, ret2);
+    EXPECT_EQ(NetworkResultCode::TLS_HOSTNAME_MISMATCH, ret2);
     */
 
     Bn3Monkey::releaseSecuritySocket();
@@ -657,8 +657,8 @@ TEST(TLSConnection, ClientDoesNotVerifyHostname_ServerCertDoesNotMatchHostname_C
         + " -no_tls1_2" };
     ASSERT_TRUE(server.started());
 
-    SocketTLSClientConfiguration tls{
-        {SocketTLSVersion::TLS1_3},
+    TlsClientConfiguration tls{
+        {TlsVersion::TLS1_3},
         {}, {},
         true,   // verify_server
         false,  // verify_hostname = false
@@ -668,12 +668,12 @@ TEST(TLSConnection, ClientDoesNotVerifyHostname_ServerCertDoesNotMatchHostname_C
 
     // Remote IP: hostname not checked → success despite CN mismatch
     auto ret = tryTLSConnect(port, tls);
-    EXPECT_EQ(SocketCode::SUCCESS, ret);
+    EXPECT_EQ(NetworkResultCode::SUCCESS, ret);
 
     /*
     // Localhost IP: hostname not checked → success
     auto ret2 = tryTLSConnect(port, tls, "127.0.0.1");
-    EXPECT_EQ(SocketCode::SUCCESS, ret2);
+    EXPECT_EQ(NetworkResultCode::SUCCESS, ret2);
     */
 
     Bn3Monkey::releaseSecuritySocket();
@@ -689,7 +689,7 @@ TEST(TLSConnection, ClientDoesNotVerifyHostname_ServerCertDoesNotMatchHostname_C
 // synchronously inside SSL_connect(), so no post-handshake probe is needed.
 // In TLS 1.3 the server processes the client certificate after sending its
 // own Finished, so the rejection alert arrives after SSL_connect() returns
-// success — caught by the post-handshake probe in TLSClientActiveSocket::reconnect().
+// success — caught by the post-handshake probe in TlsClientActiveSocket::reconnect().
 // =============================================================================
 
 TEST(TLSConnection, ServerRequiresClientCert_ClientProvidesValidCert_ConnectionSucceeds_TLS12)
@@ -702,8 +702,8 @@ TEST(TLSConnection, ServerRequiresClientCert_ClientProvidesValidCert_ConnectionS
         + " -Verify 1 -CAfile " + CA_CERT + " -no_tls1_3" };
     ASSERT_TRUE(server.started());
 
-    SocketTLSClientConfiguration tls{
-        {SocketTLSVersion::TLS1_2},
+    TlsClientConfiguration tls{
+        {TlsVersion::TLS1_2},
         {}, {},
         false, false, nullptr,
         true,
@@ -712,7 +712,7 @@ TEST(TLSConnection, ServerRequiresClientCert_ClientProvidesValidCert_ConnectionS
     };
     tls.setOnTLSEvent(trackTLSEvent);
     auto ret = tryTLSConnect(port, tls);
-    EXPECT_EQ(SocketCode::SUCCESS, ret);
+    EXPECT_EQ(NetworkResultCode::SUCCESS, ret);
     Bn3Monkey::releaseSecuritySocket();
 }
 
@@ -727,15 +727,15 @@ TEST(TLSConnection, ServerRequiresClientCert_ClientDoesNotProvideAnyClientCert_C
         + " -Verify 1 -CAfile " + CA_CERT + " -no_tls1_3" };
     ASSERT_TRUE(server.started());
 
-    SocketTLSClientConfiguration tls{
-        {SocketTLSVersion::TLS1_2},
+    TlsClientConfiguration tls{
+        {TlsVersion::TLS1_2},
         {}, {},
         false, false, nullptr,
         false  // no client certificate
     };
     tls.setOnTLSEvent(trackTLSEvent);
     auto ret = tryTLSConnect(port, tls);
-    EXPECT_EQ(SocketCode::TLS_CLIENT_CERT_REJECTED, ret);
+    EXPECT_EQ(NetworkResultCode::TLS_CLIENT_CERT_REJECTED, ret);
     Bn3Monkey::releaseSecuritySocket();
 }
 
@@ -753,8 +753,8 @@ TEST(TLSConnection, ServerRequiresClientCert_ClientProvidesCertSignedByUntrusted
         + " -Verify 1 -CAfile " + CA_CERT + " -verify_return_error -no_tls1_3" };
     ASSERT_TRUE(server.started());
 
-    SocketTLSClientConfiguration tls{
-        {SocketTLSVersion::TLS1_2},
+    TlsClientConfiguration tls{
+        {TlsVersion::TLS1_2},
         {}, {},
         false, false, nullptr,
         true,
@@ -763,7 +763,7 @@ TEST(TLSConnection, ServerRequiresClientCert_ClientProvidesCertSignedByUntrusted
     };
     tls.setOnTLSEvent(trackTLSEvent);
     auto ret = tryTLSConnect(port, tls);
-    EXPECT_EQ(SocketCode::TLS_CLIENT_CERT_REJECTED, ret);
+    EXPECT_EQ(NetworkResultCode::TLS_CLIENT_CERT_REJECTED, ret);
     Bn3Monkey::releaseSecuritySocket();
 }
 
@@ -777,8 +777,8 @@ TEST(TLSConnection, ServerRequestsClientCert_ClientProvidesValidCert_ConnectionS
         + " -verify 1 -CAfile " + CA_CERT + " -no_tls1_3" };
     ASSERT_TRUE(server.started());
 
-    SocketTLSClientConfiguration tls{
-        {SocketTLSVersion::TLS1_2},
+    TlsClientConfiguration tls{
+        {TlsVersion::TLS1_2},
         {}, {},
         false, false, nullptr,
         true,
@@ -787,7 +787,7 @@ TEST(TLSConnection, ServerRequestsClientCert_ClientProvidesValidCert_ConnectionS
     };
     tls.setOnTLSEvent(trackTLSEvent);
     auto ret = tryTLSConnect(port, tls);
-    EXPECT_EQ(SocketCode::SUCCESS, ret);
+    EXPECT_EQ(NetworkResultCode::SUCCESS, ret);
     Bn3Monkey::releaseSecuritySocket();
 }
 
@@ -801,15 +801,15 @@ TEST(TLSConnection, ServerRequestsClientCert_ClientDoesNotProvideClientCert_Conn
         + " -verify 1 -CAfile " + CA_CERT + " -no_tls1_3" };
     ASSERT_TRUE(server.started());
 
-    SocketTLSClientConfiguration tls{
-        {SocketTLSVersion::TLS1_2},
+    TlsClientConfiguration tls{
+        {TlsVersion::TLS1_2},
         {}, {},
         false, false, nullptr,
         false
     };
     tls.setOnTLSEvent(trackTLSEvent);
     auto ret = tryTLSConnect(port, tls);
-    EXPECT_EQ(SocketCode::SUCCESS, ret);
+    EXPECT_EQ(NetworkResultCode::SUCCESS, ret);
     Bn3Monkey::releaseSecuritySocket();
 }
 
@@ -825,8 +825,8 @@ TEST(TLSConnection, ServerRequestsClientCert_ClientProvidesCertSignedByUntrusted
         + " -verify 1 -CAfile " + CA_CERT + " -verify_return_error -no_tls1_3" };
     ASSERT_TRUE(server.started());
 
-    SocketTLSClientConfiguration tls{
-        {SocketTLSVersion::TLS1_2},
+    TlsClientConfiguration tls{
+        {TlsVersion::TLS1_2},
         {}, {},
         false, false, nullptr,
         true,
@@ -835,7 +835,7 @@ TEST(TLSConnection, ServerRequestsClientCert_ClientProvidesCertSignedByUntrusted
     };
     tls.setOnTLSEvent(trackTLSEvent);
     auto ret = tryTLSConnect(port, tls);
-    EXPECT_EQ(SocketCode::TLS_CLIENT_CERT_REJECTED, ret);
+    EXPECT_EQ(NetworkResultCode::TLS_CLIENT_CERT_REJECTED, ret);
     Bn3Monkey::releaseSecuritySocket();
 }
 
@@ -848,8 +848,8 @@ TEST(TLSConnection, ServerRequiresClientCert_ClientProvidesValidCert_ConnectionS
         + " -Verify 1 -CAfile " + CA_CERT + " -no_tls1_2" };
     ASSERT_TRUE(server.started());
 
-    SocketTLSClientConfiguration tls{
-        {SocketTLSVersion::TLS1_3},
+    TlsClientConfiguration tls{
+        {TlsVersion::TLS1_3},
         {}, {},
         false, false, nullptr,
         true,
@@ -858,7 +858,7 @@ TEST(TLSConnection, ServerRequiresClientCert_ClientProvidesValidCert_ConnectionS
     };
     tls.setOnTLSEvent(trackTLSEvent);
     auto ret = tryTLSConnect(port, tls);
-    EXPECT_EQ(SocketCode::SUCCESS, ret);
+    EXPECT_EQ(NetworkResultCode::SUCCESS, ret);
     Bn3Monkey::releaseSecuritySocket();
 }
 
@@ -874,15 +874,15 @@ TEST(TLSConnection, ServerRequiresClientCert_ClientDoesNotProvideAnyClientCert_C
         + " -Verify 1 -CAfile " + CA_CERT + " -no_tls1_2" };
     ASSERT_TRUE(server.started());
 
-    SocketTLSClientConfiguration tls{
-        {SocketTLSVersion::TLS1_3},
+    TlsClientConfiguration tls{
+        {TlsVersion::TLS1_3},
         {}, {},
         false, false, nullptr,
         false
     };
     tls.setOnTLSEvent(trackTLSEvent);
     auto ret = tryTLSConnect(port, tls);
-    EXPECT_EQ(SocketCode::TLS_CLIENT_CERT_REJECTED, ret);
+    EXPECT_EQ(NetworkResultCode::TLS_CLIENT_CERT_REJECTED, ret);
     Bn3Monkey::releaseSecuritySocket();
 }
 
@@ -900,8 +900,8 @@ TEST(TLSConnection, ServerRequiresClientCert_ClientProvidesCertSignedByUntrusted
         + " -Verify 1 -CAfile " + CA_CERT + " -verify_return_error -no_tls1_2" };
     ASSERT_TRUE(server.started());
 
-    SocketTLSClientConfiguration tls{
-        {SocketTLSVersion::TLS1_3},
+    TlsClientConfiguration tls{
+        {TlsVersion::TLS1_3},
         {}, {},
         false, false, nullptr,
         true,
@@ -910,7 +910,7 @@ TEST(TLSConnection, ServerRequiresClientCert_ClientProvidesCertSignedByUntrusted
     };
     tls.setOnTLSEvent(trackTLSEvent);
     auto ret = tryTLSConnect(port, tls);
-    EXPECT_EQ(SocketCode::TLS_CLIENT_CERT_REJECTED, ret);
+    EXPECT_EQ(NetworkResultCode::TLS_CLIENT_CERT_REJECTED, ret);
     Bn3Monkey::releaseSecuritySocket();
 }
 
@@ -923,8 +923,8 @@ TEST(TLSConnection, ServerRequestsClientCert_ClientProvidesValidCert_ConnectionS
         + " -verify 1 -CAfile " + CA_CERT + " -no_tls1_2" };
     ASSERT_TRUE(server.started());
 
-    SocketTLSClientConfiguration tls{
-        {SocketTLSVersion::TLS1_3},
+    TlsClientConfiguration tls{
+        {TlsVersion::TLS1_3},
         {}, {},
         false, false, nullptr,
         true,
@@ -933,7 +933,7 @@ TEST(TLSConnection, ServerRequestsClientCert_ClientProvidesValidCert_ConnectionS
     };
     tls.setOnTLSEvent(trackTLSEvent);
     auto ret = tryTLSConnect(port, tls);
-    EXPECT_EQ(SocketCode::SUCCESS, ret);
+    EXPECT_EQ(NetworkResultCode::SUCCESS, ret);
     Bn3Monkey::releaseSecuritySocket();
 }
 
@@ -946,15 +946,15 @@ TEST(TLSConnection, ServerRequestsClientCert_ClientDoesNotProvideClientCert_Conn
         + " -verify 1 -CAfile " + CA_CERT + " -no_tls1_2" };
     ASSERT_TRUE(server.started());
 
-    SocketTLSClientConfiguration tls{
-        {SocketTLSVersion::TLS1_3},
+    TlsClientConfiguration tls{
+        {TlsVersion::TLS1_3},
         {}, {},
         false, false, nullptr,
         false
     };
     tls.setOnTLSEvent(trackTLSEvent);
     auto ret = tryTLSConnect(port, tls);
-    EXPECT_EQ(SocketCode::SUCCESS, ret);
+    EXPECT_EQ(NetworkResultCode::SUCCESS, ret);
     Bn3Monkey::releaseSecuritySocket();
 }
 
@@ -970,8 +970,8 @@ TEST(TLSConnection, ServerRequestsClientCert_ClientProvidesCertSignedByUntrusted
         + " -verify 1 -CAfile " + CA_CERT + " -verify_return_error -no_tls1_2" };
     ASSERT_TRUE(server.started());
 
-    SocketTLSClientConfiguration tls{
-        {SocketTLSVersion::TLS1_3},
+    TlsClientConfiguration tls{
+        {TlsVersion::TLS1_3},
         {}, {},
         false, false, nullptr,
         true,
@@ -980,7 +980,7 @@ TEST(TLSConnection, ServerRequestsClientCert_ClientProvidesCertSignedByUntrusted
     };
     tls.setOnTLSEvent(trackTLSEvent);
     auto ret = tryTLSConnect(port, tls);
-    EXPECT_EQ(SocketCode::TLS_CLIENT_CERT_REJECTED, ret);
+    EXPECT_EQ(NetworkResultCode::TLS_CLIENT_CERT_REJECTED, ret);
     Bn3Monkey::releaseSecuritySocket();
 }
 
@@ -1000,8 +1000,8 @@ TEST(TLSConnection, ClientProvidesEncryptedPrivateKey_CorrectPassword_Connection
         + " -Verify 1 -CAfile " + CA_CERT + " -no_tls1_3" };
     ASSERT_TRUE(server.started());
 
-    SocketTLSClientConfiguration tls{
-        {SocketTLSVersion::TLS1_2},
+    TlsClientConfiguration tls{
+        {TlsVersion::TLS1_2},
         {}, {},
         false, false, nullptr,
         true,
@@ -1011,7 +1011,7 @@ TEST(TLSConnection, ClientProvidesEncryptedPrivateKey_CorrectPassword_Connection
     };
     tls.setOnTLSEvent(trackTLSEvent);
     auto ret = tryTLSConnect(port, tls);
-    EXPECT_EQ(SocketCode::SUCCESS, ret);
+    EXPECT_EQ(NetworkResultCode::SUCCESS, ret);
     Bn3Monkey::releaseSecuritySocket();
 }
 
@@ -1024,8 +1024,8 @@ TEST(TLSConnection, ClientProvidesEncryptedPrivateKey_WrongPassword_ConnectionFa
         + " -Verify 1 -CAfile " + CA_CERT + " -no_tls1_3" };
     ASSERT_TRUE(server.started());
 
-    SocketTLSClientConfiguration tls{
-        {SocketTLSVersion::TLS1_2},
+    TlsClientConfiguration tls{
+        {TlsVersion::TLS1_2},
         {}, {},
         false, false, nullptr,
         true,
@@ -1034,8 +1034,8 @@ TEST(TLSConnection, ClientProvidesEncryptedPrivateKey_WrongPassword_ConnectionFa
         "wrongpassword"  // incorrect password → key load fails → handshake fails
     };
     tls.setOnTLSEvent(trackTLSEvent);
-    SocketCode code = tryTLSConnect(port, tls);
-    EXPECT_NE(SocketCode::SUCCESS, code);
+    NetworkResultCode code = tryTLSConnect(port, tls);
+    EXPECT_NE(NetworkResultCode::SUCCESS, code);
     Bn3Monkey::releaseSecuritySocket();
 }
 
@@ -1048,8 +1048,8 @@ TEST(TLSConnection, ClientProvidesEncryptedPrivateKey_CorrectPassword_Connection
         + " -Verify 1 -CAfile " + CA_CERT + " -no_tls1_2" };
     ASSERT_TRUE(server.started());
 
-    SocketTLSClientConfiguration tls{
-        {SocketTLSVersion::TLS1_3},
+    TlsClientConfiguration tls{
+        {TlsVersion::TLS1_3},
         {}, {},
         false, false, nullptr,
         true,
@@ -1059,7 +1059,7 @@ TEST(TLSConnection, ClientProvidesEncryptedPrivateKey_CorrectPassword_Connection
     };
     tls.setOnTLSEvent(trackTLSEvent);
     auto ret = tryTLSConnect(port, tls);
-    EXPECT_EQ(SocketCode::SUCCESS, ret);
+    EXPECT_EQ(NetworkResultCode::SUCCESS, ret);
     Bn3Monkey::releaseSecuritySocket();
 }
 
@@ -1072,8 +1072,8 @@ TEST(TLSConnection, ClientProvidesEncryptedPrivateKey_WrongPassword_ConnectionFa
         + " -Verify 1 -CAfile " + CA_CERT + " -no_tls1_2" };
     ASSERT_TRUE(server.started());
 
-    SocketTLSClientConfiguration tls{
-        {SocketTLSVersion::TLS1_3},
+    TlsClientConfiguration tls{
+        {TlsVersion::TLS1_3},
         {}, {},
         false, false, nullptr,
         true,
@@ -1082,7 +1082,7 @@ TEST(TLSConnection, ClientProvidesEncryptedPrivateKey_WrongPassword_ConnectionFa
         "wrongpassword"
     };
     tls.setOnTLSEvent(trackTLSEvent);
-    SocketCode code = tryTLSConnect(port, tls);
-    EXPECT_NE(SocketCode::SUCCESS, code);
+    NetworkResultCode code = tryTLSConnect(port, tls);
+    EXPECT_NE(NetworkResultCode::SUCCESS, code);
     Bn3Monkey::releaseSecuritySocket();
 }

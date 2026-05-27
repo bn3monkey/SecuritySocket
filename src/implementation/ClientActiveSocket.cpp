@@ -1,6 +1,6 @@
 #include "ClientActiveSocket.hpp"
 
-#include "SocketResult.hpp"
+#include "NetworkResult.hpp"
 #include "SocketHelper.hpp"
 
 #ifdef _WIN32
@@ -19,7 +19,7 @@
 
 using namespace Bn3Monkey;
 
-Bn3Monkey::ClientActiveSocket::ClientActiveSocket(bool is_unix_domain, const SocketTLSClientConfiguration& tls_configuration, const char* hostname)
+Bn3Monkey::ClientActiveSocket::ClientActiveSocket(bool is_unix_domain, const TlsClientConfiguration& tls_configuration, const char* hostname)
 {
 	(void)tls_configuration;
 	(void)hostname;
@@ -44,7 +44,7 @@ Bn3Monkey::ClientActiveSocket::~ClientActiveSocket()
 	// on temporary objects (e.g. during operator=). Closing the socket in the
 	// destructor would invalidate the fd that the surviving copy still holds,
 	// causing WSAENOTSOCK (10038) on subsequent operations.
-	// Resource cleanup is handled explicitly via SocketClientImpl::close().
+	// Resource cleanup is handled explicitly via ClientImpl::close().
 }
 
 void ClientActiveSocket::close() {
@@ -56,9 +56,9 @@ void ClientActiveSocket::close() {
 	_socket = -1;	
 }
 
-SocketResult ClientActiveSocket::connect(const SocketAddress& address, uint32_t read_timeout_ms, uint32_t write_timeout_ms)
+NetworkResult ClientActiveSocket::connect(const SocketAddress& address, uint32_t read_timeout_ms, uint32_t write_timeout_ms)
 {
-	SocketResult result;
+	NetworkResult result;
 	setTimeout(_socket, read_timeout_ms, write_timeout_ms);
 	setNonBlockingMode(_socket);
 	{
@@ -73,10 +73,10 @@ SocketResult ClientActiveSocket::connect(const SocketAddress& address, uint32_t 
 	return result;
 }
 
-SocketResult ClientActiveSocket::reconnect(bool after_handshake)
+NetworkResult ClientActiveSocket::reconnect(bool after_handshake)
 {
 	(void)after_handshake;
-	return SocketResult(SocketCode::SUCCESS);
+	return NetworkResult(NetworkResultCode::SUCCESS);
 }
 
 void Bn3Monkey::ClientActiveSocket::disconnect()
@@ -88,17 +88,17 @@ void Bn3Monkey::ClientActiveSocket::disconnect()
 #endif
 }
 
-SocketResult Bn3Monkey::ClientActiveSocket::isConnected()
+NetworkResult Bn3Monkey::ClientActiveSocket::isConnected()
 {
 	char buf[1];
 	int bytes_read = recv(_socket, buf, 1, MSG_PEEK);
 	if (bytes_read > 0) {
-		return SocketResult(SocketCode::SUCCESS);
+		return NetworkResult(NetworkResultCode::SUCCESS);
 	}
-	return SocketResult(SocketCode::SOCKET_CLOSED);
+	return NetworkResult(NetworkResultCode::SOCKET_CLOSED);
 }
 
-SocketResult Bn3Monkey::ClientActiveSocket::write(const void* buffer, size_t size)
+NetworkResult Bn3Monkey::ClientActiveSocket::write(const void* buffer, size_t size)
 {
 	int32_t ret{0};
 #ifdef __linux__
@@ -107,16 +107,16 @@ SocketResult Bn3Monkey::ClientActiveSocket::write(const void* buffer, size_t siz
 	ret = send(_socket, static_cast<const char*>(buffer), static_cast<int32_t>(size), 0);
 #endif
 	if (ret == 0)
-		return SocketResult(SocketCode::SOCKET_CLOSED, 0);
+		return NetworkResult(NetworkResultCode::SOCKET_CLOSED, 0);
 	return createResult(ret);
 }
 
-SocketResult Bn3Monkey::ClientActiveSocket::read(void* buffer, size_t size)
+NetworkResult Bn3Monkey::ClientActiveSocket::read(void* buffer, size_t size)
 {
 	int32_t ret{ 0 };
 	ret = ::recv(_socket, static_cast<char*>(buffer), static_cast<int32_t>(size), 0);
 	if (ret == 0)
-		return SocketResult(SocketCode::SOCKET_CLOSED, 0);
+		return NetworkResult(NetworkResultCode::SOCKET_CLOSED, 0);
 	return createResult(ret);
 }
 
@@ -150,28 +150,28 @@ static void trackTLSInfo(const SSL* ssl, int where, int ret)
 		snprintf(buffer, sizeof(buffer), "Handshake done");
 	}
 	
-    auto* onTLSEvent = reinterpret_cast<SocketTLSClientConfiguration::TlsEventCallback>(SSL_get_ex_data(ssl, 0));
+    auto* onTLSEvent = reinterpret_cast<TlsClientConfiguration::TlsEventCallback>(SSL_get_ex_data(ssl, 0));
 	if (onTLSEvent) {
 		onTLSEvent(buffer);
 	}
 }
 
-Bn3Monkey::TLSClientActiveSocket::TLSClientActiveSocket(bool is_unix_domain, const SocketTLSClientConfiguration& tls_configuration, const char* hostname)
+Bn3Monkey::TlsClientActiveSocket::TlsClientActiveSocket(bool is_unix_domain, const TlsClientConfiguration& tls_configuration, const char* hostname)
 	: ClientActiveSocket(is_unix_domain, tls_configuration, hostname)
 {
-	if (_result.code() != SocketCode::SUCCESS)
+	if (_result.code() != NetworkResultCode::SUCCESS)
 		return;
 
 	_context = SSL_CTX_new(TLS_client_method());
 	if (!_context) {
-		_result = SocketResult(SocketCode::TLS_CONTEXT_INITIALIZATION_FAIL);
+		_result = NetworkResult(NetworkResultCode::TLS_CONTEXT_INITIALIZATION_FAIL);
 		return;
 	}
 
 	// [1] TLS 버전 범위 설정 : TLS 1.3 우선, 실패 시 TLS 1.2 자동 협상
 	{
-		bool has12 = tls_configuration.isVersionSupported(SocketTLSVersion::TLS1_2);
-		bool has13 = tls_configuration.isVersionSupported(SocketTLSVersion::TLS1_3);
+		bool has12 = tls_configuration.isVersionSupported(TlsVersion::TLS1_2);
+		bool has13 = tls_configuration.isVersionSupported(TlsVersion::TLS1_3);
 		int min_ver = has12 ? TLS1_2_VERSION : TLS1_3_VERSION;
 		int max_ver = has13 ? TLS1_3_VERSION : TLS1_2_VERSION;
 		SSL_CTX_set_min_proto_version(_context, min_ver);
@@ -229,7 +229,7 @@ Bn3Monkey::TLSClientActiveSocket::TLSClientActiveSocket(bool is_unix_domain, con
 	if (!_ssl) {
 		SSL_CTX_free(_context);
 		_context = nullptr;
-		_result = SocketResult(SocketCode::TLS_INITIALIZATION_FAIL);
+		_result = NetworkResult(NetworkResultCode::TLS_INITIALIZATION_FAIL);
 		return;
 	}
 
@@ -241,11 +241,11 @@ Bn3Monkey::TLSClientActiveSocket::TLSClientActiveSocket(bool is_unix_domain, con
 	}
 }
 
-Bn3Monkey::TLSClientActiveSocket::~TLSClientActiveSocket()
+Bn3Monkey::TlsClientActiveSocket::~TlsClientActiveSocket()
 {
 }
 
-void Bn3Monkey::TLSClientActiveSocket::close()
+void Bn3Monkey::TlsClientActiveSocket::close()
 {
 	if (_ssl) {
 		SSL_free(_ssl);
@@ -257,9 +257,9 @@ void Bn3Monkey::TLSClientActiveSocket::close()
 	}
 	ClientActiveSocket::close();
 }
-SocketResult TLSClientActiveSocket::connect(const SocketAddress& address, uint32_t read_timeout_ms, uint32_t write_timeout_ms)
+NetworkResult TlsClientActiveSocket::connect(const SocketAddress& address, uint32_t read_timeout_ms, uint32_t write_timeout_ms)
 {
-	SocketResult result;
+	NetworkResult result;
 	setTimeout(_socket, read_timeout_ms, write_timeout_ms);
 	setNonBlockingMode(_socket);
 	{
@@ -273,7 +273,7 @@ SocketResult TLSClientActiveSocket::connect(const SocketAddress& address, uint32
 	setBlockingMode(_socket);
 	return result;
 }
-SocketResult Bn3Monkey::TLSClientActiveSocket::reconnect(bool after_handshake)
+NetworkResult Bn3Monkey::TlsClientActiveSocket::reconnect(bool after_handshake)
 {
 	if (after_handshake) {
 		// In TLS 1.3 the server sends its Finished message BEFORE it processes the
@@ -283,11 +283,11 @@ SocketResult Bn3Monkey::TLSClientActiveSocket::reconnect(bool after_handshake)
 		// In TLS 1.2 the handshake is fully synchronous, so no probe is needed.
 		if (SSL_version(_ssl) == TLS1_3_VERSION)
 			return postHandshakeProbe();
-		return SocketResult(SocketCode::SUCCESS);
+		return NetworkResult(NetworkResultCode::SUCCESS);
 	}
 
 	if (SSL_set_fd(_ssl, _socket) == 0)
-		return SocketResult(SocketCode::TLS_SETFD_ERROR);
+		return NetworkResult(NetworkResultCode::TLS_SETFD_ERROR);
 
 	// Set SNI extension so the server can select the correct virtual-host
 	// certificate, and enable X.509 hostname / IP-address verification so that
@@ -303,10 +303,10 @@ SocketResult Bn3Monkey::TLSClientActiveSocket::reconnect(bool after_handshake)
 		return createTLSResult(_ssl, res);
 
 
-	return SocketResult(SocketCode::SUCCESS);
+	return NetworkResult(NetworkResultCode::SUCCESS);
 }
 
-SocketResult Bn3Monkey::TLSClientActiveSocket::postHandshakeProbe()
+NetworkResult Bn3Monkey::TlsClientActiveSocket::postHandshakeProbe()
 {
 	// -------------------------------------------------------------------------
 	// TLS 1.3 deferred client-certificate rejection probe
@@ -319,7 +319,7 @@ SocketResult Bn3Monkey::TLSClientActiveSocket::postHandshakeProbe()
 	//   peek > 0   : application data queued — connection is good.
 	//   SSL_ERROR_SSL / SSL_ERROR_ZERO_RETURN : rejection alert received.
 	//   SSL_ERROR_WANT_READ : no data yet — return NEED_TO_BE_BLOCKED so the
-	//       caller (SocketClient::connect Phase 2) can wait via SocketEventListener
+	//       caller (Client::connect Phase 2) can wait via SocketEventListener
 	//       (poll/select POLLIN) and retry.  The caller treats SOCKET_TIMEOUT
 	//       (no alert within read_timeout) as an accepted connection.
 	// -------------------------------------------------------------------------
@@ -334,7 +334,7 @@ SocketResult Bn3Monkey::TLSClientActiveSocket::postHandshakeProbe()
 
 	if (peek_ret > 0) {
 		// Application data already in the TLS receive buffer — connection is good.
-		return SocketResult(SocketCode::SUCCESS);
+		return NetworkResult(NetworkResultCode::SUCCESS);
 	}
 
 	int ssl_err = SSL_get_error(_ssl, peek_ret);
@@ -347,15 +347,15 @@ SocketResult Bn3Monkey::TLSClientActiveSocket::postHandshakeProbe()
 
 	if (ssl_err == SSL_ERROR_WANT_READ) {
 		// No data buffered yet — tell the caller to wait for POLLIN and retry.
-		return SocketResult(SocketCode::SOCKET_CONNECTION_NEED_TO_BE_BLOCKED);
+		return NetworkResult(NetworkResultCode::SOCKET_CONNECTION_NEED_TO_BE_BLOCKED);
 	}
 
 	// SSL_ERROR_SYSCALL or anything else — no alert, treat as success.
 	ERR_clear_error();
-	return SocketResult(SocketCode::SUCCESS);
+	return NetworkResult(NetworkResultCode::SUCCESS);
 }
 
-void Bn3Monkey::TLSClientActiveSocket::disconnect()
+void Bn3Monkey::TlsClientActiveSocket::disconnect()
 {
 	if (_ssl) {
 		SSL_shutdown(_ssl);
@@ -364,17 +364,17 @@ void Bn3Monkey::TLSClientActiveSocket::disconnect()
 	}
 	ClientActiveSocket::disconnect();
 }
-SocketResult Bn3Monkey::TLSClientActiveSocket::isConnected()
+NetworkResult Bn3Monkey::TlsClientActiveSocket::isConnected()
 {
 	return ClientActiveSocket::isConnected();
 }
-SocketResult Bn3Monkey::TLSClientActiveSocket::write(const void* buffer, size_t size)
+NetworkResult Bn3Monkey::TlsClientActiveSocket::write(const void* buffer, size_t size)
 {
 	int32_t ret = SSL_write(_ssl, buffer, static_cast<int32_t>(size));
 	return createTLSResult(_ssl, ret);
 }
 
-SocketResult Bn3Monkey::TLSClientActiveSocket::read(void* buffer, size_t size)
+NetworkResult Bn3Monkey::TlsClientActiveSocket::read(void* buffer, size_t size)
 {
 	int32_t ret = SSL_read(_ssl, buffer, static_cast<int32_t>(size));
 	return createTLSResult(_ssl, ret);

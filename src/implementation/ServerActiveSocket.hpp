@@ -7,7 +7,7 @@
 
 #include <cstdint>
 
-#include "TLSHelper.hpp"
+#include "TlsHelper.hpp"
 
 namespace Bn3Monkey
 {
@@ -19,10 +19,10 @@ namespace Bn3Monkey
         ServerActiveSocket(int32_t sock, void* addr, void* ssl_context = nullptr);
         virtual ~ServerActiveSocket();
 
-        inline SocketResult result() { return _result; }
+        inline NetworkResult result() { return _result; }
         virtual void close();
-		virtual SocketResult read(void* buffer, size_t size);
-        virtual SocketResult write(const void* buffer, size_t size);
+		virtual NetworkResult read(void* buffer, size_t size);
+        virtual NetworkResult write(const void* buffer, size_t size);
 
         inline const char* ip() const { return _client_ip; }
         inline int port() const { return _client_port; }
@@ -38,21 +38,21 @@ namespace Bn3Monkey
         int _client_port = 0;
     };
 
-    class TLSServerActiveSocket : public ServerActiveSocket
+    class TlsServerActiveSocket : public ServerActiveSocket
     {
     public:
-        TLSServerActiveSocket() {}
-        TLSServerActiveSocket(int32_t sock, void* addr, void* ssl_context);
-        virtual ~TLSServerActiveSocket();
+        TlsServerActiveSocket() {}
+        TlsServerActiveSocket(int32_t sock, void* addr, void* ssl_context);
+        virtual ~TlsServerActiveSocket();
         
         virtual void close();
-		virtual SocketResult read(void* buffer, size_t size);
-        virtual SocketResult write(const void* buffer, size_t size);
+		virtual NetworkResult read(void* buffer, size_t size);
+        virtual NetworkResult write(const void* buffer, size_t size);
     private:
         SSL* ssl {nullptr};
     };
 
-    using ServerActiveSocketContainer = SocketContainer<ServerActiveSocket, TLSServerActiveSocket>;
+    using ServerActiveSocketContainer = SocketContainer<ServerActiveSocket, TlsServerActiveSocket>;
 
 }
 

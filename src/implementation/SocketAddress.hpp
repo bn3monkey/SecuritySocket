@@ -26,7 +26,7 @@ namespace Bn3Monkey
 		explicit SocketAddress(const char* ip, const char* port, bool is_server, bool is_unix_domain);
 		virtual ~SocketAddress();
 
-		operator const SocketResult&() const { return _result; }
+		operator const NetworkResult&() const { return _result; }
 
 		inline const sockaddr* address() const {
 			return reinterpret_cast<const sockaddr *>(_socket_address);
@@ -40,7 +40,7 @@ namespace Bn3Monkey
 		}
 
 	private:
-		SocketResult _result;
+		NetworkResult _result;
 
 		size_t _socket_address_size{ 0 };
 		uint8_t _socket_address[512]{ 0 };

@@ -23,7 +23,7 @@ namespace Bn3Monkey
             FINISH_PROCESS
         };
 
-        SocketConnection(ServerActiveSocketContainer& container, SocketRequestHandler& handler, size_t pdu_size) :
+        SocketConnection(ServerActiveSocketContainer& container, CustomProtocolRequestHandler& handler, size_t pdu_size) :
             _container(container),
             _handler(handler) {
             _socket = _container.get();
@@ -53,12 +53,12 @@ namespace Bn3Monkey
         void flush();
         
     private:
-        ProcessState runTask(SocketRequestMode mode, size_t payload_size);
+        ProcessState runTask(RequestProcessingMode mode, size_t payload_size);
 
         ServerActiveSocketContainer _container{};
         ServerActiveSocket* _socket{ nullptr };
 
-        SocketRequestHandler& _handler;
+        CustomProtocolRequestHandler& _handler;
         
         // Read Header
         size_t total_input_header_read_size{ 0 };
@@ -69,7 +69,7 @@ namespace Bn3Monkey
         size_t total_input_payload_read_size{ 0 };
         std::vector<char> input_payload_buffer{ 0, std::allocator<char>() };
 
-        SocketRequestMode _mode{ SocketRequestMode::FAST };
+        RequestProcessingMode _mode{ RequestProcessingMode::FAST };
 
         size_t response_size{ 0 };
         size_t total_output_write_size{ 0 };

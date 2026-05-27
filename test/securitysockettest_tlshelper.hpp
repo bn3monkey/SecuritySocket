@@ -50,7 +50,7 @@ constexpr static const char* CLIENT_UNTRUSTED_KEY  = "certs/client_untrusted.key
 const char* getCWD();
 
 // Builds a local file path by prepending getCWD() to a relative cert path.
-// Use this whenever passing a cert path to SocketTLSClientConfiguration or
+// Use this whenever passing a cert path to TlsClientConfiguration or
 // to the local destination argument of downloadFile().
 inline std::string localCertPath(const char* rel) {
     return std::string(getCWD()) + "/" + rel;

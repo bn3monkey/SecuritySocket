@@ -1,7 +1,7 @@
 #if !defined(__BN3MONKEY_SOCKETEVENTLISTENER__)
 #define __BN3MONKEY_SOCKETEVENTLISTENER__
 #include "../SecuritySocket.hpp"
-#include "SocketResult.hpp"
+#include "NetworkResult.hpp"
 #include "BaseSocket.hpp"
 
 #ifdef _WIN32
@@ -34,7 +34,7 @@ namespace Bn3Monkey
     {
     public:
         void open(BaseSocket& sock, SocketEventType eventType);
-        SocketResult wait(uint32_t timeout_ms);
+        NetworkResult wait(uint32_t timeout_ms);
     private:
         pollfd _handle;
     };
@@ -53,18 +53,18 @@ namespace Bn3Monkey
 
     struct SocketEventResult
     {
-        SocketResult result;
+        NetworkResult result;
         std::vector<SocketEventContext*> contexts;
     };
 
     class SocketMultiEventListener
     {
     public:
-        SocketResult open();
+        NetworkResult open();
         void close();
-        SocketResult addEvent(SocketEventContext* context, SocketEventType eventType);
-        SocketResult modifyEvent(SocketEventContext* context, SocketEventType eventType);
-        SocketResult removeEvent(SocketEventContext* context);
+        NetworkResult addEvent(SocketEventContext* context, SocketEventType eventType);
+        NetworkResult modifyEvent(SocketEventContext* context, SocketEventType eventType);
+        NetworkResult removeEvent(SocketEventContext* context);
         // Unblock any thread currently in wait(). Safe to call from any thread.
         // Use for shutdown or to force a re-evaluation of registered fds.
         // add/modify/removeEvent also call this internally so a concurrent

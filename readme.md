@@ -15,13 +15,13 @@ It is compatible for Windows(MSVC, MinGW Compiler), Android (Clang), Linux (gcc)
     - [Using Notification Server](#using-notification-server)
     - [Using TLS Notification Server](#using-tls-notification-server)
   - [TLS Configuration](#tls-configuration)
-    - [SocketTLSVersion](#sockettlsversion)
-    - [SocketTLS1\_2CipherSuite](#sockettls1_2ciphersuite)
-    - [SocketTLS1\_3CipherSuite](#sockettls1_3ciphersuite)
-    - [SocketTLSClientAuthenticationMode](#sockettlsclientauthenticationmode)
-    - [SocketTLSClientConfiguration](#sockettlsclientconfiguration)
+    - [TlsVersion](#tlsversion)
+    - [TlsV12CipherSuite](#tlsv12ciphersuite)
+    - [TlsV13CipherSuite](#tlsv13ciphersuite)
+    - [TlsClientAuthMode](#tlsclientauthmode)
+    - [TlsClientConfiguration](#tlsclientconfiguration)
       - [TLS Event Callback](#tls-event-callback)
-    - [SocketTLSServerConfiguration](#sockettlsserverconfiguration)
+    - [TlsServerConfiguration](#tlsserverconfiguration)
   - [Specification](#specification)
     - [Recommended C++ Version](#recommended-c-version)
     - [Supported Compiler](#supported-compiler)
@@ -130,6 +130,7 @@ All third-party libraries are fetched and built from source via CMake's
 | [OpenSSL (cmake fork)](https://github.com/bn3monkey/openssl-cmake) | branch `proto` | Apache-2.0 | runtime (TLS) | Pulled in only when `SECURITYSOCKET_USING_TLS=ON`. Provides `OpenSSL::Crypto` and `OpenSSL::SSL`. |
 | [GoogleTest](https://github.com/google/googletest) | `release-1.12.1` | BSD-3-Clause | test | Pulled in only when `BUILD_SECURITYSOCKET_TEST=ON`. |
 | [remote-command](https://github.com/bn3monkey/remote-command) | `1.2.4` | n/a (internal) | test | Pulled in only when `BUILD_SECURITYSOCKET_TEST=ON`. |
+| [picohttpparser](https://github.com/h2o/picohttpparser) | `f4d94b48` (master) | MIT or Perl (dual-licensed) | runtime (HTTP) | **Vendored**, not fetched at build time. Source lives under [src/implementation/thirdparty/picohttpparser/](src/implementation/thirdparty/picohttpparser/) and is compiled into both `securitysocket` and `securitysockettest`. Powers the HTTP/1.1 request-line + header parser introduced in v3. |
 | [libcurl](https://github.com/curl/curl) | `curl-8_11_0` (≥ 8.11.0) | curl (MIT-like) | test | Pulled in only when `SECURITYSOCKET_TEST_USE_CURL=ON`. Built statically, HTTP-only protocol surface, WebSocket support (`CURL_ENABLE_WEBSOCKETS=ON`). Linked into `securitysockettest` and used as the test client for the HTTP / WebSocket server regression tests (`securitysockettest_http_server.cpp`, `securitysockettest_websocket_server.cpp`), which gate their content with `#if defined(SECURITYSOCKET_TEST_USE_CURL)`. The build verifies `curl_ws_send` / `curl_ws_recv` are exported via `check_symbol_exists` at configure time. |
 
 ## Example
@@ -145,12 +146,12 @@ int main()
     initializeSecuritySocket();
 
     using namespace Bn3Monkey;
-    auto configuration = SocketConfiguration("127.0.0.1", 5000, false);
-    SocketClient client { configuration };
+    auto configuration = NetworkConfiguration("127.0.0.1", 5000, false);
+    Client client { configuration };
 
     {
         auto result = client.open();
-        if (result.code() != SocketCode::SUCCESS)
+        if (result.code() != NetworkResultCode::SUCCESS)
         {
             printf(result.message());
             return -1;
@@ -159,7 +160,7 @@ int main()
 
     {
         auto result = client.connect();
-        if (result.code() != SocketCode::SUCCESS)
+        if (result.code() != NetworkResultCode::SUCCESS)
         {
             printf(result.message());
             return -1;
@@ -171,7 +172,7 @@ int main()
         strncpy(buffer, "Hello, World!", 4096);
         size_t size = strlen(buffer);
         auto result = client.write(buffer, size);
-        if (result.code() != SocketCode::SUCCESS)
+        if (result.code() != NetworkResultCode::SUCCESS)
         {
             printf(result.message());
             return -1;
@@ -180,7 +181,7 @@ int main()
     {
         char buffer[4096] {0};
         auto result = client.read(buffer, 14);
-        if (result.code() != SocketCode::SUCCESS)
+        if (result.code() != NetworkResultCode::SUCCESS)
         {
             printf(result.message());
             return -1;
@@ -207,13 +208,13 @@ int main()
 
     using namespace Bn3Monkey;
 
-    SocketConfiguration config{ "127.0.0.1", 5000 };
+    NetworkConfiguration config{ "127.0.0.1", 5000 };
 
     // TLS 1.2/1.3 with server certificate verification and mutual TLS (mTLS)
-    SocketTLSClientConfiguration tls_config{
-        { SocketTLSVersion::TLS1_2, SocketTLSVersion::TLS1_3 },    // supported TLS versions
-        { SocketTLS1_2CipherSuite::ECDHE_RSA_AES256_GCM_SHA384 },  // TLS 1.2 cipher suites
-        { SocketTLS1_3CipherSuite::TLS_AES_256_GCM_SHA384 },       // TLS 1.3 cipher suites
+    TlsClientConfiguration tls_config{
+        { TlsVersion::TLS1_2, TlsVersion::TLS1_3 },    // supported TLS versions
+        { TlsV12CipherSuite::ECDHE_RSA_AES256_GCM_SHA384 },  // TLS 1.2 cipher suites
+        { TlsV13CipherSuite::TLS_AES_256_GCM_SHA384 },       // TLS 1.3 cipher suites
         true,                    // verify server certificate
         true,                    // verify hostname
         "/path/to/ca.crt",       // CA certificate (trust store) path
@@ -228,11 +229,11 @@ int main()
         printf("[TLS] %s\n", message);
     });
 
-    SocketClient client{ config, tls_config };
+    Client client{ config, tls_config };
 
     {
         auto result = client.open();
-        if (result.code() != SocketCode::SUCCESS)
+        if (result.code() != NetworkResultCode::SUCCESS)
         {
             printf(result.message());
             return -1;
@@ -241,7 +242,7 @@ int main()
 
     {
         auto result = client.connect();
-        if (result.code() != SocketCode::SUCCESS)
+        if (result.code() != NetworkResultCode::SUCCESS)
         {
             printf(result.message());
             return -1;
@@ -253,7 +254,7 @@ int main()
         strncpy(buffer, "Hello, World!", 4096);
         size_t size = strlen(buffer);
         auto result = client.write(buffer, size);
-        if (result.code() != SocketCode::SUCCESS)
+        if (result.code() != NetworkResultCode::SUCCESS)
         {
             printf(result.message());
             return -1;
@@ -263,7 +264,7 @@ int main()
     {
         char buffer[4096] {0};
         auto result = client.read(buffer, 14);
-        if (result.code() != SocketCode::SUCCESS)
+        if (result.code() != NetworkResultCode::SUCCESS)
         {
             printf(result.message());
             return -1;
@@ -287,7 +288,7 @@ int main()
 {
     using namespace Bn3Monkey;
 
-    SocketConfiguration config{
+    NetworkConfiguration config{
         "127.0.0.1",
         20000,
         false,
@@ -322,7 +323,7 @@ int main()
         size_t payloadSize() override { return payload_size;  }
     };
 
-    struct EchoRequestHandler : public Bn3Monkey::SocketRequestHandler
+    struct EchoRequestHandler : public Bn3Monkey::CustomProtocolRequestHandler
     {
         size_t getHeaderSize() override {
             return sizeof(EchoRequestHeader);
@@ -330,13 +331,13 @@ int main()
         size_t getPayloadSize(const char* header) override {
             return reinterpret_cast<const EchoResponseHeader*>(header)->payload_size;
         }
-        Bn3Monkey::SocketRequestMode onModeClassified(const char* header) override {
+        Bn3Monkey::RequestProcessingMode onModeClassified(const char* header) override {
             auto* derived_header = reinterpret_cast<const EchoRequestHeader*>(header);
             switch (derived_header->request_type) {
             case 0:
-                return Bn3Monkey::SocketRequestMode::FAST;
+                return Bn3Monkey::RequestProcessingMode::FAST;
             }
-            return Bn3Monkey::SocketRequestMode::FAST;
+            return Bn3Monkey::RequestProcessingMode::FAST;
         }
 
         void onClientConnected(const char* ip, int port) override {
@@ -379,9 +380,9 @@ int main()
 
     EchoRequestHandler handler;
 
-    SocketRequestServer server{ config};
+    RequestServer server{ config};
     auto result = server.open(&handler, 4);
-    if (result.code() != SocketCode::SUCCESS)
+    if (result.code() != NetworkResultCode::SUCCESS)
         {
             printf(result.message());
             return -1;
@@ -404,17 +405,17 @@ int main()
 {
     using namespace Bn3Monkey;
 
-    SocketConfiguration config{ "127.0.0.1", 20000 };
+    NetworkConfiguration config{ "127.0.0.1", 20000 };
 
     // TLS server with optional client certificate authentication (mTLS)
-    SocketTLSServerConfiguration tls_config{
-        { SocketTLSVersion::TLS1_2, SocketTLSVersion::TLS1_3 },   // supported TLS versions
-        { SocketTLS1_2CipherSuite::ECDHE_RSA_AES256_GCM_SHA384 }, // TLS 1.2 cipher suites
-        { SocketTLS1_3CipherSuite::TLS_AES_256_GCM_SHA384 },      // TLS 1.3 cipher suites
+    TlsServerConfiguration tls_config{
+        { TlsVersion::TLS1_2, TlsVersion::TLS1_3 },   // supported TLS versions
+        { TlsV12CipherSuite::ECDHE_RSA_AES256_GCM_SHA384 }, // TLS 1.2 cipher suites
+        { TlsV13CipherSuite::TLS_AES_256_GCM_SHA384 },      // TLS 1.3 cipher suites
         "/path/to/server.crt",                                     // server certificate path
         "/path/to/server.key",                                     // server private key path
         "keypassword",                                             // private key password (nullptr if not encrypted)
-        SocketTLSClientAuthenticationMode::AUTH_MODE_OPTIONAL,               // client auth: AUTH_MODE_NONE / AUTH_MODE_OPTIONAL / AUTH_MODE_REQUIRED
+        TlsClientAuthMode::AUTH_MODE_OPTIONAL,               // client auth: AUTH_MODE_NONE / AUTH_MODE_OPTIONAL / AUTH_MODE_REQUIRED
         "/path/to/ca.crt"                                          // CA certificate path for verifying clients
     };
 
@@ -423,16 +424,16 @@ int main()
         printf("[TLS] %s\n", message);
     });
 
-    struct EchoRequestHandler : public Bn3Monkey::SocketRequestHandler
+    struct EchoRequestHandler : public Bn3Monkey::CustomProtocolRequestHandler
     {
         // ... (same as non-TLS example above)
     };
 
     EchoRequestHandler handler;
 
-    SocketRequestServer server{ config, tls_config };
+    RequestServer server{ config, tls_config };
     auto result = server.open(&handler, 4);
-    if (result.code() != SocketCode::SUCCESS)
+    if (result.code() != NetworkResultCode::SUCCESS)
     {
         printf(result.message());
         return -1;
@@ -455,14 +456,14 @@ int main()
 {
     using namespace Bn3Monkey;
 
-    SocketConfiguration config{
+    NetworkConfiguration config{
         "127.0.0.1",
         20000,
         false
     };
 
-    // Optional: implement SocketBroadcastHandler to observe connect/disconnect
-    struct PrintingHandler : public SocketBroadcastHandler {
+    // Optional: implement BroadcastHandler to observe connect/disconnect
+    struct PrintingHandler : public BroadcastHandler {
         void onClientConnected(const char* ip, int port) override {
             printf("client connected    %s:%d\n", ip, port);
         }
@@ -472,12 +473,12 @@ int main()
     };
     PrintingHandler handler;
 
-    SocketBroadcastServer server{ config };
+    BroadcastServer server{ config };
 
     {
         {
             auto result = server.open(&handler, 1);  // pass nullptr if you don't need callbacks
-            if(SocketCode::SUCCESS != result.code())
+            if(NetworkResultCode::SUCCESS != result.code())
             {
                 printf("%s", result.message());
             }
@@ -503,25 +504,25 @@ int main()
 {
     using namespace Bn3Monkey;
 
-    SocketConfiguration config{ "127.0.0.1", 20000 };
+    NetworkConfiguration config{ "127.0.0.1", 20000 };
 
     // TLS server requiring client certificate authentication (mTLS)
-    SocketTLSServerConfiguration tls_config{
-        { SocketTLSVersion::TLS1_2, SocketTLSVersion::TLS1_3 },
+    TlsServerConfiguration tls_config{
+        { TlsVersion::TLS1_2, TlsVersion::TLS1_3 },
         {},                                                        // use default TLS 1.2 cipher suites
         {},                                                        // use default TLS 1.3 cipher suites
         "/path/to/server.crt",
         "/path/to/server.key",
         nullptr,                                                   // no key password
-        SocketTLSClientAuthenticationMode::REQUIRED,               // require client certificate
+        TlsClientAuthMode::REQUIRED,               // require client certificate
         "/path/to/ca.crt"
     };
 
-    SocketBroadcastServer server{ config, tls_config };
+    BroadcastServer server{ config, tls_config };
 
     {
-        auto result = server.open(nullptr, 4);  // optional SocketBroadcastHandler*
-        if (SocketCode::SUCCESS != result.code())
+        auto result = server.open(nullptr, 4);  // optional BroadcastHandler*
+        if (NetworkResultCode::SUCCESS != result.code())
         {
             printf("%s", result.message());
             return -1;
@@ -540,7 +541,7 @@ int main()
 
 ## TLS Configuration
 
-### SocketTLSVersion
+### TlsVersion
 
 Specifies the TLS protocol versions the socket should support.
 
@@ -549,9 +550,9 @@ Specifies the TLS protocol versions the socket should support.
 | `TLS1_2` | TLS 1.2     |
 | `TLS1_3` | TLS 1.3     |
 
-Multiple versions can be combined using an initializer list: `{ SocketTLSVersion::TLS1_2, SocketTLSVersion::TLS1_3 }`
+Multiple versions can be combined using an initializer list: `{ TlsVersion::TLS1_2, TlsVersion::TLS1_3 }`
 
-### SocketTLS1_2CipherSuite
+### TlsV12CipherSuite
 
 Cipher suites available for TLS 1.2.
 If no cipher suites are specified, OpenSSL default cipher suites are used.
@@ -563,7 +564,7 @@ If no cipher suites are specified, OpenSSL default cipher suites are used.
 | `ECDHE_ECDSA_CHACHA20_POLY1305`  | ECDHE-ECDSA-CHACHA20-POLY1305  |
 | `ECDHE_RSA_CHACHA20_POLY1305`    | ECDHE-RSA-CHACHA20-POLY1305    |
 
-### SocketTLS1_3CipherSuite
+### TlsV13CipherSuite
 
 Cipher suites available for TLS 1.3.
 If no cipher suites are specified, OpenSSL default cipher suites are used.
@@ -576,9 +577,9 @@ If no cipher suites are specified, OpenSSL default cipher suites are used.
 | `TLS_AES_128_CCM_SHA256`       | TLS-AES-128-CCM-SHA256        |
 | `TLS_AES_128_CCM8_SHA256`      | TLS-AES-128-CCM8-SHA256       |
 
-### SocketTLSClientAuthenticationMode
+### TlsClientAuthMode
 
-Controls whether the server requires a certificate from connecting clients (used in `SocketTLSServerConfiguration`).
+Controls whether the server requires a certificate from connecting clients (used in `TlsServerConfiguration`).
 
 | Value      | Description                                                                |
 | ---------- | -------------------------------------------------------------------------- |
@@ -586,15 +587,15 @@ Controls whether the server requires a certificate from connecting clients (used
 | `AUTH_MODE_OPTIONAL` | Request a client certificate but allow connection even if none is provided |
 | `AUTH_MODE_REQUIRED` | Reject the connection if the client does not provide a valid certificate   |
 
-### SocketTLSClientConfiguration
+### TlsClientConfiguration
 
-Configuration for the TLS client. Passed as the second argument to `SocketClient`.
+Configuration for the TLS client. Passed as the second argument to `Client`.
 
 ```cpp
-SocketTLSClientConfiguration tls_config{
-    std::initializer_list<SocketTLSVersion> support_versions,      // required: TLS versions to support
-    std::initializer_list<SocketTLS1_2CipherSuite> tls_1_2_cipher_suites = {},  // optional
-    std::initializer_list<SocketTLS1_3CipherSuite> tls_1_3_cipher_suites = {},  // optional
+TlsClientConfiguration tls_config{
+    std::initializer_list<TlsVersion> support_versions,      // required: TLS versions to support
+    std::initializer_list<TlsV12CipherSuite> tls_1_2_cipher_suites = {},  // optional
+    std::initializer_list<TlsV13CipherSuite> tls_1_3_cipher_suites = {},  // optional
     bool verify_server = false,              // verify the server's certificate
     bool verify_hostname = false,            // verify that the server hostname matches the certificate CN/SAN
     const char* server_trust_store_path = nullptr,  // path to CA certificate file for server verification
@@ -615,19 +616,19 @@ tls_config.setOnTLSEvent([](const char* message) {
 });
 ```
 
-### SocketTLSServerConfiguration
+### TlsServerConfiguration
 
-Configuration for the TLS server. Passed as the second argument to `SocketRequestServer` or `SocketBroadcastServer`.
+Configuration for the TLS server. Passed as the second argument to `RequestServer` or `BroadcastServer`.
 
 ```cpp
-SocketTLSServerConfiguration tls_config{
-    std::initializer_list<SocketTLSVersion> support_versions,      // required: TLS versions to support
-    std::initializer_list<SocketTLS1_2CipherSuite> tls_1_2_cipher_suites = {},  // optional
-    std::initializer_list<SocketTLS1_3CipherSuite> tls_1_3_cipher_suites = {},  // optional
+TlsServerConfiguration tls_config{
+    std::initializer_list<TlsVersion> support_versions,      // required: TLS versions to support
+    std::initializer_list<TlsV12CipherSuite> tls_1_2_cipher_suites = {},  // optional
+    std::initializer_list<TlsV13CipherSuite> tls_1_3_cipher_suites = {},  // optional
     const char* server_cert_file_path = nullptr,   // server certificate path (.crt / .pem)
     const char* server_key_file_path = nullptr,    // server private key path (.key / .pem)
     const char* server_key_password = nullptr,     // private key password (nullptr if not encrypted)
-    SocketTLSClientAuthenticationMode client_authentication_mode = SocketTLSClientAuthenticationMode::AUTH_MODE_NONE,
+    TlsClientAuthMode client_authentication_mode = TlsClientAuthMode::AUTH_MODE_NONE,
     const char* client_trust_store_path = nullptr  // path to CA certificate file for client verification
 };
 ```
@@ -684,7 +685,7 @@ C++ 14
 
 ### 2.0.5 / 2025.08.11
 
-- add isConnected function in SocketClient
+- add isConnected function in Client
 
 ### 2.0.6 / 2025.09.04
 
@@ -696,10 +697,10 @@ C++ 14
   1. Add Header Class
   2. Fix Request Handler class
      1. Users can interpret a custom-defined header through the onModeClassified function to determine the nature of the request:
-        - Bn3Monkey::SocketRequestMode::FAST: tasks that can be processed quickly
-        - Bn3Monkey::SocketRequestMode::SLOW: tasks that take longer, such as I/O
-        - Bn3Monkey::SocketRequestMode::WRITE_STREAM: requests that continuously send data to the server
-        - Bn3Monkey::SocketRequestMode::READ_STREAM: requests that continuously receive data from the server
+        - Bn3Monkey::RequestProcessingMode::FAST: tasks that can be processed quickly
+        - Bn3Monkey::RequestProcessingMode::SLOW: tasks that take longer, such as I/O
+        - Bn3Monkey::RequestProcessingMode::WRITE_STREAM: requests that continuously send data to the server
+        - Bn3Monkey::RequestProcessingMode::READ_STREAM: requests that continuously receive data from the server
      2. Users must implement tasks that should be processed quickly in onProcessedWithoutResponse, and tasks that require a response in onProcessed.
 
 ### 2.1.1 / 2025.09.09
@@ -713,14 +714,14 @@ C++ 14
 ### 2.2.0 / 2026.02.25
 
 - Add TLS support to request server and notification (broadcast) server
-- Add `SocketTLSClientConfiguration` and `SocketTLSServerConfiguration` with explicit control over:
+- Add `TlsClientConfiguration` and `TlsServerConfiguration` with explicit control over:
   - TLS version selection (TLS 1.2, TLS 1.3, or both)
   - TLS 1.2 / TLS 1.3 cipher suite selection
   - Server certificate verification (`verify_server`, `verify_hostname`)
   - Mutual TLS (mTLS): client certificate authentication
   - Encrypted private key support (password-protected `.key` files)
   - TLS event callback (`setOnTLSEvent`) for handshake diagnostics
-- Add `SocketTLSClientAuthenticationMode` (`AUTH_MODE_NONE` / `AUTH_MODE_OPTIONAL` / `AUTH_MODE_REQUIRED`) for server-side client authentication control
+- Add `TlsClientAuthMode` (`AUTH_MODE_NONE` / `AUTH_MODE_OPTIONAL` / `AUTH_MODE_REQUIRED`) for server-side client authentication control
 
 ### 2.2.1 / 2026.04.01
 
@@ -735,24 +736,24 @@ C++ 14
 
 ### 2.3.0 / 2026.04.29
 
-- Fix data race in `SocketBroadcastServer` between the accept-monitor thread and the broadcast caller. Replaced the unsynchronized double-buffer client list with a single-producer / single-consumer pending queue that the broadcast caller drains under a brief lock; the actual `write()` loop holds no lock during network I/O.
+- Fix data race in `BroadcastServer` between the accept-monitor thread and the broadcast caller. Replaced the unsynchronized double-buffer client list with a single-producer / single-consumer pending queue that the broadcast caller drains under a brief lock; the actual `write()` loop holds no lock during network I/O.
 - Auto-remove disconnected clients from the broadcast list during `write()` (detect `SOCKET_CLOSED` from listener / `send`, close the socket, and erase from the active list).
-- Make `SocketBroadcastServer::close()` safe to call before / after `open()` (null-guarded `_socket->close()`, idempotent monitor-thread shutdown).
-- Remove `SocketBroadcastServer::enumerate()` from the public API (breaking change — the call was previously declared but never implemented).
+- Make `BroadcastServer::close()` safe to call before / after `open()` (null-guarded `_socket->close()`, idempotent monitor-thread shutdown).
+- Remove `BroadcastServer::enumerate()` from the public API (breaking change — the call was previously declared but never implemented).
 
 ### 2.3.1 / 2026.04.30
 
-- Add `SocketBroadcastServer::await(uint64_t timeout_ms)` — block until at least one client is connected.
-- Add `SocketBroadcastServer::awaitClose(uint64_t timeout_ms)` — block until every currently-active client has closed (peer FIN received). Use as an explicit barrier between broadcast rounds: after writing a batch, calling `awaitClose` ensures the round's clients have finished consuming and disconnected before the next `await()` runs, eliminating the cross-round race where a still-open previous client receives the next round's messages.
-- Add `SocketBroadcastHandler` interface with `onClientConnected(ip, port)` / `onClientDisconnected(ip, port)` callbacks for observing connection events on the broadcast server.
-- **Breaking**: `SocketBroadcastServer::open()` signature changed — it now takes a `SocketBroadcastHandler*` as its first argument: `open(SocketBroadcastHandler* handler, size_t num_of_clients)`. Pass `nullptr` if you don't need connection callbacks.
-- Rewrite `SocketBroadcastServer`'s accept-monitor on a single `SocketMultiEventListener` (mirrors the `SocketRequestServer` pattern) that owns both the accept fd and every accepted client fd. Peer-close is now detected by the kernel via `POLLHUP` / `POLLERR` and surfaced as a `DISCONNECTED` event — the previous pending-queue and `recv(MSG_PEEK)` health-check polling have been removed.
+- Add `BroadcastServer::await(uint64_t timeout_ms)` — block until at least one client is connected.
+- Add `BroadcastServer::awaitClose(uint64_t timeout_ms)` — block until every currently-active client has closed (peer FIN received). Use as an explicit barrier between broadcast rounds: after writing a batch, calling `awaitClose` ensures the round's clients have finished consuming and disconnected before the next `await()` runs, eliminating the cross-round race where a still-open previous client receives the next round's messages.
+- Add `BroadcastHandler` interface with `onClientConnected(ip, port)` / `onClientDisconnected(ip, port)` callbacks for observing connection events on the broadcast server.
+- **Breaking**: `BroadcastServer::open()` signature changed — it now takes a `BroadcastHandler*` as its first argument: `open(BroadcastHandler* handler, size_t num_of_clients)`. Pass `nullptr` if you don't need connection callbacks.
+- Rewrite `BroadcastServer`'s accept-monitor on a single `SocketMultiEventListener` (mirrors the `RequestServer` pattern) that owns both the accept fd and every accepted client fd. Peer-close is now detected by the kernel via `POLLHUP` / `POLLERR` and surfaced as a `DISCONNECTED` event — the previous pending-queue and `recv(MSG_PEEK)` health-check polling have been removed.
 - Auto-disable Nagle's algorithm (`TCP_NODELAY`) on accepted broadcast clients so each `write()` reaches the wire immediately. New `ServerActiveSocket::setNoDelay()` and free `setNoDelay()` helper in `SocketHelper.hpp` (Win32 + POSIX; silently no-op on AF_UNIX).
 - Internal: `await()` / `awaitClose()` are now simple `condition_variable::wait_for` predicates against the single active-client list. Broadcast `write()` snapshots that list under lock then streams bytes lock-free; `shared_ptr<BroadcastClient>` keeps each client alive across mid-broadcast `DISCONNECTED` removal.
 
 ### 2.3.2 / 2026.05.04
 
-- Add `SocketBroadcastServer::dropAll()` — forcibly disconnect every currently-active client. Closes each client socket, fires `onClientDisconnected` for each, and clears the active list. Use when a peer abandons its socket without sending FIN (e.g., reconnecting via a fresh socket without closing the old one); the kernel never reports `POLLHUP` for those, so the accept-monitor has no signal to clean them up on its own.
+- Add `BroadcastServer::dropAll()` — forcibly disconnect every currently-active client. Closes each client socket, fires `onClientDisconnected` for each, and clears the active list. Use when a peer abandons its socket without sending FIN (e.g., reconnecting via a fresh socket without closing the old one); the kernel never reports `POLLHUP` for those, so the accept-monitor has no signal to clean them up on its own.
 - Treat `POLLNVAL` as `DISCONNECTED` in `SocketMultiEventListener::wait()` on both Linux and Windows. Without this, an fd closed under the listener kept firing the same `revents` on every subsequent `poll()` / `WSAPoll()` and the cleanup path never ran.
 - Internal: promote the broadcast server's `SocketMultiEventListener` and accept `SocketEventContext` from monitor-thread locals to members so `dropAll()` can call `removeEvent()` from the broadcast caller's thread. Add a `_pending_destruction` list that holds dropped clients until the monitor's next loop iteration — releasing the strong refs synchronously would race the in-flight wait+dispatch step that still dereferences context pointers.
-- Internal: tighten `SocketBroadcastServer::await()` to re-check `_is_monitoring` and `_active_clients.empty()` under the lock after `wait_for`, so a `close()` or `dropAll()` racing the wake returns the correct result code instead of a stale success.
+- Internal: tighten `BroadcastServer::await()` to re-check `_is_monitoring` and `_active_clients.empty()` under the lock after `wait_for`, so a `close()` or `dropAll()` racing the wake returns the correct result code instead of a stale success.

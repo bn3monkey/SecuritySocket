@@ -8,7 +8,7 @@
 
 #include <cstdint>
 
-#include "TLSHelper.hpp"
+#include "TlsHelper.hpp"
 
 
 
@@ -19,8 +19,8 @@ namespace Bn3Monkey {
 		PassiveSocket(bool is_unix_domain = false);
 		virtual void close();
 
-		virtual SocketResult bind(const SocketAddress& address);
-		virtual SocketResult listen();
+		virtual NetworkResult bind(const SocketAddress& address);
+		virtual NetworkResult listen();
 		virtual ServerActiveSocketContainer accept();
 
 	private:
@@ -32,8 +32,8 @@ namespace Bn3Monkey {
 		TLSPassiveSocket(bool is_unix_domain = false);
 		virtual void close();
 
-		virtual SocketResult bind(const SocketAddress& address);
-		virtual SocketResult listen();
+		virtual NetworkResult bind(const SocketAddress& address);
+		virtual NetworkResult listen();
 		virtual ServerActiveSocketContainer accept();
 	};
 
