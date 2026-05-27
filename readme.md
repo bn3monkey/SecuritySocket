@@ -6,6 +6,7 @@ It is compatible for Windows(MSVC, MinGW Compiler), Android (Clang), Linux (gcc)
 - [Security Socket](#security-socket)
   - [Build](#build)
     - [Option](#option)
+  - [Third-Party Dependencies](#third-party-dependencies)
   - [Example](#example)
     - [Using Client](#using-client)
     - [Using TLS Client](#using-tls-client)
@@ -86,6 +87,20 @@ You can add option before importing security socket
   - Include security socket project into the whold cmake project.
   - Default value is _ON_
 
+- **SECURITYSOCKET_TEST_USE_CURL**
+  - Fetch libcurl and compile the HTTP / WebSocket server regression tests
+    into the `securitysockettest` library. When ON, the macro
+    `SECURITYSOCKET_TEST_USE_CURL` is also defined so the test sources
+    `securitysockettest_http_server.cpp` and
+    `securitysockettest_websocket_server.cpp` include their libcurl-dependent
+    content.
+  - When _OFF_, libcurl is never downloaded, configured, or linked. The two
+    HTTP/WebSocket test sources still belong to the test library but
+    compile to empty translation units (no libcurl headers, no test cases).
+    The default Custom-Protocol regression tests are unaffected.
+  - Requires `BUILD_SECURITYSOCKET_TEST=ON`.
+  - Default value is _OFF_
+
 ```cmake
 cmake_minimum_required (VERSION 3.16)
 ...
@@ -104,6 +119,18 @@ FetchContent_MakeAvailable(SecuritySocket)
 
 ...
 ```
+
+## Third-Party Dependencies
+
+All third-party libraries are fetched and built from source via CMake's
+`FetchContent`. None of them are vendored into this repository.
+
+| Library | Version / Tag | License | Scope | Notes |
+| --- | --- | --- | --- | --- |
+| [OpenSSL (cmake fork)](https://github.com/bn3monkey/openssl-cmake) | branch `proto` | Apache-2.0 | runtime (TLS) | Pulled in only when `SECURITYSOCKET_USING_TLS=ON`. Provides `OpenSSL::Crypto` and `OpenSSL::SSL`. |
+| [GoogleTest](https://github.com/google/googletest) | `release-1.12.1` | BSD-3-Clause | test | Pulled in only when `BUILD_SECURITYSOCKET_TEST=ON`. |
+| [remote-command](https://github.com/bn3monkey/remote-command) | `1.2.4` | n/a (internal) | test | Pulled in only when `BUILD_SECURITYSOCKET_TEST=ON`. |
+| [libcurl](https://github.com/curl/curl) | `curl-8_11_0` (≥ 8.11.0) | curl (MIT-like) | test | Pulled in only when `SECURITYSOCKET_TEST_USE_CURL=ON`. Built statically, HTTP-only protocol surface, WebSocket support (`CURL_ENABLE_WEBSOCKETS=ON`). Linked into `securitysockettest` and used as the test client for the HTTP / WebSocket server regression tests (`securitysockettest_http_server.cpp`, `securitysockettest_websocket_server.cpp`), which gate their content with `#if defined(SECURITYSOCKET_TEST_USE_CURL)`. The build verifies `curl_ws_send` / `curl_ws_recv` are exported via `check_symbol_exists` at configure time. |
 
 ## Example
 

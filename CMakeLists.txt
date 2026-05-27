@@ -19,6 +19,9 @@ option(BUILD_SECURITYSOCKET_TEST "Build Tests of Security Socket Library" on)
 message("BUILD_SECURITYSOCKET_TEST = ${BUILD_SECURITYSOCKET_TEST}")
 option(BUILD_SECURITYSOCKETTEST_SHARED "Build Security Socket Test Library as shared library" ON)
 message("BUILD_SECURITYSOCKETTEST_SHARED = ${BUILD_SECURITYSOCKETTEST_SHARED}")
+option(SECURITYSOCKET_TEST_USE_CURL
+    "Fetch libcurl and build HTTP/WebSocket regression test targets" OFF)
+message("SECURITYSOCKET_TEST_USE_CURL = ${SECURITYSOCKET_TEST_USE_CURL}")
 
 if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
     message("Apply -fPIC in linux environment ")
@@ -178,6 +181,113 @@ if (BUILD_SECURITYSOCKET_TEST)
         gtest_main
         remote_command_client
         ${SECURITYSOCKETTEST_PLATFORMDEPENDENT_LIBRARY})
+
+    ## libcurl — test-only dependency for HTTP/WebSocket regression tests
+    ##
+    ## Gated entirely by SECURITYSOCKET_TEST_USE_CURL. When OFF, libcurl is
+    ## never fetched, configured, or linked. When ON, libcurl is linked into
+    ## securitysockettest and the SECURITYSOCKET_TEST_USE_CURL macro is
+    ## defined so the HTTP/WebSocket server test sources compile in their
+    ## libcurl-dependent content (otherwise those files compile to nothing).
+    if (SECURITYSOCKET_TEST_USE_CURL)
+        message(STATUS "-- libcurl CMake Initialization (test-only) --")
+
+        # Save / override BUILD_SHARED_LIBS so libcurl is statically linked
+        # without affecting other dependencies.
+        set(_securitysocket_saved_build_shared_libs ${BUILD_SHARED_LIBS})
+        set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build libcurl statically" FORCE)
+
+        # libcurl configure-time knobs — minimise the surface to HTTP + WS,
+        # no extra protocols, no command-line tool, no curl test suite.
+        set(BUILD_CURL_EXE       OFF CACHE BOOL "" FORCE)
+        set(BUILD_TESTING        OFF CACHE BOOL "" FORCE)
+        set(BUILD_LIBCURL_DOCS   OFF CACHE BOOL "" FORCE)
+        set(BUILD_MISC_DOCS      OFF CACHE BOOL "" FORCE)
+        set(ENABLE_CURL_MANUAL   OFF CACHE BOOL "" FORCE)
+        set(HTTP_ONLY            ON  CACHE BOOL "" FORCE)
+        set(CURL_ENABLE_WEBSOCKETS ON CACHE BOOL "" FORCE)
+        set(CURL_DISABLE_INSTALL ON  CACHE BOOL "" FORCE)
+        set(CURL_USE_LIBSSH2     OFF CACHE BOOL "" FORCE)
+        set(CURL_USE_LIBPSL      OFF CACHE BOOL "" FORCE)
+        # Phase 1 smoke tests use HTTP only; TLS for HTTPS/WSS comes in later
+        # phases (alongside the HTTP/WS server impl).
+        set(CURL_ENABLE_SSL      OFF CACHE BOOL "" FORCE)
+
+        FetchContent_Declare(
+            curl
+            GIT_REPOSITORY https://github.com/curl/curl.git
+            GIT_TAG        curl-8_11_0
+        )
+        FetchContent_MakeAvailable(curl)
+
+        # Restore the caller's BUILD_SHARED_LIBS.
+        set(BUILD_SHARED_LIBS ${_securitysocket_saved_build_shared_libs}
+            CACHE BOOL "Restore BUILD_SHARED_LIBS" FORCE)
+        unset(_securitysocket_saved_build_shared_libs)
+
+        # Resolve the libcurl target. Modern libcurl exposes the alias
+        # CURL::libcurl; fall back to the bare 'libcurl' target if not.
+        if (TARGET CURL::libcurl)
+            set(_securitysocket_curl_target CURL::libcurl)
+        elseif (TARGET libcurl_static)
+            set(_securitysocket_curl_target libcurl_static)
+        elseif (TARGET libcurl)
+            set(_securitysocket_curl_target libcurl)
+        else()
+            message(FATAL_ERROR
+                "SECURITYSOCKET_TEST_USE_CURL=ON but no libcurl target was produced. "
+                "Check the FetchContent block above and your libcurl version.")
+        endif()
+        message(STATUS "SecuritySocket: libcurl target = ${_securitysocket_curl_target}")
+
+        # Compile-time guard: fail fast if the libcurl we just built does not
+        # actually expose the WebSocket API. This is the contract Phase 1 has
+        # to enforce so later phases can rely on curl_ws_send / curl_ws_recv.
+        #
+        # We force the try_compile target type to STATIC_LIBRARY so the probe
+        # only needs to compile (not link) — otherwise MSVC's import-stub
+        # __declspec(dllimport) reference to curl_ws_send would fail at link
+        # time without an explicit libcurl on the link line.
+        include(CheckSymbolExists)
+        set(_securitysocket_saved_req_incs    ${CMAKE_REQUIRED_INCLUDES})
+        set(_securitysocket_saved_try_target  ${CMAKE_TRY_COMPILE_TARGET_TYPE})
+        set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
+        get_target_property(_securitysocket_curl_incs
+            ${_securitysocket_curl_target} INTERFACE_INCLUDE_DIRECTORIES)
+        if (_securitysocket_curl_incs)
+            list(APPEND CMAKE_REQUIRED_INCLUDES ${_securitysocket_curl_incs})
+        endif()
+        # websockets.h relies on CURL_EXTERN / CURLcode / curl_off_t from
+        # curl.h, so both headers must be included for the symbol probe to
+        # parse successfully.
+        check_symbol_exists(curl_ws_send "curl/curl.h;curl/websockets.h"
+            SECURITYSOCKET_CURL_HAS_WS_SEND)
+        check_symbol_exists(curl_ws_recv "curl/curl.h;curl/websockets.h"
+            SECURITYSOCKET_CURL_HAS_WS_RECV)
+        set(CMAKE_REQUIRED_INCLUDES       ${_securitysocket_saved_req_incs})
+        set(CMAKE_TRY_COMPILE_TARGET_TYPE ${_securitysocket_saved_try_target})
+        unset(_securitysocket_saved_req_incs)
+        unset(_securitysocket_saved_try_target)
+        unset(_securitysocket_curl_incs)
+
+        if (NOT SECURITYSOCKET_CURL_HAS_WS_SEND OR NOT SECURITYSOCKET_CURL_HAS_WS_RECV)
+            message(FATAL_ERROR
+                "SECURITYSOCKET_TEST_USE_CURL=ON but the fetched libcurl does not "
+                "expose curl_ws_send / curl_ws_recv. Rebuild with libcurl >= 8.11.0 "
+                "configured with CURL_ENABLE_WEBSOCKETS=ON.")
+        endif()
+
+        # Inject libcurl into the existing test library. The HTTP/WebSocket
+        # server test sources gate all their content with
+        # #if defined(SECURITYSOCKET_TEST_USE_CURL), so they compile to
+        # empty translation units when this option is OFF and to real test
+        # cases when it is ON.
+        target_compile_definitions(securitysockettest
+            PRIVATE SECURITYSOCKET_TEST_USE_CURL)
+        target_link_libraries(securitysockettest
+            ${_securitysocket_curl_target})
+        unset(_securitysocket_curl_target)
+    endif()
 
 endif()
 
