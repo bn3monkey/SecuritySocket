@@ -7,7 +7,6 @@
 #include "PassiveSocket.hpp"
 #include "ServerActiveSocket.hpp"
 #include "SocketEvent.hpp"
-#include "SocketConnection.hpp"
 #include "ObjectPool.hpp"
 
 #include <thread>

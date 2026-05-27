@@ -97,7 +97,9 @@ void Bn3Monkey::RequestServerImpl::run(CustomProtocolRequestHandler* handler)
 				auto* client_socket = socket_container.get();
 				if (client_socket->result().code() == NetworkResultCode::SUCCESS)
 				{
-					SocketConnection* connection = _socket_connection_pool.acquire(socket_container, *handler, _configuration.pdu_size());
+					ClientConnectionImpl* connection = _socket_connection_pool.acquire(
+						socket_container, *handler, _configuration.pdu_size(),
+						_tls_configuration.valid());
 					connection->connectClient();
 					listener.addEvent(connection, Bn3Monkey::SocketEventType::READ);
 				}
@@ -105,7 +107,7 @@ void Bn3Monkey::RequestServerImpl::run(CustomProtocolRequestHandler* handler)
 			break;
 			case SocketEventType::DISCONNECTED:
 			{
-				auto* connection = static_cast<SocketConnection*>(context);
+				auto* connection = static_cast<ClientConnectionImpl*>(context);
 				connection->disconnectClient();
 				listener.removeEvent(connection);
 				_socket_connection_pool.release(connection);
@@ -114,30 +116,30 @@ void Bn3Monkey::RequestServerImpl::run(CustomProtocolRequestHandler* handler)
 
 			case SocketEventType::READ:
 			{
-				auto* connection = static_cast<SocketConnection*>(context);
+				auto* connection = static_cast<ClientConnectionImpl*>(context);
 				switch (connection->state)
 				{
-				case SocketConnection::ProcessState::READING_HEADER:
+				case ClientConnectionImpl::ProcessState::READING_HEADER:
 					{
 						connection->state = connection->readHeader();
-						if (connection->state == SocketConnection::ProcessState::WRITING_RESPONSE) {
+						if (connection->state == ClientConnectionImpl::ProcessState::WRITING_RESPONSE) {
 							listener.modifyEvent(connection, Bn3Monkey::SocketEventType::WRITE);
 						}
-						else if (connection->state == SocketConnection::ProcessState::FINISH_PROCESS) {
+						else if (connection->state == ClientConnectionImpl::ProcessState::FINISH_PROCESS) {
 							connection->flush();
-							connection->state = SocketConnection::ProcessState::READING_HEADER;
+							connection->state = ClientConnectionImpl::ProcessState::READING_HEADER;
 						}
 					}
 					break;
-				case SocketConnection::ProcessState::READING_PAYLOAD:
+				case ClientConnectionImpl::ProcessState::READING_PAYLOAD:
 					{
 						connection->state = connection->readPayload();
-						if (connection->state == SocketConnection::ProcessState::WRITING_RESPONSE) {
+						if (connection->state == ClientConnectionImpl::ProcessState::WRITING_RESPONSE) {
 							listener.modifyEvent(connection, Bn3Monkey::SocketEventType::WRITE);
 						}
-						else if (connection->state == SocketConnection::ProcessState::FINISH_PROCESS) {
+						else if (connection->state == ClientConnectionImpl::ProcessState::FINISH_PROCESS) {
 							connection->flush();
-							connection->state = SocketConnection::ProcessState::READING_HEADER;
+							connection->state = ClientConnectionImpl::ProcessState::READING_HEADER;
 						}
 					}
 					break;
@@ -150,15 +152,15 @@ void Bn3Monkey::RequestServerImpl::run(CustomProtocolRequestHandler* handler)
 
 			case SocketEventType::WRITE :
 			{
-				auto connection = static_cast<SocketConnection*>(context);
+				auto connection = static_cast<ClientConnectionImpl*>(context);
 				switch (connection->state) {
-					case SocketConnection::ProcessState::WRITING_RESPONSE:
+					case ClientConnectionImpl::ProcessState::WRITING_RESPONSE:
 					{
 						connection->state = connection->writeResponse();
-						if (connection->state == SocketConnection::ProcessState::FINISH_PROCESS) {
+						if (connection->state == ClientConnectionImpl::ProcessState::FINISH_PROCESS) {
 							connection->flush();
 							listener.modifyEvent(connection, Bn3Monkey::SocketEventType::READ);
-							connection->state = SocketConnection::ProcessState::READING_HEADER;
+							connection->state = ClientConnectionImpl::ProcessState::READING_HEADER;
 						}
 					}
 						break;

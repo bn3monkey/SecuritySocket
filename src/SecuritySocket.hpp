@@ -387,7 +387,7 @@ namespace Bn3Monkey
     // 오래 걸릴 것 같은 작업은 다른 쓰레드에서 처리하게 함.
     // 애초에 payload를 다른 쓰레드에서 read를 여러번하고 write를 하자
     // 금방 끝날 것은 이 쓰레드에서 처리하기.
-        
+
     enum class RequestProcessingMode
     {
         FAST,
@@ -396,18 +396,55 @@ namespace Bn3Monkey
         WRITE_STREAM
     };
 
-    struct SECURITYSOCKET_API CustomProtocolRequestHandler
+    // Pure-abstract view of an active client connection. Handler callbacks
+    // receive it instead of raw (ip, port) so future phases can attach
+    // per-connection metadata (TLS state, WS upgrade, etc.) without
+    // changing the public signature.
+    class SECURITYSOCKET_API ClientConnection
     {
+    public:
+        virtual ~ClientConnection() = default;
+        virtual const char* ip()          const = 0;
+        virtual uint32_t    port()        const = 0;
+        virtual bool        isSecure()    const = 0;
+        virtual bool        isWebSocket() const = 0;
+    };
+
+    // Base for request-style handlers (CustomProtocolRequestHandler today,
+    // HttpRequestHandler in later phases). Lifecycle callbacks have empty
+    // defaults so derived classes only override what they need. supportXxx()
+    // flags let the server pick a dispatch path without RTTI.
+    //
+    // BroadcastHandler is intentionally NOT derived from this base —
+    // broadcast servers have a different lifecycle model and keep their
+    // own callback shape.
+    class SECURITYSOCKET_API RequestHandler
+    {
+    public:
+        virtual ~RequestHandler() = default;
+        virtual void onConnected   (const ClientConnection& conn) { (void)conn; }
+        virtual void onDisconnected(const ClientConnection& conn) { (void)conn; }
+
+        // Derived classes flip the relevant flag(s) to true. The server
+        // reads them in open() to choose its dispatch path.
+        virtual bool supportHttp()         const { return false; }
+        virtual bool supportUserProtocol() const { return false; }
+        virtual bool supportWebSocket()    const { return false; }
+    };
+
+    class SECURITYSOCKET_API CustomProtocolRequestHandler
+        : public virtual RequestHandler
+    {
+    public:
+        bool supportUserProtocol() const override final { return true; }
+
         virtual size_t getHeaderSize() = 0;
         virtual size_t getPayloadSize(const char* header) = 0;
-        
+
         virtual RequestProcessingMode onModeClassified(
             const char* header
         ) = 0;
-        
-        virtual void onClientConnected(const char* ip, int port) = 0;
-        virtual void onClientDisconnected(const char* ip, int port) = 0;
-        
+
         virtual void onProcessed(
             const char* header,
             const char* input_buffer,

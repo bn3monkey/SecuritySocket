@@ -105,12 +105,12 @@ struct FileRequestHandler : public Bn3Monkey::CustomProtocolRequestHandler
         return Bn3Monkey::RequestProcessingMode::FAST;
     }
 
-    void onClientConnected(const char* ip, int port) override {
-        printConcurrent("Client connected (ip : %s port : %d)\n", ip, port);
+    void onConnected(const Bn3Monkey::ClientConnection& conn) override {
+        printConcurrent("Client connected (ip : %s port : %u)\n", conn.ip(), conn.port());
     }
 
-    void onClientDisconnected(const char* ip, int port) override {
-        printConcurrent("Client disconnected (ip : %s port : %d)\n", ip, port);
+    void onDisconnected(const Bn3Monkey::ClientConnection& conn) override {
+        printConcurrent("Client disconnected (ip : %s port : %u)\n", conn.ip(), conn.port());
     }
 
     void onProcessed(

@@ -6,7 +6,7 @@
 #include "PassiveSocket.hpp"
 #include "ServerActiveSocket.hpp"
 #include "SocketEvent.hpp"
-#include "SocketConnection.hpp"
+#include "ClientConnection.hpp"
 #include "ObjectPool.hpp"
 
 #include <atomic>
@@ -38,14 +38,14 @@ namespace Bn3Monkey
 		std::atomic<bool> _is_running{ false };
 		std::thread _routine;
 			
-		ObjectPool<SocketConnection> _socket_connection_pool {32};
+		ObjectPool<ClientConnectionImpl> _socket_connection_pool {32};
 
 		void run(CustomProtocolRequestHandler* handler);
 	};
 
 	// @Todo Limit the number of request workers to the number of core and distribute socket to limited workers
 
-	// SocketRequestWorkers -> add(SocketConnection)
+	// SocketRequestWorkers -> add(ClientConnectionImpl)
 	//						                         -> onProcessed
 	//                                                                -> send
 	//                                                  true
