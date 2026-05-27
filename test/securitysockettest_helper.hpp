@@ -9,6 +9,8 @@
 #include <algorithm>
 #include <cstdio>
 
+#include <SecuritySocket.hpp>
+
 
 inline std::mutex& getPrintMutex() {
     static std::mutex _mtx;
@@ -94,6 +96,39 @@ private:
     std::mutex _mtx;
     std::vector<Entry> _marks;
 };
+
+// SocketClient::read() returns whatever a single recv yielded — on Linux
+// loopback with TCP_NODELAY senders this is frequently < size. Tests that
+// need fixed-size message framing should call readFully to accumulate until
+// the requested byte count arrives, or a non-retriable condition is hit.
+//
+// Returns the last SocketResult with bytes() = total bytes accumulated.
+// On peer close (SOCKET_CLOSED), bytes() reflects what was read before FIN.
+inline Bn3Monkey::SocketResult readFully(
+    Bn3Monkey::SocketClient& client, void* buffer, size_t size)
+{
+    size_t total = 0;
+    Bn3Monkey::SocketResult last{ Bn3Monkey::SocketCode::SUCCESS };
+
+    while (total < size)
+    {
+        last = client.read(static_cast<char*>(buffer) + total, size - total);
+        if (last.code() != Bn3Monkey::SocketCode::SUCCESS) {
+            // SOCKET_CLOSED, SOCKET_TIMEOUT (after exhausting retries),
+            // hard errors — propagate with accumulated count for context.
+            return Bn3Monkey::SocketResult(last.code(),
+                static_cast<int32_t>(total));
+        }
+        if (last.bytes() <= 0) {
+            return Bn3Monkey::SocketResult(Bn3Monkey::SocketCode::SOCKET_CLOSED,
+                static_cast<int32_t>(total));
+        }
+        total += static_cast<size_t>(last.bytes());
+    }
+
+    return Bn3Monkey::SocketResult(Bn3Monkey::SocketCode::SUCCESS,
+        static_cast<int32_t>(total));
+}
 
 class SimpleEvent
 {

@@ -123,7 +123,7 @@ TEST(TCPBroadcast, shouldHandleRepeatedClientConnectionsAndDisconnections)
             {
                 char buffer[8192]{ 0 };
                 auto* expected = patterns.patterns[i].data();
-                auto res = client.read(buffer, BroadcastEventPatterns::LENGTH_OF_PATTERN);
+                auto res = readFully(client, buffer, BroadcastEventPatterns::LENGTH_OF_PATTERN);
                 tw.markf("[C] T%zu R%03zu done", trial, i);
                 if (res.code() == SocketCode::SUCCESS)
                 {
@@ -230,7 +230,7 @@ TEST(TCPBroadcast, shouldSynchronizeViaAwaitAndAwaitClose)
             {
                 char buffer[8192]{ 0 };
                 auto* expected = patterns.patterns[i].data();
-                auto res = client.read(buffer, BroadcastEventPatterns::LENGTH_OF_PATTERN);
+                auto res = readFully(client, buffer, BroadcastEventPatterns::LENGTH_OF_PATTERN);
                 tw.markf("[C] T%zu R%03zu done", trial, i);
                 if (res.code() == SocketCode::SUCCESS)
                 {
@@ -379,7 +379,7 @@ TEST(TCPBroadcast, shouldRecoverViaDropAllWhenClientsAbandonSockets)
             {
                 char buffer[8192]{ 0 };
                 auto* expected = patterns.patterns[i].data();
-                auto res = client->read(buffer, BroadcastEventPatterns::LENGTH_OF_PATTERN);
+                auto res = readFully(*client, buffer, BroadcastEventPatterns::LENGTH_OF_PATTERN);
                 tw.markf("[C] T%zu R%03zu done", trial, i);
                 if (res.code() == SocketCode::SUCCESS)
                 {

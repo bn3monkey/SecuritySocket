@@ -753,7 +753,35 @@ class NetworkConfiguration {
 
 ## 3. 구현 Phase
 
-### Phase 1 — Parser 편입 + 이름 일괄 rename
+### Phase 1 — 테스트 클라이언트 라이브러리 통합 (libcurl)
+
+#### 범위
+
+- libcurl ≥ 8.11.0 FetchContent 편입 — HTTP + WebSocket stable API 한 라이브러리에서 커버 (`curl_ws_send` / `curl_ws_recv`)
+- CMake 옵션 `SECURITYSOCKET_TEST_USE_CURL` (기본 OFF) — HTTP/WebSocket 테스트 코드 컴파일을 통째로 토글하는 단일 스위치
+- ON: libcurl 자동 다운로드/빌드 + HTTP·WS 서버 회귀 테스트 타깃 활성화
+- OFF: libcurl 의존 0, HTTP·WS 테스트 타깃 미생성 (기존 Custom Protocol 회귀 테스트는 영향 없음)
+- 산출물은 Phase 4 이후의 HTTP/WS 서버 구현을 검증할 회귀 테스트 인프라 — 후속 Phase 들이 이 토글을 사용해 자신의 테스트 코드를 조건부 컴파일
+
+#### 파일
+
+- `CMakeLists.txt`: `option(SECURITYSOCKET_TEST_USE_CURL ...)` + `FetchContent_Declare(curl URL ...)` 블록, `check_symbol_exists(curl_ws_send curl/websockets.h ...)` 가용성 가드
+- `test/http/CMakeLists.txt`: HTTP 서버 회귀 테스트 타깃 자리 (libcurl easy interface)
+- `test/websocket/CMakeLists.txt`: WebSocket 서버 회귀 테스트 타깃 자리 (`curl_ws_send` / `curl_ws_recv`)
+- `readme.md` Third-Party Dependencies: libcurl 항목 추가 (test 전용, MIT-like, 버전 핀 명시)
+
+#### 완료 기준
+
+- [ ] `cmake -DSECURITYSOCKET_TEST_USE_CURL=ON` 빌드 시 libcurl 8.11+ 자동 fetch + 정적 링크 성공
+- [ ] OFF 빌드 시 libcurl 다운로드/빌드/링크 0회 — 의존 완전 격리
+- [ ] OFF 빌드 시 HTTP/WebSocket 테스트 타깃 미생성 (CTest 목록에도 미노출)
+- [ ] `curl/websockets.h` 의 `curl_ws_send` / `curl_ws_recv` symbol 컴파일 타임 검출 — 미존재 시 친절한 에러로 빌드 중단
+- [ ] Windows / Linux / Android × TLS ON/OFF × USE_CURL ON/OFF 매트릭스 빌드 통과
+- [ ] libcurl 기반 smoke test 1건 (loopback HTTP GET + WS echo) — 클라이언트 동작과 빌드 인프라만 검증, 실서버 테스트는 후속 Phase
+
+---
+
+### Phase 2 — Parser 편입 + 이름 일괄 rename
 
 #### 범위
 
@@ -775,7 +803,7 @@ class NetworkConfiguration {
 
 ---
 
-### Phase 2 — 공통 타입 + Handler base
+### Phase 3 — 공통 타입 + Handler base
 
 #### 범위
 
@@ -797,7 +825,7 @@ class NetworkConfiguration {
 
 ---
 
-### Phase 3 — HTTP 핸들러 + 라우터 + Url
+### Phase 4 — HTTP 핸들러 + 라우터 + Url
 
 #### 범위
 
@@ -830,7 +858,7 @@ class NetworkConfiguration {
 
 ---
 
-### Phase 4 — Custom Protocol 핸들러 refactoring
+### Phase 5 — Custom Protocol 핸들러 refactoring
 
 #### 범위
 
@@ -851,10 +879,10 @@ class NetworkConfiguration {
 
 ---
 
-### Phase 5 — Server 흐름 통합 (sniffing + dispatch + WS frame + SLOW)
+### Phase 6 — Server 흐름 통합 (sniffing + dispatch + WS frame + SLOW)
 
 > **참조:** [state-machine.html](./state-machine.html) — State / Event / Action / Transition 전체 명세.
-> Phase 5는 이 명세대로 구현.
+> Phase 6는 이 명세대로 구현.
 
 #### 범위
 
@@ -977,7 +1005,7 @@ queueToWorker(route, listener);              // 이제 worker 실행해도 안�
 
 ---
 
-### Phase 6 — HTTP Client
+### Phase 7 — HTTP Client
 
 #### 범위
 
@@ -1004,7 +1032,7 @@ queueToWorker(route, listener);              // 이제 worker 실행해도 안�
 
 ---
 
-### Phase 7 — Request Client (raw + WS tunneling)
+### Phase 8 — Request Client (raw + WS tunneling)
 
 #### 범위
 
@@ -1031,11 +1059,12 @@ queueToWorker(route, listener);              // 이제 worker 실행해도 안�
 
 | Phase | 작업량 | 비고 |
 | --- | --- | --- |
-| 1. Parser 편입 + 일괄 rename | 2주 | rename으로 인한 회귀 검증 포함 |
-| 2. 공통 타입 + Handler base | 1주 | Diamond / supportXxx 검증 |
-| 3. HTTP 핸들러 + 라우터 + Url | 2주 | Trie 라우터 + Url 인코딩 비중 |
-| 4. Custom Protocol 핸들러 refactoring | 1주 | 회귀 테스트 중요 |
-| 5. Server 흐름 통합 (sniffing + WS frame) | 3주 | **가장 위험.** state machine 버그 잡기 |
-| 6. HTTP Client | 1.5주 | container 패턴 + 클라 auto-encode |
-| 7. Request Client (raw + WS) | 2주 | WsFrameCodec 재사용 |
-| **합계** | **약 12.5주** | (1인 풀타임 기준) |
+| 1. 테스트 클라이언트 라이브러리 통합 (libcurl) | 1주 | FetchContent + `SECURITYSOCKET_TEST_USE_CURL` 토글, smoke test |
+| 2. Parser 편입 + 일괄 rename | 2주 | rename으로 인한 회귀 검증 포함 |
+| 3. 공통 타입 + Handler base | 1주 | Diamond / supportXxx 검증 |
+| 4. HTTP 핸들러 + 라우터 + Url | 2주 | Trie 라우터 + Url 인코딩 비중 |
+| 5. Custom Protocol 핸들러 refactoring | 1주 | 회귀 테스트 중요 |
+| 6. Server 흐름 통합 (sniffing + WS frame) | 3주 | **가장 위험.** state machine 버그 잡기 |
+| 7. HTTP Client | 1.5주 | container 패턴 + 클라 auto-encode |
+| 8. Request Client (raw + WS) | 2주 | WsFrameCodec 재사용 |
+| **합계** | **약 13.5주** | (1인 풀타임 기준) |
