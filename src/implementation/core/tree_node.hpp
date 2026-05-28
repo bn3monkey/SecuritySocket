@@ -1,32 +1,64 @@
-#if !defined(__TREE_NODE__)
-#define __TREE_NODE__
+#if !defined(__BN3MONKEY_TREE_NODE__ )
+#define __BN3MONKEY_TREE_NODE__ 
 
 #include <cstdint>
+#include <vector>
 
 namespace Bn3Monkey {
     
-    class TreeNodeLink
-    {
-        uint32_t parent_idx {0};
-        uint32_t first_child_idx {0};
 
-        uint32_t prev_sibling_idx {0};
-        uint32_t next_sibling_idx {0};
+    template<typename EntityID>
+    class EntityHook
+    {
+        EntityID parent_id;
+        EntityID first_child_id;
+        EntityID prev_sibling_id;
+        EntityID next_sibling_id;
+    };
+    struct EntityArenaIndex {
+        // Marker in `next` meaning: this slot is currently allocated (not in free list).
+        static constexpr size_t SLOT_ALLOCATED {static_cast<size_t>(-1)};
+        // Marker in `next` meaning: end of the free-list chain (no further free slot).
+        static constexpr size_t FREE_LIST_END  {static_cast<size_t>(-2)};
+
+        size_t next { FREE_LIST_END };
     };
 
-    template<typename Node>
-    class TreeNodePool
+    class FreeStack
     {
+    private:
+        std::vector<EntityArenaIndex> _data;
+    };
+
+    template<typename Entity, typename EntityID>
+    class EntityPool
+    {
+        EntityPool(
+            size_t (*fromEntityID)(EntityID),
+            EntityID (*toEntityID)(size_t)
+        ) :
+            _fromEntityID(fromEntityID),
+            _toEntityID(toEntityID)
+            _arena(1024)
+        {
+
+        }
+        
+
         template<typename... Args>
-        uint32_t allocate(Args&&... args) {
+        EntityID allocate(Args&&... args) {
             uint32_t new_offset = offset + 1;
             tryGrow(new_offset);
             
-            Node* node = new (_arena.data() + new_offset) Node{std::forward<Args>(args)...};
-            return offset;
+            Entity* node = new (_arena.data() + new_offset) Entity{std::forward<Args>(args)...};
+            
+            
+            offset = new_offset;
+            return _toEntityID(offset);
         }
 
-        Node& get(uint32_t idx) {
+        Entity& get(EntityID id) {
+            auto idx = _fromEntityID(id);
             return _arena[idx];
         }
 
@@ -35,37 +67,103 @@ namespace Bn3Monkey {
             if (new_offset >= _arena.capacity())
                 _arena.resize(_arena.size() << 1);
         }
-        std::vector<Node> _arena(1024);
+
+        EntityID (*_toEntityID)(size_t index);
+        size_t (*_fromEntityID)(EntityID id);
+        std::vector<Entity> _arena;
         uint32_t offset {0};        
     };
 
-    template<typename Node, TreeNodeLink Node::* NodeLinkMember>
-    class NodeHelper // 이름 추천 좀. Node의 위상 연산을 돕는 것임
+    template<
+        typename Entity, 
+        typename EntityID, 
+        EntityHook<EntityID> Entity::* EntityHookMember,
+        EntityID NullID>
+    class EntityCursor
     {
     public:
-        NodeHelper(TreeNodePool<Node>& pool, Node& node) : _pool(pool), _node(node) {}
-
-        void link(Node& parent);
-        void unlink(Node& parent);
-        void /*자기 부모를 계속 타고타고 가서 root까지 가서 수행하는 함수*/(void (*function)(Node& node)) {
+        
+        EntityCursor(EntityPool<Entity, EntityID>& pool, EntityID id) : 
+            _pool(pool), _id(id)
+        {
 
         }
 
-        void appendChild(Node& new_node);
-        void removeChild(Node& new_node);
+        void clear() {
+            parentID() = NullID;
+            firstChildID() = NullID;
+            prevSiblingID() = NullID;
+            nextSiblingID() = NullID;
+        }
+
+        EntityID id() const {
+            return _id;
+        }
+        Entity& self() const {
+            return _pool.get(_id);
+        }
+        EntityCursor parent() const {
+            return EntityCursor(_pool, _pool.get(parentID()));
+        }
+        EntityCursor firstChild() const {
+            return EntityCursor(_pool, _pool.get(firstChildID()));
+        }
+        EntityCursor prevSibling() const {
+            return EntityCursor(_pool, _pool.get(prevSiblingID()));
+        }
+        EntityCursor nextSibling() const {
+            return EntityCursor(_pool, _pool.get(nextSiblingID()));
+        }
+        bool isRoot() const {
+            return parentID() == NullID;
+        }
+        bool isLeaf() const {
+            return firstChildID() == NullID;
+        }
+
+
+        void attach(EntityID parent_id) {
+            // 나의 parent_id를 parent의 id로 set
+            // parent의 first_sibling을 나 자신으로 교체
+        }   
+        void detach() {
+            // 1. 내가 first_sibling_id일 때
+            // 2. first_sibling_id가 아닐 때
+        }
+
         template<typename Fn>
-        Node& findChild(Fn fn) {
-
+        EntityID findChild(Fn fn) {
+            // 구현좀
         }
-        void forEachChild(void (*function)(Node& node)) {
-
+        void appendChild(EntityID child_id) {
+            auto child = EntityCursor{_pool, child_id};
+            child.attach(_id);
         }
+        void removeChild(EntityID child_id) {
+            auto child = EntityCursor{_pool, child_id};
+            child.detach(child_id);
+        }
+
 
 
     private:
-        TreeNodePool<Node>& _pool;
-        Node& _node;
-    }
+        inline EntityID& parentID() {
+            return _node.EntityHookMember.parent_id;
+        }
+        inline EntityID& firstChildID() {
+            return _node.EntityHookMember.first_child_id;
+        }
+        inline EntityID& prevSiblingID() {
+            return _node.EntityHookMember.prev_sibling_id;
+        }
+        inline EntityID& nextSiblingID() {
+            return _node.EntityHookMember.next_sibling_id;
+        }
+
+
+        EntityPool<Entity, EntityID>& _pool;
+        EntityID _id;
+    };
 }
 
-#endif // __TREE_NODE__
+#endif // __BN3MONKEY_TREE_NODE__ 
