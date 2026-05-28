@@ -24,6 +24,7 @@
 #include <cstdio>
 #include <memory>
 #include <initializer_list>
+#include <functional>
 
 #define WIN32_LEAN_AND_MEAN
 
@@ -458,6 +459,95 @@ namespace Bn3Monkey
             const char* input_buffer,
             size_t input_size
         ) = 0;
+    };
+
+    // ── HTTP types (Phase 4) ──
+    //
+    // All pure abstract — concrete *Impl lives behind the DLL boundary. The
+    // server constructs Impls on the stack per request (Phase 6 wiring); user
+    // code only ever sees these interfaces.
+
+    // View over an incoming HTTP request. pathParam/query auto-decode
+    // percent-encoded input; header() returns the raw value (HTTP headers
+    // have their own quoting rules, callers handle those if they need to).
+    class SECURITYSOCKET_API HttpRequest
+    {
+    public:
+        virtual ~HttpRequest() = default;
+        virtual const char* method()                   const = 0;
+        virtual const char* path()                     const = 0;
+        virtual const char* header   (const char* name) const = 0;
+        virtual const char* pathParam(const char* name) const = 0;
+        virtual const char* query    (const char* name) const = 0;
+        virtual const void* body()                     const = 0;
+        virtual size_t      bodySize()                 const = 0;
+    };
+
+    // Builder for an outgoing HTTP response. Fluent: status().header().body()
+    // chains because each call returns *this. json() is a thin convenience
+    // over body() that also sets Content-Type to application/json.
+    class SECURITYSOCKET_API HttpResponse
+    {
+    public:
+        virtual ~HttpResponse() = default;
+        virtual HttpResponse& status(int code)                                     = 0;
+        virtual HttpResponse& header(const char* name, const char* value)          = 0;
+        virtual HttpResponse& body  (const void* data, size_t size)                = 0;
+        virtual HttpResponse& json  (const char* json_str)                         = 0;
+    };
+
+    // WebSocket binding for a CustomProtocolRequestHandler. Default-constructed
+    // (pattern == nullptr) means "raw TCP only"; supplying a pattern flips the
+    // owning handler's supportWebSocket() to true and registers an Upgrade
+    // route for that path (Phase 6).
+    struct SECURITYSOCKET_API WebSocketConfiguration
+    {
+        const char* pattern{ nullptr };
+        bool valid() const { return pattern != nullptr; }
+    };
+
+    // Route registry passed to HttpRequestHandler::registerRoutes. The mode
+    // argument is *route-static* — it picks FAST (event-loop thread) vs SLOW
+    // (worker thread) at registration time, never per-message. Custom protocol
+    // does per-message classification; HTTP doesn't because path already
+    // discriminates work shape.
+    class SECURITYSOCKET_API HttpRouter
+    {
+    public:
+        using HandlerFn = std::function<void(ClientConnection&, HttpRequest&, HttpResponse&)>;
+
+        virtual ~HttpRouter() = default;
+
+        virtual void get    (const char* pattern, HandlerFn fn,
+                             RequestProcessingMode mode = RequestProcessingMode::FAST) = 0;
+        virtual void post   (const char* pattern, HandlerFn fn,
+                             RequestProcessingMode mode = RequestProcessingMode::FAST) = 0;
+        virtual void put    (const char* pattern, HandlerFn fn,
+                             RequestProcessingMode mode = RequestProcessingMode::FAST) = 0;
+        virtual void del    (const char* pattern, HandlerFn fn,
+                             RequestProcessingMode mode = RequestProcessingMode::FAST) = 0;
+        virtual void patch  (const char* pattern, HandlerFn fn,
+                             RequestProcessingMode mode = RequestProcessingMode::FAST) = 0;
+        virtual void head   (const char* pattern, HandlerFn fn,
+                             RequestProcessingMode mode = RequestProcessingMode::FAST) = 0;
+        virtual void options(const char* pattern, HandlerFn fn,
+                             RequestProcessingMode mode = RequestProcessingMode::FAST) = 0;
+        // Catch-all when no method+path matches. Used to render custom 404 /
+        // 405 bodies; without it the server emits a minimal default 404.
+        virtual void fallback(HandlerFn fn,
+                              RequestProcessingMode mode = RequestProcessingMode::FAST) = 0;
+    };
+
+    // Derived handler for HTTP traffic. registerRoutes runs once at open()
+    // before the listen loop, so handlers can build their trie eagerly.
+    // supportHttp() is sealed true so the server's capability check sees the
+    // handler without needing dynamic_cast.
+    class SECURITYSOCKET_API HttpRequestHandler
+        : public virtual RequestHandler
+    {
+    public:
+        bool supportHttp() const override final { return true; }
+        virtual void registerRoutes(HttpRouter& router) = 0;
     };
 
     struct SECURITYSOCKET_API BroadcastHandler {
