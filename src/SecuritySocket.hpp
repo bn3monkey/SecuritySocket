@@ -433,32 +433,83 @@ namespace Bn3Monkey
         virtual bool supportWebSocket()    const { return false; }
     };
 
+    // WebSocket binding for a CustomProtocolRequestHandler. Default-constructed
+    // (pattern == nullptr) means "raw TCP only"; supplying a pattern flips the
+    // owning handler's supportWebSocket() to true and registers an Upgrade
+    // route for that path (Phase 6).
+    struct SECURITYSOCKET_API WebSocketConfiguration
+    {
+        const char* pattern{ nullptr };
+        bool valid() const { return pattern != nullptr; }
+    };
+
+    // ── Custom Protocol types (Phase 5) ──
+    //
+    // Pure abstract view/builder, symmetric with the HTTP pair below. The
+    // concrete *Impl lives behind the DLL boundary; the server constructs them
+    // on the stack per dispatch (ClientConnectionImpl wiring) and hands the
+    // interfaces to the handler. User code never sees the Impls.
+
+    // View over one incoming Custom Protocol message. header() spans the
+    // fixed-size protocol header (headerSize() bytes); payload() spans the
+    // body whose length classifyMode()/payloadSize() derived from the header.
+    // Both pointers borrow buffers the connection owns for the duration of the
+    // process() call only.
+    class SECURITYSOCKET_API CustomProtocolRequest
+    {
+    public:
+        virtual ~CustomProtocolRequest() = default;
+        virtual const void* header()        const = 0;
+        virtual size_t      headerLength()  const = 0;
+        virtual const void* payload()       const = 0;
+        virtual size_t      payloadLength() const = 0;
+    };
+
+    // Builder for the outgoing Custom Protocol response. The handler writes its
+    // bytes directly into data() (up to capacity()) and then records how many
+    // it produced with setLength(). data() points into the connection's output
+    // buffer; capacity() is that buffer's size.
+    class SECURITYSOCKET_API CustomProtocolResponse
+    {
+    public:
+        virtual ~CustomProtocolResponse() = default;
+        virtual void*  data()              = 0;
+        virtual size_t capacity()    const = 0;
+        virtual void   setLength(size_t n) = 0;
+    };
+
     class SECURITYSOCKET_API CustomProtocolRequestHandler
         : public virtual RequestHandler
     {
     public:
+        CustomProtocolRequestHandler() = default;
+        explicit CustomProtocolRequestHandler(const WebSocketConfiguration& ws)
+            : _ws_config(ws) {}
+
         bool supportUserProtocol() const override final { return true; }
+        // Supplying a WebSocketConfiguration with a pattern flips this to true
+        // (Phase 6 then auto-registers the Upgrade route for that path).
+        bool supportWebSocket()    const override final { return _ws_config.valid(); }
 
-        virtual size_t getHeaderSize() = 0;
-        virtual size_t getPayloadSize(const char* header) = 0;
+        const WebSocketConfiguration& webSocketConfig() const { return _ws_config; }
 
-        virtual RequestProcessingMode onModeClassified(
-            const char* header
-        ) = 0;
+        // header/payload sizes are static properties of the protocol, so no
+        // connection argument. classifyMode() inspects the header to pick the
+        // FAST/SLOW/STREAM dispatch path per message.
+        virtual size_t                headerSize()                      = 0;
+        virtual size_t                payloadSize (const void* header)   = 0;
+        virtual RequestProcessingMode classifyMode(const void* header)  = 0;
 
-        virtual void onProcessed(
-            const char* header,
-            const char* input_buffer,
-            size_t input_size,
-            char* output_buffer,
-            size_t* output_size
-        ) = 0;
+        // process() keeps the connection — needed to identify the response
+        // target. The handler fills res and calls res.setLength().
+        virtual void process(const ClientConnection&     conn,
+                             const CustomProtocolRequest& req,
+                             CustomProtocolResponse&      res) = 0;
+        virtual void processWithoutResponse(const ClientConnection&     conn,
+                                            const CustomProtocolRequest& req) = 0;
 
-        virtual void onProcessedWithoutResponse(
-            const char* header,
-            const char* input_buffer,
-            size_t input_size
-        ) = 0;
+    private:
+        WebSocketConfiguration _ws_config{};
     };
 
     // ── HTTP types (Phase 4) ──
@@ -494,16 +545,6 @@ namespace Bn3Monkey
         virtual HttpResponse& header(const char* name, const char* value)          = 0;
         virtual HttpResponse& body  (const void* data, size_t size)                = 0;
         virtual HttpResponse& json  (const char* json_str)                         = 0;
-    };
-
-    // WebSocket binding for a CustomProtocolRequestHandler. Default-constructed
-    // (pattern == nullptr) means "raw TCP only"; supplying a pattern flips the
-    // owning handler's supportWebSocket() to true and registers an Upgrade
-    // route for that path (Phase 6).
-    struct SECURITYSOCKET_API WebSocketConfiguration
-    {
-        const char* pattern{ nullptr };
-        bool valid() const { return pattern != nullptr; }
     };
 
     // Route registry passed to HttpRequestHandler::registerRoutes. The mode

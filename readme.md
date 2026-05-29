@@ -325,13 +325,13 @@ int main()
 
     struct EchoRequestHandler : public Bn3Monkey::CustomProtocolRequestHandler
     {
-        size_t getHeaderSize() override {
+        size_t headerSize() override {
             return sizeof(EchoRequestHeader);
         }
-        size_t getPayloadSize(const char* header) override {
-            return reinterpret_cast<const EchoResponseHeader*>(header)->payload_size;
+        size_t payloadSize(const void* header) override {
+            return reinterpret_cast<const EchoRequestHeader*>(header)->payload_size;
         }
-        Bn3Monkey::RequestProcessingMode onModeClassified(const char* header) override {
+        Bn3Monkey::RequestProcessingMode classifyMode(const void* header) override {
             auto* derived_header = reinterpret_cast<const EchoRequestHeader*>(header);
             switch (derived_header->request_type) {
             case 0:
@@ -348,32 +348,34 @@ int main()
             printConcurrent("Client disconnected (ip : %s port : %u)\n", conn.ip(), conn.port());
         }
 
-        void onProcessed(
-            const char* header,
-            const char* input_buffer,
-            size_t input_size,
-            char* output_buffer,
-            size_t* output_size
+        void process(
+            const Bn3Monkey::ClientConnection& conn,
+            const Bn3Monkey::CustomProtocolRequest& req,
+            Bn3Monkey::CustomProtocolResponse& res
         ) override {
+            (void)conn;
 
-            auto* derived_header = reinterpret_cast<const EchoRequestHeader*>(header);
+            auto* derived_header = reinterpret_cast<const EchoRequestHeader*>(req.header());
+            auto* input_buffer   = reinterpret_cast<const char*>(req.payload());
+            size_t input_size    = req.payloadLength();
 
             switch (derived_header->request_type) {
             case 0:
                 printConcurrent("[Client %d -> Server] : %s\n", derived_header->client_no, input_buffer);
 
-                auto* response = new (output_buffer) EchoResponse{ {derived_header->request_type, derived_header->request_no, sizeof(EchoResponse)}, input_buffer, input_size };
-                *output_size = sizeof(EchoResponse);
+                new (res.data()) EchoResponse{ {derived_header->request_type, derived_header->request_no, sizeof(EchoResponse)}, input_buffer, input_size };
+                res.setLength(sizeof(EchoResponse));
 
                 break;
             }
         }
 
-        void onProcessedWithoutResponse(
-            const char* header,
-            const char* input_buffer,
-            size_t input_size
+        void processWithoutResponse(
+            const Bn3Monkey::ClientConnection& conn,
+            const Bn3Monkey::CustomProtocolRequest& req
         ) override {
+            (void)conn;
+            (void)req;
             return;
         }
     };

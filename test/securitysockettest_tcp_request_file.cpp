@@ -81,15 +81,15 @@ struct FileCloseResponse {
 
 struct FileRequestHandler : public Bn3Monkey::CustomProtocolRequestHandler
 {
-    size_t getHeaderSize() override {
+    size_t headerSize() override {
         return sizeof(FileRequestHeader);
     }
-    size_t getPayloadSize(const char* buffer) override {
+    size_t payloadSize(const void* buffer) override {
         return reinterpret_cast<const FileRequestHeader*>(buffer)->payload_size;
     }
 
 
-    Bn3Monkey::RequestProcessingMode onModeClassified(const char* header) override {
+    Bn3Monkey::RequestProcessingMode classifyMode(const void* header) override {
         auto* derived_header = reinterpret_cast<const FileRequestHeader*>(header);
         switch (derived_header->request_type) {
         case FileRequestType::CREATE_HANDLE:
@@ -113,13 +113,16 @@ struct FileRequestHandler : public Bn3Monkey::CustomProtocolRequestHandler
         printConcurrent("Client disconnected (ip : %s port : %u)\n", conn.ip(), conn.port());
     }
 
-    void onProcessed(
-        const char* header,
-        const char* input_buffer,
-        size_t input_size,
-        char* output_buffer,
-        size_t* output_size
+    void process(
+        const Bn3Monkey::ClientConnection& conn,
+        const Bn3Monkey::CustomProtocolRequest& req,
+        Bn3Monkey::CustomProtocolResponse& res
     ) override {
+        (void)conn;
+
+        auto* header        = reinterpret_cast<const char*>(req.header());
+        auto* input_buffer  = reinterpret_cast<const char*>(req.payload());
+        char* output_buffer = reinterpret_cast<char*>(res.data());
 
         auto* derived_header = reinterpret_cast<const FileRequestHeader*>(header);
 
@@ -128,7 +131,7 @@ struct FileRequestHandler : public Bn3Monkey::CustomProtocolRequestHandler
                 printConcurrent("[Client %d -> Server] : Create Handle \n", derived_header->client_no);
 
                 auto* response = new (output_buffer) FileResponseHeader{ derived_header->request_type, derived_header->request_no, sizeof(FileOpenResponse)};
-                *output_size = sizeof(FileResponseHeader);
+                res.setLength(sizeof(FileResponseHeader));
             }
             break;
         case FileRequestType::CREATE_FILE:
@@ -139,7 +142,7 @@ struct FileRequestHandler : public Bn3Monkey::CustomProtocolRequestHandler
                 auto fp = fopen(open_request_payload->filename, "wb");
 
                 auto* response = new (output_buffer) FileOpenResponse{ {derived_header->request_type, derived_header->request_no, sizeof(FileOpenResponse)}, fp };
-                *output_size = sizeof(FileOpenResponse);
+                res.setLength(sizeof(FileOpenResponse));
             }
             break;
         case FileRequestType::OPEN_FILE:
@@ -150,7 +153,7 @@ struct FileRequestHandler : public Bn3Monkey::CustomProtocolRequestHandler
                 auto fp = fopen(open_request_payload->filename, "rb");
 
                 auto* response = new (output_buffer) FileOpenResponse{ {derived_header->request_type, derived_header->request_no, sizeof(FileOpenResponse)}, fp };
-                *output_size = sizeof(FileOpenResponse);
+                res.setLength(sizeof(FileOpenResponse));
             }
             break;
         case FileRequestType::CLOSE_FILE:
@@ -161,7 +164,7 @@ struct FileRequestHandler : public Bn3Monkey::CustomProtocolRequestHandler
                 fclose(close_request_payload->fp);
 
                 auto* response = new (output_buffer) FileCloseResponse{ {derived_header->request_type, derived_header->request_no, sizeof(FileCloseResponse)} };
-                *output_size = sizeof(FileCloseResponse);
+                res.setLength(sizeof(FileCloseResponse));
             }
             break;
         case FileRequestType::READ_FILE:
@@ -173,7 +176,7 @@ struct FileRequestHandler : public Bn3Monkey::CustomProtocolRequestHandler
                 auto response = new (output_buffer) FileReadResponse{
                     {derived_header->request_type, derived_header->request_no, sizeof(FileReadResponse)},
                 };
-                *output_size = sizeof(FileReadResponse);
+                res.setLength(sizeof(FileReadResponse));
 
                 response->length = fread(response->data, 1, read_request_payload->length, read_request_payload->fp);
 
@@ -184,11 +187,15 @@ struct FileRequestHandler : public Bn3Monkey::CustomProtocolRequestHandler
         }
     }
 
-    void onProcessedWithoutResponse(
-        const char* header,
-        const char* input_buffer,
-        size_t input_size
+    void processWithoutResponse(
+        const Bn3Monkey::ClientConnection& conn,
+        const Bn3Monkey::CustomProtocolRequest& req
     ) override {
+        (void)conn;
+
+        auto* header       = reinterpret_cast<const char*>(req.header());
+        auto* input_buffer = reinterpret_cast<const char*>(req.payload());
+
         auto* derived_header = reinterpret_cast<const FileRequestHeader*>(header);
         switch (derived_header->request_type) {
         case FileRequestType::WRITE_FILE:

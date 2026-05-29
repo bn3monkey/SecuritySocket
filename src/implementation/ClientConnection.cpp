@@ -1,5 +1,7 @@
 #include "ClientConnection.hpp"
 #include "SocketEvent.hpp"
+#include "custom/CustomProtocolRequest.hpp"
+#include "custom/CustomProtocolResponse.hpp"
 
 using namespace Bn3Monkey;
 
@@ -26,8 +28,8 @@ Bn3Monkey::ClientConnectionImpl::ProcessState Bn3Monkey::ClientConnectionImpl::r
 
 	if (total_input_header_read_size == input_header_buffer.size()) {
 		auto* header = input_header_buffer.data();
-		_payload_size = _handler.getPayloadSize(header);
-		_mode = _handler.onModeClassified(header);
+		_payload_size = _handler.payloadSize(header);
+		_mode = _handler.classifyMode(header);
 
 		if (_payload_size == 0) {
 			return runTask(_mode, _payload_size);
@@ -91,28 +93,35 @@ Bn3Monkey::ClientConnectionImpl::ProcessState Bn3Monkey::ClientConnectionImpl::r
 	auto* header = input_header_buffer.data();
 	auto* payload = input_payload_buffer.data();
 
+	// Stack-built view/builder over the connection's own buffers. They live
+	// only for this dispatch call — the handler reads req and fills res, then
+	// res.setLength() writes the produced size back into response_size.
+	CustomProtocolRequestImpl request{ header, input_header_buffer.size(),
+	                                   payload, payload_size };
 
 	switch (mode) {
 	case RequestProcessingMode::FAST:
 	{
-		_handler.onProcessed(header, payload, payload_size, output_buffer.data(), &response_size);
+		CustomProtocolResponseImpl response{ output_buffer.data(), output_buffer.size(), &response_size };
+		_handler.process(*this, request, response);
 		return ProcessState::WRITING_RESPONSE;
 	}
 	break;
 	case RequestProcessingMode::SLOW:
 	{
-		// @Todo
+		// @Todo — worker-thread dispatch arrives in Phase 6.
 	}
 	break;
 	case RequestProcessingMode::READ_STREAM:
 	{
-		_handler.onProcessed(header, payload, payload_size, output_buffer.data(), &response_size);
+		CustomProtocolResponseImpl response{ output_buffer.data(), output_buffer.size(), &response_size };
+		_handler.process(*this, request, response);
 		return ProcessState::WRITING_RESPONSE;
 	}
 	break;
 	case RequestProcessingMode::WRITE_STREAM:
 	{
-		_handler.onProcessedWithoutResponse(header, payload, payload_size);
+		_handler.processWithoutResponse(*this, request);
 		return ProcessState::FINISH_PROCESS;
 	}
 	break;
