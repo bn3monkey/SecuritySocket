@@ -2,10 +2,10 @@
 #define __BN3MONKEY_HTTP_ROUTER__
 
 #include "../../SecuritySocket.hpp"
+#include "../core/trie/segment_trie.hpp"
 
-#include <memory>
+#include <deque>
 #include <string>
-#include <unordered_map>
 #include <vector>
 
 namespace Bn3Monkey
@@ -118,32 +118,33 @@ namespace Bn3Monkey
         static Method parseMethod(const char* m, size_t len);
 
     private:
+        // Aggregate (no default member initializer) so list-init works under
+        // C++14. The handler + its FAST/SLOW mode for one (path, method) pair.
         struct Route {
             HandlerFn             fn;
-            RequestProcessingMode mode = RequestProcessingMode::FAST;
-            // Param names along the path that resolved to this route, in
-            // declaration order. Strings own their memory; the trie holds them
-            // alive for the router's lifetime, so PathParamView::name can
-            // alias .c_str() safely.
-            std::vector<std::string> param_names;
-        };
-
-        struct TrieNode {
-            std::unordered_map<std::string, std::unique_ptr<TrieNode>> static_children;
-            std::unique_ptr<TrieNode> param_child;
-            std::string param_name;  // valid only when param_child is non-null
-
-            // One slot per method. fn==nullptr → no route registered for this
-            // (path, method) pair.
-            Route routes[static_cast<size_t>(Method::COUNT)];
+            RequestProcessingMode mode;
         };
 
         void registerRoute(Method m, const char* pattern,
                            HandlerFn fn, RequestProcessingMode mode);
 
-        TrieNode _root;
-        Route    _fallback;
-        bool     _has_fallback = false;
+        // One trie per method — the methods are kept structurally separate.
+        // A trie's leaf.action_id indexes that same method's _actions vector;
+        // param NAMES come straight from the matched trie segments (which alias
+        // _patterns), so no per-route name copies are needed anymore.
+        SegmentTrie         _tries[static_cast<size_t>(Method::COUNT)];
+        std::vector<Route>  _actions[static_cast<size_t>(Method::COUNT)];
+
+        // Owns every registered pattern for the router's lifetime. Trie
+        // segments alias into these strings — both for static-segment matching
+        // and for the param-name pointers handed back in MatchResult — so the
+        // storage must be address-stable. std::deque never relocates existing
+        // elements on growth (a std::vector<std::string> would, invalidating
+        // the aliased char* on reallocation).
+        std::deque<std::string> _patterns;
+
+        Route _fallback {};            // value-init: empty fn, mode == FAST(0)
+        bool  _has_fallback = false;
     };
 }
 

@@ -1,11 +1,17 @@
-#if !defined(__KIOTTY_LIGHT_FREE_STACK__)
-#define __KIOTTY_LIGHT_FREE_STACK__
+#if !defined(__BN3MONKEY_FREE_STACK__)
+#define __BN3MONKEY_FREE_STACK__
 
 #include <cstdlib>
 #include <cassert>
 
-namespace KiottyLight
+namespace Bn3Monkey
 {
+    struct FreeStackView {
+        size_t index_size;   // sizeof(ArenaIndex) — 포맷 검증용
+        size_t capacity;
+        size_t head;         // _head.next (freelist 시작 인덱스)
+        void*  data;         // non-owning
+    };
 
     class FreeStack
     {
@@ -53,9 +59,6 @@ namespace KiottyLight
             assert(new_data != nullptr);
             _data = new_data;
 
-            // [_capacity, new_capacity) 가 새로 생긴 슬롯
-            // 이들을 free list 앞쪽에 LIFO push
-            //   _capacity → _capacity+1 → ... → new_capacity-1 → (기존 _head.next)
             for (size_t i = _capacity; i + 1 < new_capacity; ++i) {
                 _data[i].next = i + 1;
             }
@@ -79,11 +82,43 @@ namespace KiottyLight
             _head.next = index;
         }
 
+        bool isAllocated(size_t index) {
+            return _data[index].next == ALLOCATED;
+        }
+
+        bool empty() const {
+            return _head.next == IS_STACK_EMPTY;
+        }
+
+        // 내보내기: 현재 freelist 상태를 가리키는 창 (복사 없음)
+        FreeStackView readView() const {
+            return FreeStackView {
+                sizeof(ArenaIndex),
+                _capacity,
+                _head.next,
+                _data
+            };
+        }
+
+        // 들여오기: capacity 버퍼를 확보하고 head를 세팅한 뒤 그 버퍼를 가리키는 창 반환.
+        // freelist를 재구성하지 않으므로(clear() 호출 안 함) 외부가 data를 그대로 복원할 수 있다.
+        FreeStackView writeView(size_t capacity, size_t head) {
+            if (capacity != _capacity) {
+                ArenaIndex* new_data = reinterpret_cast<ArenaIndex*>(
+                    std::realloc(_data, capacity * sizeof(ArenaIndex)));
+                assert(new_data != nullptr);
+                _data = new_data;
+                _capacity = capacity;
+            }
+            _head.next = head;
+            return readView();
+        }
+
     private:
+        size_t _capacity {0};
         ArenaIndex _head;
         ArenaIndex* _data {nullptr};
-        size_t _capacity {0};
     };
 }
 
-#endif // __KIOTTY_LIGHT_FREE_STACK__
+#endif // __BN3MONKEY_FREE_STACK__

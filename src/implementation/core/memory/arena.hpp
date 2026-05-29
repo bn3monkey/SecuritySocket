@@ -1,5 +1,5 @@
-#if !defined(__KIOTTY_LIGHT_ARENA__)
-#define __KIOTTY_LIGHT_ARENA__
+#if !defined(__BN3MONKEY__ARENA__)
+#define __BN3MONKEY__ARENA__
 
 #include <type_traits>
 #include <utility>
@@ -7,8 +7,15 @@
 #include <cassert>
 #include <new>
 
-namespace KiottyLight
+namespace Bn3Monkey
 {
+    struct ObjectArenaView {
+        size_t object_size;   // sizeof(Object) — 포맷 검증용
+        size_t capacity;
+        void*  data;          // non-owning
+    };
+
+
     template<typename Object>
     class ObjectArena
     {
@@ -53,8 +60,27 @@ namespace KiottyLight
             _data[index].~Object();
         }
 
-        Object* get(size_t index) { return _data[index]; }
-        const Object* get(size_t index) const { return _data[index]; }
+        Object* get(size_t index) { return _data + index; }
+        const Object* get(size_t index) const { return _data + index; }
+
+
+
+        ObjectArenaView readView() const {
+            static_assert(std::is_trivially_copyable<Object>::value,
+                "raw-byte view requires trivially copyable Object");
+            return ObjectArenaView {
+                sizeof(Object),
+                _capacity,
+                _data
+            };
+        }
+        ObjectArenaView writeView(size_t capacity) {
+            static_assert(std::is_trivially_copyable<Object>::value,
+                "raw-byte view requires trivially copyable Object");
+            reset(capacity);
+            return readView();
+        }
+
 
     private:
         // trivial: bitwise relocate가 안전하므로 realloc 그대로
@@ -89,8 +115,9 @@ namespace KiottyLight
             }
         }
 
-        Object* _data {nullptr};
+        
         size_t _capacity {0};
+        Object* _data {nullptr};
     };
 }
 

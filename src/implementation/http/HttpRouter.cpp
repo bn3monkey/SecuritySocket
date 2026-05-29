@@ -1,30 +1,10 @@
 #include "HttpRouter.hpp"
 
 #include <cstring>
+#include <utility>
 
 namespace Bn3Monkey
 {
-    namespace
-    {
-        // Pull the next segment out of a path string. Returns false when there
-        // are no more segments to consume (cursor reached the end).
-        //
-        // Leading and consecutive '/' produce empty segments — the matcher
-        // chooses to reject those rather than collapse silently, so a request
-        // for "/foo//bar" doesn't accidentally hit the "/foo/bar" route.
-        bool nextSegment(const char*& cur, const char* end,
-                         const char*& seg, size_t& seg_len)
-        {
-            if (cur >= end) return false;
-            if (*cur != '/') return false;
-            ++cur; // consume the '/'
-            seg = cur;
-            while (cur < end && *cur != '/') ++cur;
-            seg_len = static_cast<size_t>(cur - seg);
-            return true;
-        }
-    }
-
     HttpRouterImpl::HttpRouterImpl() = default;
     HttpRouterImpl::~HttpRouterImpl() = default;
 
@@ -38,66 +18,33 @@ namespace Bn3Monkey
 
     void HttpRouterImpl::fallback(HandlerFn fn, RequestProcessingMode mode)
     {
-        _fallback.fn = std::move(fn);
+        _fallback.fn   = std::move(fn);
         _fallback.mode = mode;
-        _fallback.param_names.clear();
-        _has_fallback = static_cast<bool>(_fallback.fn);
+        _has_fallback  = static_cast<bool>(_fallback.fn);
     }
 
     void HttpRouterImpl::registerRoute(Method m, const char* pattern,
                                        HandlerFn fn, RequestProcessingMode mode)
     {
         if (!pattern || !fn) return;
+        const size_t mi = static_cast<size_t>(m);
 
-        // Walk the trie, creating nodes as needed.
-        TrieNode* node = &_root;
-        std::vector<std::string> param_names;
+        // Own the pattern for the router's lifetime — the trie's segments alias
+        // into it (static-segment matching AND param-name pointers).
+        _patterns.emplace_back(pattern);
+        const std::string& stored = _patterns.back();
 
-        const char* cur = pattern;
-        const char* end = pattern + std::strlen(pattern);
-
-        // "/" — root route. Skip the segment loop; the root node holds it.
-        if (cur < end && *cur == '/' && (cur + 1 == end)) {
-            // pattern == "/"
-            // fall through to writing into _root
+        // add() returns the leaf; bind action_id immediately (the reference is
+        // only valid until the next add(), which may grow the pool).
+        Segment& leaf = _tries[mi].add(stored.c_str(), stored.size());
+        if (leaf.action_id == NULL_ACTION_ID) {
+            // First handler at this (path, method): allocate an action slot.
+            leaf.action_id = _actions[mi].size();
+            _actions[mi].push_back(Route{ std::move(fn), mode });
         } else {
-            const char* seg = nullptr;
-            size_t seg_len = 0;
-            while (nextSegment(cur, end, seg, seg_len)) {
-                if (seg_len == 0) {
-                    // "//" in pattern — ignore registration, defensive.
-                    return;
-                }
-                if (seg[0] == ':') {
-                    // Parameter segment. Capture name (without the ':') and
-                    // descend into / create the param_child slot. Param names
-                    // collide silently — last writer wins. We don't enforce
-                    // uniqueness here since the same handler may want
-                    // /user/:id and /post/:id with different ids.
-                    if (!node->param_child) {
-                        node->param_child = std::unique_ptr<TrieNode>(new TrieNode());
-                    }
-                    node->param_name.assign(seg + 1, seg_len - 1);
-                    param_names.emplace_back(seg + 1, seg_len - 1);
-                    node = node->param_child.get();
-                } else {
-                    std::string key(seg, seg_len);
-                    auto it = node->static_children.find(key);
-                    if (it == node->static_children.end()) {
-                        auto inserted = node->static_children.emplace(
-                            key, std::unique_ptr<TrieNode>(new TrieNode()));
-                        node = inserted.first->second.get();
-                    } else {
-                        node = it->second.get();
-                    }
-                }
-            }
+            // Re-registration of the same (path, method) — last writer wins.
+            _actions[mi][leaf.action_id] = Route{ std::move(fn), mode };
         }
-
-        Route& slot = node->routes[static_cast<size_t>(m)];
-        slot.fn = std::move(fn);
-        slot.mode = mode;
-        slot.param_names = std::move(param_names);
     }
 
     HttpRouterImpl::Method HttpRouterImpl::parseMethod(const char* m, size_t len)
@@ -141,110 +88,62 @@ namespace Bn3Monkey
         MatchResult result;
 
         const Method m = parseMethod(method, method_len);
-        if (m == Method::COUNT || !path || path_len == 0 || path[0] != '/') {
+        if (m == Method::COUNT) {
+            // Unknown verb — behaves like a path miss → fallback (if any).
             if (_has_fallback) {
-                result.fn   = &_fallback.fn;
-                result.mode = _fallback.mode;
+                result.fn            = &_fallback.fn;
+                result.mode          = _fallback.mode;
                 result.fallback_used = true;
             }
             return result;
         }
+        const size_t mi = static_cast<size_t>(m);
 
-        const TrieNode* node = &_root;
-        const char* cur = path;
-        const char* end = path + path_len;
+        // Match in the requested method's trie, binding params as we descend.
+        // The trie hands back the raw param Segment + URL slice; we strip the
+        // ':' here and point name into the router-owned pattern (stable deque)
+        // and value into the caller-owned URL.
+        bool overflow = false;
+        const Segment* leaf = _tries[mi].match(path, path_len,
+            [&](const Segment& p, const char* value, size_t value_len) {
+                if (result.param_count >= MAX_PATH_PARAMS) { overflow = true; return; }
+                PathParamView& pv = result.params[result.param_count++];
+                const char* name = p.content;
+                size_t      nlen = p.size;
+                // Strip the ':' (param) or '*' (catch-all) decoration so the
+                // bound name is the bare identifier.
+                if (nlen && (name[0] == ':' || name[0] == '*')) { ++name; --nlen; }
+                pv.name      = name;
+                pv.name_len  = nlen;
+                pv.value     = value;
+                pv.value_len = value_len;
+            });
 
-        // Root case: path is exactly "/"
-        if (path_len == 1) {
-            // node already points at root
-        } else {
-            const char* seg = nullptr;
-            size_t seg_len = 0;
-
-            // Stash param values as we descend. We don't know which route
-            // (and therefore which param-name vector) we'll land on until we
-            // reach a node with a registered handler — bind names then.
-            const char* param_values[MAX_PATH_PARAMS] = { nullptr };
-            size_t      param_value_lens[MAX_PATH_PARAMS] = { 0 };
-            size_t      depth = 0;
-
-            while (nextSegment(cur, end, seg, seg_len)) {
-                if (seg_len == 0) {
-                    // "//" or trailing "/" in request — no match. Fall back.
-                    node = nullptr;
-                    break;
-                }
-                // Static-first priority: try named child before param child.
-                std::string key(seg, seg_len);
-                auto it = node->static_children.find(key);
-                if (it != node->static_children.end()) {
-                    node = it->second.get();
-                    continue;
-                }
-                if (node->param_child) {
-                    if (depth >= MAX_PATH_PARAMS) {
-                        // Pathological: more :params in the matched route
-                        // than we can stash inline. Treat as no match.
-                        node = nullptr;
-                        break;
-                    }
-                    param_values[depth]     = seg;
-                    param_value_lens[depth] = seg_len;
-                    ++depth;
-                    node = node->param_child.get();
-                    continue;
-                }
-                // Neither static nor param — no path match.
-                node = nullptr;
-                break;
-            }
-
-            if (node) {
-                const Route& route = node->routes[static_cast<size_t>(m)];
-                if (route.fn) {
-                    result.fn   = &route.fn;
-                    result.mode = route.mode;
-                    // Bind param names (router-owned) to values (caller-owned).
-                    const size_t n = route.param_names.size();
-                    for (size_t i = 0; i < n && i < depth && i < MAX_PATH_PARAMS; ++i) {
-                        PathParamView& p = result.params[i];
-                        p.name      = route.param_names[i].c_str();
-                        p.name_len  = route.param_names[i].size();
-                        p.value     = param_values[i];
-                        p.value_len = param_value_lens[i];
-                        ++result.param_count;
-                    }
-                    return result;
-                }
-                // Path matched but the requested method has no handler at
-                // this node. Check sibling slots — if ANY method is bound
-                // here, this is a 405 candidate.
-                for (size_t i = 0; i < static_cast<size_t>(Method::COUNT); ++i) {
-                    if (node->routes[i].fn) {
-                        result.method_not_allowed = true;
-                        break;
-                    }
-                }
-            }
+        if (!overflow && leaf && leaf->action_id != NULL_ACTION_ID) {
+            const Route& route = _actions[mi][leaf->action_id];
+            result.fn   = &route.fn;
+            result.mode = route.mode;
+            return result;
         }
 
-        // Root-handler case re-checked here (covers both path=="/" and the
-        // edge case where the walk landed on _root with no segments consumed).
-        if (path_len == 1 && node == &_root) {
-            const Route& route = _root.routes[static_cast<size_t>(m)];
-            if (route.fn) {
-                result.fn   = &route.fn;
-                result.mode = route.mode;
+        // Not a hit for this method — discard any params collected along the
+        // (failed or handler-less) descent.
+        result.param_count = 0;
+
+        // 405 candidate: the path may be registered under a different method.
+        for (size_t i = 0; i < static_cast<size_t>(Method::COUNT); ++i) {
+            if (i == mi) continue;
+            const Segment* other = _tries[i].match(path, path_len);
+            if (other && other->action_id != NULL_ACTION_ID) {
+                result.method_not_allowed = true;
                 return result;
             }
-            for (size_t i = 0; i < static_cast<size_t>(Method::COUNT); ++i) {
-                if (_root.routes[i].fn) { result.method_not_allowed = true; break; }
-            }
         }
 
-        if (!result.fn && !result.method_not_allowed && _has_fallback) {
-            result.fn   = &_fallback.fn;
-            result.mode = _fallback.mode;
+        // No path anywhere → fallback (if any).
+        if (_has_fallback) {
+            result.fn            = &_fallback.fn;
+            result.mode          = _fallback.mode;
             result.fallback_used = true;
         }
         return result;
