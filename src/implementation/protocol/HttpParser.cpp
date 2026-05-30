@@ -1,4 +1,4 @@
-#include "HttpProcessor.hpp"
+#include "HttpParser.hpp"
 
 #include <cstring>
 #include <cstdint>
@@ -160,7 +160,7 @@ namespace Bn3Monkey
         const char kWsGuid[] = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
     } // namespace
 
-    HttpProcessor::ParsedRequest HttpProcessor::parse(const char* buf, size_t len,
+    HttpParser::ParsedRequest HttpParser::parse(const char* buf, size_t len,
                                                       size_t last_len)
     {
         ParsedRequest req;
@@ -187,7 +187,7 @@ namespace Bn3Monkey
         return req;
     }
 
-    const struct phr_header* HttpProcessor::findHeader(const ParsedRequest& req,
+    const struct phr_header* HttpParser::findHeader(const ParsedRequest& req,
                                                        const char* name)
     {
         for (size_t i = 0; i < req.num_headers; ++i) {
@@ -199,7 +199,7 @@ namespace Bn3Monkey
         return nullptr;
     }
 
-    long HttpProcessor::contentLength(const ParsedRequest& req)
+    long HttpParser::contentLength(const ParsedRequest& req)
     {
         const phr_header* h = findHeader(req, "Content-Length");
         if (!h) return -1;
@@ -218,7 +218,7 @@ namespace Bn3Monkey
         return any ? value : -1;
     }
 
-    bool HttpProcessor::isWebSocketUpgrade(const ParsedRequest& req)
+    bool HttpParser::isWebSocketUpgrade(const ParsedRequest& req)
     {
         const phr_header* up = findHeader(req, "Upgrade");
         if (!up || !hasToken(up->value, up->value_len, "websocket"))
@@ -229,7 +229,7 @@ namespace Bn3Monkey
         return true;
     }
 
-    bool HttpProcessor::keepAlive(const ParsedRequest& req)
+    bool HttpParser::keepAlive(const ParsedRequest& req)
     {
         const phr_header* conn = findHeader(req, "Connection");
         if (req.minor_version >= 1) {
@@ -244,7 +244,7 @@ namespace Bn3Monkey
         return false;
     }
 
-    bool HttpProcessor::computeAccept(const ParsedRequest& req,
+    bool HttpParser::computeAccept(const ParsedRequest& req,
                                       char* out, size_t out_cap)
     {
         const phr_header* key = findHeader(req, "Sec-WebSocket-Key");
@@ -252,7 +252,7 @@ namespace Bn3Monkey
         return computeAccept(key->value, key->value_len, out, out_cap);
     }
 
-    bool HttpProcessor::computeAccept(const char* key, size_t key_len,
+    bool HttpParser::computeAccept(const char* key, size_t key_len,
                                       char* out, size_t out_cap)
     {
         if (!key || out_cap < ACCEPT_BUF_SIZE) return false;
@@ -267,7 +267,7 @@ namespace Bn3Monkey
         return true;
     }
 
-    size_t HttpProcessor::serializeHandshake(const char* accept,
+    size_t HttpParser::serializeHandshake(const char* accept,
                                              char* out, size_t out_cap)
     {
         // Fixed 101 response. Connection/Upgrade headers per RFC 6455 §4.2.2.

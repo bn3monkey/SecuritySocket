@@ -1,5 +1,5 @@
-#if !defined(__BN3MONKEY_HTTP_PROCESSOR__)
-#define __BN3MONKEY_HTTP_PROCESSOR__
+#if !defined(__BN3MONKEY_HTTP_PARSER__)
+#define __BN3MONKEY_HTTP_PARSER__
 
 #include "../../SecuritySocket.hpp"
 
@@ -22,7 +22,7 @@ namespace Bn3Monkey
     // the caller's buffer (never NUL-terminated here), so the same buffer can
     // be re-parsed as more bytes arrive. The connection layer does any in-place
     // tokenisation it needs separately.
-    class SECURITYSOCKET_API HttpProcessor
+    class SECURITYSOCKET_API HttpParser
     {
     public:
         enum class ParseStatus {
@@ -95,4 +95,4 @@ namespace Bn3Monkey
     };
 }
 
-#endif // __BN3MONKEY_HTTP_PROCESSOR__
+#endif // __BN3MONKEY_HTTP_PARSER__

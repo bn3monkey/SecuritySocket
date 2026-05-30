@@ -7,7 +7,7 @@
 #include "ServerActiveSocket.hpp"
 #include "SocketEvent.hpp"
 #include "ClientConnection.hpp"
-#include "ObjectPool.hpp"
+#include "core/memory/fixed_pool.hpp"
 
 #include <atomic>
 #include <mutex>
@@ -38,7 +38,7 @@ namespace Bn3Monkey
 		std::atomic<bool> _is_running{ false };
 		std::thread _routine;
 			
-		ObjectPool<ClientConnectionImpl> _socket_connection_pool {32};
+		FixedObjectPool<ClientConnectionImpl> _socket_connection_pool {32};
 
 		void run(CustomProtocolRequestHandler* handler);
 	};

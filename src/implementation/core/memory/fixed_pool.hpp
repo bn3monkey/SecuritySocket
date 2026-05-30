@@ -1,16 +1,21 @@
-#ifndef __BN3MONKEY_OBJECT_POOL__
-#define __BN3MONKEY_OBJECT_POOL__
+#ifndef __BN3MONKEY_FIXED_POOL__
+#define __BN3MONKEY_FIXED_POOL__
 
 #include <vector>
 #include <queue>
 
 namespace Bn3Monkey
 {
+    // Fixed-size placement-new pool: acquire() constructs an object into a free
+    // slot and hands back a pointer, release() destroys it and recycles the
+    // slot. Named distinctly from core/memory/pool.hpp's index-based ObjectPool
+    // so both can be included in one translation unit (RequestServer uses this
+    // for its connection pool; the SegmentTrie uses the index-based one).
     template<typename ObjectType>
-    class ObjectPool
+    class FixedObjectPool
     {
     public:
-        ObjectPool(size_t initial_size) : _objects(initial_size, std::allocator<Container>())
+        FixedObjectPool(size_t initial_size) : _objects(initial_size, std::allocator<Container>())
         {
             for (auto& object : _objects)
             {
@@ -59,4 +64,4 @@ namespace Bn3Monkey
 
     };
 }
-#endif // __BN3MONKEY_OBJECT_POOL__
+#endif // __BN3MONKEY_FIXED_POOL__
