@@ -1,176 +1,276 @@
 #include "ClientConnection.hpp"
-#include "SocketEvent.hpp"
-#include "custom/CustomProtocolRequest.hpp"
-#include "custom/CustomProtocolResponse.hpp"
+
+#include "NetworkResult.hpp"
+
+#include <cstring>
 
 using namespace Bn3Monkey;
 
-
-void Bn3Monkey::ClientConnectionImpl::connectClient()
+namespace
 {
-	_handler.onConnected(*this);
+    // recv chunk granularity; the buffer grows by at least this when it runs low.
+    constexpr size_t kRecvChunk = 16 * 1024;
 }
 
-void Bn3Monkey::ClientConnectionImpl::disconnectClient()
+ClientConnectionImpl::ClientConnectionImpl(ServerActiveSocketContainer&  container,
+                                           RequestHandler&               handler,
+                                           HttpRouterImpl*               router,
+                                           CustomProtocolRequestHandler* custom,
+                                           size_t                        pdu_size,
+                                           bool                          is_secure)
+    : _container(container),
+      _handler(handler),
+      _router(router),
+      _custom(custom),
+      _is_secure(is_secure),
+      _pdu_size(pdu_size ? pdu_size : kRecvChunk)
 {
-	_handler.onDisconnected(*this);
-	_socket->close();
-	// listener.removeEvent(this);
+    _socket = _container.get();
+    fd = _socket->descriptor();   // SocketEventContext::fd — listener key
+
+    if (_custom && _custom->supportWebSocket()) {
+        _ws_pattern = _custom->webSocketConfig().pattern;
+    }
+
+    _input_buffer.resize(_pdu_size);
+    _output_buffer.resize(_pdu_size);
 }
 
-Bn3Monkey::ClientConnectionImpl::ProcessState Bn3Monkey::ClientConnectionImpl::readHeader()
+ClientConnectionImpl::~ClientConnectionImpl()
 {
-	auto result = _socket->read(reinterpret_cast<char*>(input_header_buffer.data()) + total_input_header_read_size, input_header_buffer.size() - total_input_header_read_size);
-	if (result.bytes() < 0) {
-		return ProcessState::READING_HEADER;
-	}
-	total_input_header_read_size += result.bytes();
-
-	if (total_input_header_read_size == input_header_buffer.size()) {
-		auto* header = input_header_buffer.data();
-		_payload_size = _handler.payloadSize(header);
-		_mode = _handler.classifyMode(header);
-
-		if (_payload_size == 0) {
-			return runTask(_mode, _payload_size);
-		}
-
-		return ProcessState::READING_PAYLOAD;
-	}
-	return ProcessState::READING_HEADER;
+    if (_worker_thread.joinable()) {
+        {
+            std::lock_guard<std::mutex> lock(_task_mtx);
+            _worker_should_stop = true;
+        }
+        _task_cv.notify_one();
+        _worker_thread.join();
+    }
 }
 
-Bn3Monkey::ClientConnectionImpl::ProcessState Bn3Monkey::ClientConnectionImpl::readPayload()
+void ClientConnectionImpl::onAccept()
 {
-	auto* payload = input_payload_buffer.data();
-	auto result = _socket->read(reinterpret_cast<char*>(payload) + total_input_payload_read_size, _payload_size - total_input_payload_read_size);
-	if (result.bytes() < 0) {
-		return ProcessState::READING_PAYLOAD;
-	}
-	total_input_payload_read_size += result.bytes();
-	if (total_input_payload_read_size == _payload_size)
-	{
-		return runTask(_mode, _payload_size);
-	}
-	return ProcessState::READING_PAYLOAD;
+    const bool has_http   = _router != nullptr;
+    const bool has_custom = _custom != nullptr;
+
+    if (has_http && has_custom) {
+        _state = ConnectionState::Sniffing;
+    } else if (has_http) {
+        _state = ConnectionState::ReceivingHttpRequest;
+    } else {
+        _state = ConnectionState::ReceivingCustomMessage;
+    }
+    _listener_event = SocketEventType::READ;   // server registered READ on accept
+    _detached = false;
+    _input_received = 0;
+    _output_size = _output_written = 0;
+    _is_websocket = false;
+    _closed = false;
 }
 
-Bn3Monkey::ClientConnectionImpl::ProcessState Bn3Monkey::ClientConnectionImpl::writeResponse()
+void ClientConnectionImpl::closeSocket()
 {
-	auto result = _socket->write(reinterpret_cast<char*>(output_buffer.data()) + total_output_write_size, response_size - total_output_write_size);
-	if (result.bytes() < 0) {
-		return ProcessState::WRITING_RESPONSE;
-	}
-
-	total_output_write_size += result.bytes();
-
-	if (total_output_write_size == response_size) {
-		return ProcessState::FINISH_PROCESS;
-	}
-	return ProcessState::WRITING_RESPONSE;
+    if (_closed) return;
+    _socket->close();
+    _closed = true;
 }
 
-void Bn3Monkey::ClientConnectionImpl::flush()
+// ── PhaseHost: buffers ──────────────────────────────────────────────────────
+
+void ClientConnectionImpl::ensureInputCapacity(size_t total_bytes)
 {
-	memset(input_header_buffer.data(), 0, input_header_buffer.size());
-	memset(input_payload_buffer.data(), 0, input_payload_buffer.size());
-	memset(output_buffer.data(), 0, output_buffer.size());
-
-	state = ProcessState::READING_HEADER;
-
-	total_input_header_read_size = 0;
-
-	_payload_size = 0;
-	total_input_payload_read_size = 0;
-
-	response_size = 0;
-	total_output_write_size = 0;
+    if (_input_buffer.size() < total_bytes) _input_buffer.resize(total_bytes);
 }
 
-Bn3Monkey::ClientConnectionImpl::ProcessState Bn3Monkey::ClientConnectionImpl::runTask(RequestProcessingMode mode, size_t payload_size)
+void ClientConnectionImpl::ensureOutputCapacity(size_t bytes)
 {
-
-	auto* header = input_header_buffer.data();
-	auto* payload = input_payload_buffer.data();
-
-	// Stack-built view/builder over the connection's own buffers. They live
-	// only for this dispatch call — the handler reads req and fills res, then
-	// res.setLength() writes the produced size back into response_size.
-	CustomProtocolRequestImpl request{ header, input_header_buffer.size(),
-	                                   payload, payload_size };
-
-	switch (mode) {
-	case RequestProcessingMode::FAST:
-	{
-		CustomProtocolResponseImpl response{ output_buffer.data(), output_buffer.size(), &response_size };
-		_handler.process(*this, request, response);
-		return ProcessState::WRITING_RESPONSE;
-	}
-	break;
-	case RequestProcessingMode::SLOW:
-	{
-		// @Todo — worker-thread dispatch arrives in Phase 6.
-	}
-	break;
-	case RequestProcessingMode::READ_STREAM:
-	{
-		CustomProtocolResponseImpl response{ output_buffer.data(), output_buffer.size(), &response_size };
-		_handler.process(*this, request, response);
-		return ProcessState::WRITING_RESPONSE;
-	}
-	break;
-	case RequestProcessingMode::WRITE_STREAM:
-	{
-		_handler.processWithoutResponse(*this, request);
-		return ProcessState::FINISH_PROCESS;
-	}
-	break;
-	}
-	return ProcessState::WRITING_RESPONSE;
+    if (_output_buffer.size() < bytes) _output_buffer.resize(bytes);
 }
 
-
-void Bn3Monkey::ClientConnectionImpl::startWorker()
+void ClientConnectionImpl::consumeInput(size_t n)
 {
-	_is_running = true;
-	_worker = std::thread{ &ClientConnectionImpl::routine, this };
+    if (n >= _input_received) { _input_received = 0; return; }
+    std::memmove(_input_buffer.data(),
+                 _input_buffer.data() + n,
+                 _input_received - n);
+    _input_received -= n;
 }
 
-void Bn3Monkey::ClientConnectionImpl::stopWorker()
+// ── socket I/O ───────────────────────────────────────────────────────────────
+
+int ClientConnectionImpl::recvChunk()
 {
-	_is_running = false;
-	_cv.notify_all();
-	_worker.join();
+    ensureInputCapacity(_input_received + kRecvChunk);
+    const size_t space = _input_buffer.size() - _input_received;
+
+    auto r = _socket->read(_input_buffer.data() + _input_received, space);
+    const NetworkResultCode code = r.code();
+    if (code == NetworkResultCode::SOCKET_CLOSED) return -1;
+    if (code == NetworkResultCode::SOCKET_TIMEOUT) return 0;   // would-block
+    const int32_t n = r.bytes();
+    if (n <= 0) return 0;
+    _input_received += static_cast<size_t>(n);
+    return n;
 }
 
-void Bn3Monkey::ClientConnectionImpl::routine()
+bool ClientConnectionImpl::flushOutput()
 {
-	do {
-		std::function<void()> task;
-		{
-			std::unique_lock<std::mutex> lock(_mtx);
-			_cv.wait(lock, [&]() {
-				return !(_is_running && _tasks.empty());
-				});
-			if (!_is_running && _tasks.empty())
-				break;
-			task = std::move(_tasks.front());
-			_tasks.pop();
-		}
-
-		if (_is_running)
-		{
-			task();
-		}
-
-	} while (_is_running);
-}
-void Bn3Monkey::ClientConnectionImpl::addTask(std::function<void()> task)
-{
-	{
-		std::unique_lock<std::mutex> lock(_mtx);
-		_tasks.push(task);
-	}
-	_cv.notify_all();
+    _output_fully_sent = false;
+    auto r = _socket->write(_output_buffer.data() + _output_written,
+                            _output_size - _output_written);
+    const NetworkResultCode code = r.code();
+    if (code == NetworkResultCode::SOCKET_CLOSED) return false;
+    if (code == NetworkResultCode::SOCKET_TIMEOUT) return true;   // would-block; stay
+    const int32_t n = r.bytes();
+    if (n < 0) return false;
+    _output_written += static_cast<size_t>(n);
+    _output_fully_sent = (_output_written >= _output_size);
+    return true;
 }
 
+// ── listener / phase routing ─────────────────────────────────────────────────
+
+ConnectionPhase* ClientConnectionImpl::phaseForState(ConnectionState s)
+{
+    switch (s) {
+    case ConnectionState::Sniffing:
+        return &_sniff;
+    case ConnectionState::ReceivingCustomMessage:
+    case ConnectionState::SendingCustomResponse:
+    case ConnectionState::WaitingForNextCustomMessage:
+        return &_custom_phase;
+    default:
+        // HTTP / WebSocket groups: not yet wired (Phase 6 later slices).
+        return nullptr;
+    }
+}
+
+void ClientConnectionImpl::armListener(SocketMultiEventListener& listener)
+{
+    const SocketEventType desired =
+        isWriteState(_state) ? SocketEventType::WRITE : SocketEventType::READ;
+    if (desired != _listener_event) {
+        listener.modifyEvent(this, desired);
+        _listener_event = desired;
+    }
+}
+
+void ClientConnectionImpl::dispatchSlow(std::function<void()> call,
+                                        SocketMultiEventListener& listener)
+{
+    // INVARIANT (state-machine.html §8): remove the socket from the listener
+    // BEFORE the worker can run, so a peer's extra bytes can't race the buffer.
+    listener.removeEvent(this);
+    _detached = true;
+    queueToWorker(std::move(call), listener);
+}
+
+// ── event entry ──────────────────────────────────────────────────────────────
+
+ClientConnectionImpl::Disposition
+ClientConnectionImpl::handleEvent(SocketEventType ev, SocketMultiEventListener& listener)
+{
+    if (ev == SocketEventType::DISCONNECTED) return Disposition::CLOSE;
+    if (ev == SocketEventType::WRITE)        return onWriteEvent(listener);
+
+    // READ
+    const int n = recvChunk();
+    if (n < 0) return Disposition::CLOSE;
+    if (n == 0) return Disposition::KEEP;
+    return driveRead(listener);
+}
+
+ClientConnectionImpl::Disposition
+ClientConnectionImpl::driveRead(SocketMultiEventListener& listener)
+{
+    for (;;) {
+        ConnectionPhase* p = phaseForState(_state);
+        if (!p) return Disposition::CLOSE;
+
+        const ConnectionState prev = _state;
+        const size_t before = _input_received;
+
+        _state = p->onReadable(*this, listener);
+
+        if (_detached) { _detached = false; return Disposition::KEEP; }  // SLOW
+        if (_state == ConnectionState::Closed) return Disposition::CLOSE;
+
+        if (isWriteState(_state)) {       // Sending* or Closing (output filled)
+            armListener(listener);
+            return Disposition::KEEP;
+        }
+
+        // read-state: re-drive only if we made progress and bytes remain
+        const bool state_changed = (_state != prev);
+        const bool consumed      = (_input_received < before);
+        if (_input_received > 0 && (state_changed || consumed)) continue;
+
+        armListener(listener);
+        return Disposition::KEEP;
+    }
+}
+
+ClientConnectionImpl::Disposition
+ClientConnectionImpl::onWriteEvent(SocketMultiEventListener& listener)
+{
+    if (!flushOutput()) return Disposition::CLOSE;
+    if (!_output_fully_sent) return Disposition::KEEP;   // partial; stay WRITE
+
+    if (_state == ConnectionState::Closing) return Disposition::CLOSE;
+
+    ConnectionPhase* p = phaseForState(_state);
+    if (!p) return Disposition::CLOSE;
+
+    _state = p->onSendComplete(*this);
+
+    if (_state == ConnectionState::Closed) return Disposition::CLOSE;
+    if (isWriteState(_state)) { armListener(listener); return Disposition::KEEP; }
+
+    // read-state: re-arm READ, then drain any pipelined bytes immediately.
+    armListener(listener);
+    if (_input_received > 0) return driveRead(listener);
+    return Disposition::KEEP;
+}
+
+// ── SLOW worker ──────────────────────────────────────────────────────────────
+
+void ClientConnectionImpl::queueToWorker(std::function<void()> call,
+                                         SocketMultiEventListener& listener)
+{
+    if (!_worker_thread.joinable()) {
+        _worker_thread = std::thread(&ClientConnectionImpl::workerLoop, this);
+    }
+    {
+        std::lock_guard<std::mutex> lock(_task_mtx);
+        _pending_task.listener = &listener;
+        _pending_task.call     = std::move(call);
+    }
+    _task_cv.notify_one();
+}
+
+void ClientConnectionImpl::workerLoop()
+{
+    for (;;) {
+        SocketMultiEventListener* listener = nullptr;
+        std::function<void()>     call;
+        {
+            std::unique_lock<std::mutex> lock(_task_mtx);
+            _task_cv.wait(lock, [this] {
+                return _pending_task.listener != nullptr || _worker_should_stop;
+            });
+            if (_worker_should_stop) return;
+            listener = _pending_task.listener;
+            call     = std::move(_pending_task.call);
+            _pending_task.listener = nullptr;   // slot empty
+        }
+
+        call();   // handler + serialize + consume (heavy part)
+
+        // Re-arm WRITE. Keep _listener_event consistent so the post-send
+        // armListener() on the main thread correctly modifies back to READ.
+        // The listener's lock + internal wakeup establish happens-before with
+        // the main thread, which doesn't touch this connection while detached.
+        _listener_event = SocketEventType::WRITE;
+        listener->addEvent(this, SocketEventType::WRITE);
+    }
+}
