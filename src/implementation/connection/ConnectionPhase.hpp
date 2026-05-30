@@ -1,0 +1,94 @@
+#if !defined(__BN3MONKEY_CONNECTION_PHASE__)
+#define __BN3MONKEY_CONNECTION_PHASE__
+
+#include "ConnectionState.hpp"
+
+#include <cstddef>
+#include <functional>
+
+namespace Bn3Monkey
+{
+    class ClientConnection;               // user-facing view (passed to handlers)
+    class HttpRouterImpl;                 // HTTP route table
+    class CustomProtocolRequestHandler;   // custom dispatch target
+    class SocketMultiEventListener;       // owned by the server, threaded through
+
+    // The slice of host services a Phase is allowed to touch. The host
+    // (ClientConnectionImpl) implements this; Phases see only this interface so
+    // they stay decoupled from socket/worker/listener mechanics and remain unit-
+    // testable against a fake host.
+    //
+    // Division of labour (docs/workplan/client_connection.html §4-1, §7):
+    //   - Host owns recv/send bytes, the single input/output buffer, the listener,
+    //     and the lazy SLOW worker.
+    //   - Phase owns parsing, handler dispatch, and the next-state decision.
+    class PhaseHost
+    {
+    public:
+        virtual ~PhaseHost() = default;
+
+        // ── accumulated input (message starts at offset 0) ──
+        virtual const char* input()      const = 0;
+        virtual size_t      inputSize()  const = 0;
+        virtual void        ensureInputCapacity(size_t total_bytes) = 0;
+        // Drop the first n bytes of input; trailing (pipelined) bytes shift to
+        // the front so the next message again starts at offset 0.
+        virtual void        consumeInput(size_t n) = 0;
+
+        // ── response output buffer (host flushes it after a Sending* state) ──
+        virtual char*  output()         = 0;
+        virtual size_t outputCapacity() const = 0;
+        virtual void   ensureOutputCapacity(size_t bytes) = 0;
+        // Mark n bytes in output() as the response to flush (resets written=0).
+        virtual void   setOutputSize(size_t n) = 0;
+
+        // ── collaborators ──
+        // The ClientConnection passed to user handler callbacks (the host itself).
+        virtual ClientConnection&             connection()    = 0;
+        virtual HttpRouterImpl*               router()        = 0;   // null => no HTTP
+        virtual CustomProtocolRequestHandler* customHandler() = 0;   // null => no Custom
+        virtual const char*                   wsPattern() const = 0; // null => no WS
+
+        // Latch the connection as upgraded to WebSocket (affects isWebSocket()).
+        virtual void setWebSocket(bool on) = 0;
+
+        // SLOW dispatch. Encapsulates the ordering invariant
+        // (listener.removeEvent BEFORE queueing the worker — state-machine.html
+        // §8) so Phases cannot get it wrong: they just hand over the call and
+        // return the Sending* state. The host marks itself "detached" so it does
+        // NOT re-arm the listener; the worker later calls addEvent(WRITE).
+        virtual void dispatchSlow(std::function<void()> call,
+                                  SocketMultiEventListener& listener) = 0;
+    };
+
+    // A per-protocol strategy driving one connection's read/write while it is in
+    // that protocol's state group. One instance per connection (may hold small
+    // phase-local accumulation state, e.g. WebSocket fragment reassembly).
+    class ConnectionPhase
+    {
+    public:
+        virtual ~ConnectionPhase() = default;
+
+        // Buffered input is available while in a read-state of this group.
+        // Consume/parse/dispatch as much as possible and return the next
+        // ConnectionState. NEED_MORE is expressed by returning the same
+        // Receiving* state WITHOUT consuming input (the host then waits for the
+        // socket). For SLOW, call host.dispatchSlow(call, listener) and return
+        // the Sending* state. To send an error/close, fill output() +
+        // setOutputSize() and return ConnectionState::Closing.
+        virtual ConnectionState onReadable(PhaseHost& host,
+                                           SocketMultiEventListener& listener) = 0;
+
+        // The host has fully flushed output() while in a Sending* state of this
+        // group. Return the next ConnectionState (e.g. keep-alive ->
+        // WaitingForNextHttpRequest, handshake done -> WaitingForNextWebSocket-
+        // Message, response done -> WaitingForNext..., or Closing/Closed).
+        virtual ConnectionState onSendComplete(PhaseHost& host) = 0;
+
+        // Clear phase-local accumulation when the connection (re)enters this
+        // phase fresh (default: nothing to reset).
+        virtual void reset() {}
+    };
+}
+
+#endif // __BN3MONKEY_CONNECTION_PHASE__
