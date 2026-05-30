@@ -419,6 +419,11 @@ namespace Bn3Monkey
     // BroadcastHandler is intentionally NOT derived from this base —
     // broadcast servers have a different lifecycle model and keep their
     // own callback shape.
+    // Forward declarations so RequestHandler can hand back typed self-pointers
+    // (the self-accessors below) without a circular definition order.
+    class HttpRequestHandler;
+    class CustomProtocolRequestHandler;
+
     class SECURITYSOCKET_API RequestHandler
     {
     public:
@@ -431,6 +436,16 @@ namespace Bn3Monkey
         virtual bool supportHttp()         const { return false; }
         virtual bool supportUserProtocol() const { return false; }
         virtual bool supportWebSocket()    const { return false; }
+
+        // Typed self-accessors. The two concrete handler types inherit
+        // RequestHandler *virtually* (so a class can derive both without a
+        // diamond), which makes a static_cast from RequestHandler* down to a
+        // derived ill-formed; the library is also built with RTTI disabled, so
+        // dynamic_cast is unavailable. Each derived overrides its own accessor
+        // to return `this`; the server recovers the concrete pointer through
+        // these instead of any cast.
+        virtual HttpRequestHandler*           asHttpRequestHandler()           { return nullptr; }
+        virtual CustomProtocolRequestHandler* asCustomProtocolRequestHandler() { return nullptr; }
     };
 
     // WebSocket binding for a CustomProtocolRequestHandler. Default-constructed
@@ -492,6 +507,8 @@ namespace Bn3Monkey
         bool supportWebSocket()    const override final { return _ws_config.valid(); }
 
         const WebSocketConfiguration& webSocketConfig() const { return _ws_config; }
+
+        CustomProtocolRequestHandler* asCustomProtocolRequestHandler() override { return this; }
 
         // header/payload sizes are static properties of the protocol, so no
         // connection argument. classifyMode() inspects the header to pick the
@@ -589,6 +606,8 @@ namespace Bn3Monkey
     public:
         bool supportHttp() const override final { return true; }
         virtual void registerRoutes(HttpRouter& router) = 0;
+
+        HttpRequestHandler* asHttpRequestHandler() override { return this; }
     };
 
     struct SECURITYSOCKET_API BroadcastHandler {
@@ -608,7 +627,12 @@ namespace Bn3Monkey
         explicit RequestServer(const NetworkConfiguration& configuration, const TlsServerConfiguration& tls_configuration);
         virtual ~RequestServer();
 
-        NetworkResult open(CustomProtocolRequestHandler* handler, size_t num_of_clients);
+        // Accepts any RequestHandler — a CustomProtocolRequestHandler today,
+        // and (as Phase 6 lands) an HttpRequestHandler or a class deriving both.
+        // The server inspects the handler's capabilities to choose its dispatch
+        // path. A CustomProtocolRequestHandler* still binds via the implicit
+        // derived->base conversion, so existing callers are source-compatible.
+        NetworkResult open(RequestHandler* handler, size_t num_of_clients);
         void close();
 
     private:

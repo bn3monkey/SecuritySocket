@@ -8,6 +8,7 @@
 #include "SocketEvent.hpp"
 #include "ClientConnection.hpp"
 #include "core/memory/fixed_pool.hpp"
+#include "http/HttpRouter.hpp"
 
 #include <atomic>
 #include <mutex>
@@ -40,10 +41,16 @@ namespace Bn3Monkey
 
 		std::atomic<bool> _is_running{ false };
 		std::thread _routine;
-			
+
 		FixedObjectPool<ClientConnectionImpl> _socket_connection_pool {32};
 
-		void run(CustomProtocolRequestHandler* handler);
+		// Built in open() when the handler supports HTTP; lives for the server's
+		// lifetime. Connections borrow it by pointer (null when no HTTP).
+		HttpRouterImpl                _router;
+		bool                          _has_http{ false };
+		CustomProtocolRequestHandler* _custom{ nullptr };
+
+		void run(RequestHandler* handler);
 	};
 
 	// @Todo Limit the number of request workers to the number of core and distribute socket to limited workers

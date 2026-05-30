@@ -1,20 +1,32 @@
 #include "RequestServer.hpp"
 #include "NetworkResult.hpp"
-#include <vector>
-#include <queue>
 
 Bn3Monkey::RequestServerImpl::~RequestServerImpl()
 {
 	close();
 }
 
-Bn3Monkey::NetworkResult Bn3Monkey::RequestServerImpl::open(CustomProtocolRequestHandler* handler, size_t num_of_clients)
+Bn3Monkey::NetworkResult Bn3Monkey::RequestServerImpl::open(RequestHandler* handler, size_t num_of_clients)
 {
 	(void)num_of_clients;
 
 	if (_is_running)
 	{
 		return NetworkResult(NetworkResultCode::SOCKET_SERVER_ALREADY_RUNNING);
+	}
+
+	// Resolve handler capabilities without a cast (virtual base + RTTI-off — see
+	// SecuritySocket.hpp). HTTP routes are built once here, before the loop.
+	HttpRequestHandler* http = handler ? handler->asHttpRequestHandler() : nullptr;
+	_custom   = handler ? handler->asCustomProtocolRequestHandler() : nullptr;
+	_has_http = (http != nullptr);
+	if (http == nullptr && _custom == nullptr)
+	{
+		return NetworkResult(NetworkResultCode::SOCKET_INVALID_ARGUMENT);
+	}
+	if (http)
+	{
+		http->registerRoutes(_router);
 	}
 
 	NetworkResult result = NetworkResult(NetworkResultCode::SUCCESS);
@@ -45,7 +57,7 @@ Bn3Monkey::NetworkResult Bn3Monkey::RequestServerImpl::open(CustomProtocolReques
 	}
 
 	_is_running = true;
-	_routine = std::thread{ &RequestServerImpl::run, this, custom };
+	_routine = std::thread{ &RequestServerImpl::run, this, handler };
 	return result;
 }
 
@@ -60,9 +72,7 @@ void Bn3Monkey::RequestServerImpl::close()
 	}
 }
 
-
-
-void Bn3Monkey::RequestServerImpl::run(CustomProtocolRequestHandler* handler)
+void Bn3Monkey::RequestServerImpl::run(RequestHandler* handler)
 {
 	SocketMultiEventListener listener;
 	listener.open();
@@ -71,109 +81,62 @@ void Bn3Monkey::RequestServerImpl::run(CustomProtocolRequestHandler* handler)
 	server_context.fd = _socket->descriptor();
 	listener.addEvent(&server_context, SocketEventType::ACCEPT);
 
+	HttpRouterImpl* router_ptr = _has_http ? &_router : nullptr;
 
 	while (_is_running)
 	{
 		auto eventlist = listener.wait(_configuration.read_timeout());
-		if (eventlist.result.code() == NetworkResultCode::SOCKET_TIMEOUT)
+		const auto code = eventlist.result.code();
+		if (code == NetworkResultCode::SOCKET_TIMEOUT)
 		{
 			continue;
 		}
-		else if (eventlist.result.code() != NetworkResultCode::SUCCESS)
+		else if (code != NetworkResultCode::SUCCESS)
 		{
 			break;
 		}
-
 
 		for (auto& context : eventlist.contexts)
 		{
-			auto& type = context->type;
+			const SocketEventType type = context->type;
 
-			switch (type)
-			{
-			case SocketEventType::ACCEPT:
+			if (type == SocketEventType::ACCEPT)
 			{
 				auto socket_container = _socket->accept();
 				auto* client_socket = socket_container.get();
-				if (client_socket->result().code() == NetworkResultCode::SUCCESS)
+				if (client_socket->result().code() != NetworkResultCode::SUCCESS)
 				{
-					ClientConnectionImpl* connection = _socket_connection_pool.acquire(
-						socket_container, *handler, _configuration.pdu_size(),
-						_tls_configuration.valid());
-					connection->connectClient();
-					listener.addEvent(connection, Bn3Monkey::SocketEventType::READ);
+					continue;
 				}
+
+				ClientConnectionImpl* connection = _socket_connection_pool.acquire(
+					socket_container, *handler, router_ptr, _custom,
+					_configuration.pdu_size(), _tls_configuration.valid());
+				// Fixed-size pool (32): nullptr once exhausted. Drop the freshly
+				// accepted socket — close it explicitly so its fd doesn't leak.
+				if (connection == nullptr)
+				{
+					client_socket->close();
+					continue;
+				}
+
+				connection->onAccept();
+				handler->onConnected(*connection);
+				listener.addEvent(connection, SocketEventType::READ);
 			}
-			break;
-			case SocketEventType::DISCONNECTED:
+			else
 			{
 				auto* connection = static_cast<ClientConnectionImpl*>(context);
-				connection->disconnectClient();
-				listener.removeEvent(connection);
-				_socket_connection_pool.release(connection);
-			}
-			break;
-
-			case SocketEventType::READ:
-			{
-				auto* connection = static_cast<ClientConnectionImpl*>(context);
-				switch (connection->state)
+				const auto disposition = connection->handleEvent(type, listener);
+				if (disposition == ClientConnectionImpl::Disposition::CLOSE)
 				{
-				case ClientConnectionImpl::ProcessState::READING_HEADER:
-					{
-						connection->state = connection->readHeader();
-						if (connection->state == ClientConnectionImpl::ProcessState::WRITING_RESPONSE) {
-							listener.modifyEvent(connection, Bn3Monkey::SocketEventType::WRITE);
-						}
-						else if (connection->state == ClientConnectionImpl::ProcessState::FINISH_PROCESS) {
-							connection->flush();
-							connection->state = ClientConnectionImpl::ProcessState::READING_HEADER;
-						}
-					}
-					break;
-				case ClientConnectionImpl::ProcessState::READING_PAYLOAD:
-					{
-						connection->state = connection->readPayload();
-						if (connection->state == ClientConnectionImpl::ProcessState::WRITING_RESPONSE) {
-							listener.modifyEvent(connection, Bn3Monkey::SocketEventType::WRITE);
-						}
-						else if (connection->state == ClientConnectionImpl::ProcessState::FINISH_PROCESS) {
-							connection->flush();
-							connection->state = ClientConnectionImpl::ProcessState::READING_HEADER;
-						}
-					}
-					break;
-
-				default:
-					break;
+					handler->onDisconnected(*connection);
+					listener.removeEvent(connection);
+					connection->closeSocket();
+					_socket_connection_pool.release(connection);
 				}
-			}
-			break;
-
-			case SocketEventType::WRITE :
-			{
-				auto connection = static_cast<ClientConnectionImpl*>(context);
-				switch (connection->state) {
-					case ClientConnectionImpl::ProcessState::WRITING_RESPONSE:
-					{
-						connection->state = connection->writeResponse();
-						if (connection->state == ClientConnectionImpl::ProcessState::FINISH_PROCESS) {
-							connection->flush();
-							listener.modifyEvent(connection, Bn3Monkey::SocketEventType::READ);
-							connection->state = ClientConnectionImpl::ProcessState::READING_HEADER;
-						}
-					}
-						break;
-					default:
-						break;
-				}
-			}
-
-			default:
-				break;
 			}
 		}
-
 	}
 
 	listener.close();
