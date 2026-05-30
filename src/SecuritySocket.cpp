@@ -98,7 +98,7 @@ Bn3Monkey::RequestServer::~RequestServer()
 	impl->~RequestServerImpl();
 }
 
-NetworkResult Bn3Monkey::RequestServer::open(CustomProtocolRequestHandler* handler, size_t num_of_clients)
+NetworkResult Bn3Monkey::RequestServer::open(RequestHandler* handler, size_t num_of_clients)
 {
 	RequestServerImpl* impl = static_cast<RequestServerImpl*>((void*)_container);
 	return impl->open(handler, num_of_clients);

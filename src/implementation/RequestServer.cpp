@@ -45,7 +45,7 @@ Bn3Monkey::NetworkResult Bn3Monkey::RequestServerImpl::open(CustomProtocolReques
 	}
 
 	_is_running = true;
-	_routine = std::thread{ &RequestServerImpl::run, this, handler };
+	_routine = std::thread{ &RequestServerImpl::run, this, custom };
 	return result;
 }
 

@@ -25,7 +25,10 @@ namespace Bn3Monkey
 			: _configuration(configuration), _tls_configuration(tls_configuration) {}
 		virtual ~RequestServerImpl();
 
-		NetworkResult open(CustomProtocolRequestHandler* handler, size_t num_of_clients);
+		// Public API widened in Phase 6 (D6). For now the body still requires a
+		// CustomProtocolRequestHandler (recovered via asCustomProtocolRequestHandler);
+		// the HTTP/WebSocket dispatch paths arrive with the Phase classes.
+		NetworkResult open(RequestHandler* handler, size_t num_of_clients);
 		void close();
 
 	private:
