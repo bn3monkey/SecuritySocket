@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>SecuritySocket v3 — ClientConnection 구조 설계 (Phase 6)</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<style>
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Malgun Gothic", sans-serif;
+    max-width: 1100px; margin: 2em auto; padding: 0 1em; color: #222; line-height: 1.6;
+  }
+  h1 { border-bottom: 2px solid #333; padding-bottom: 0.3em; }
+  h2 { border-bottom: 1px solid #ccc; padding-bottom: 0.2em; margin-top: 2em; }
+  h3 { margin-top: 1.4em; }
+  table { border-collapse: collapse; width: 100%; margin: 1em 0; font-size: 0.92em; }
+  th, td { border: 1px solid #ddd; padding: 0.5em 0.7em; vertical-align: top; text-align: left; }
+  th { background: #f4f4f4; }
+  code { background: #f4f4f4; padding: 0.1em 0.4em; border-radius: 3px;
+         font-family: "Consolas", "Monaco", monospace; font-size: 0.9em; }
+  pre { background: #f7f7f7; border: 1px solid #e0e0e0; border-radius: 4px;
+        padding: 0.8em 1em; overflow-x: auto; }
+  pre code { background: none; padding: 0; }
+  blockquote { border-left: 4px solid #888; background: #f9f9f9; margin: 1em 0;
+               padding: 0.5em 1em; color: #555; }
+  .host    { background: #fff5e6; }
+  .sniff   { background: #eee; }
+  .http    { background: #e6f3ff; }
+  .ws      { background: #e6ffe6; }
+  .custom  { background: #ffe6e6; }
+  .q { background: #fff8d8; border: 1px solid #e0c860; border-radius: 4px;
+       padding: 0.6em 1em; margin: 0.8em 0; }
+  .mermaid { background: #fafafa; border: 1px solid #ddd; padding: 1em; }
+  .legend span { display:inline-block; padding: 0.2em 0.6em; border:1px solid #aaa;
+                 border-radius: 3px; font-size: 0.9em; margin-right: 0.5em; }
+</style>
+</head>
+<body>
+
+<h1>SecuritySocket v3 — ClientConnection 구조 설계</h1>
+
+<blockquote>
+  <strong>목적:</strong> Phase 6의 <code>ClientConnectionImpl</code>을 <em>어떻게 클래스로 분해해서</em> 구현할지 합의하기 위한 문서.<br>
+  <strong>관계:</strong> <a href="./state-machine.html">state-machine.html</a> 은 <strong>"무엇"</strong>(13 states / 4 events / action별 result enum / transition)을 정의한다.
+  이 문서는 그 명세를 <strong>"어떻게 클래스로 나눠"</strong> 구현할지를 정의한다. state-machine.html 의 상태/이벤트/result enum 어휘는 그대로 유지한다.<br>
+  <strong>상태:</strong> <span style="color:#1a7f37;font-weight:bold;">승인됨 (2026-05-31)</span> — 구현 착수.
+</blockquote>
+
+<div class="legend">
+  <span class="host">Host (ClientConnectionImpl)</span>
+  <span class="sniff">Sniff</span>
+  <span class="http">HTTP</span>
+  <span class="ws">WebSocket(Custom)</span>
+  <span class="custom">Custom(raw)</span>
+</div>
+
+<h2>1. 현재 코드 인벤토리</h2>
+
+<h3>1-1. 커밋된 building blocks (재사용, 변경 없음)</h3>
+<table>
+  <thead><tr><th>파일</th><th>역할</th><th>비고</th></tr></thead>
+  <tbody>
+    <tr class="sniff"><td><code>protocol/ProtocolSniffer</code></td><td><code>detect(buf,len) → HTTP/CUSTOM/NEED_MORE</code></td><td>무상태. 7 tests pass</td></tr>
+    <tr class="http"><td><code>protocol/HttpProcessor</code></td><td>picohttpparser 래퍼: parse / 헤더조회 / keepAlive / Upgrade 검출 / Sec-WebSocket-Accept(SHA1+base64) / 101 직렬화</td><td><strong>무상태 헬퍼</strong>. 15 tests pass. (이름 충돌 주의 — §8)</td></tr>
+    <tr class="ws"><td><code>protocol/WsFrameCodec</code></td><td>RFC 6455 frame decode(in-place unmask) / encode / close / pong</td><td>무상태. 15 tests pass</td></tr>
+    <tr class="http"><td><code>http/HttpRequest, HttpResponse, HttpRouter, Url</code></td><td>Phase 4 view/builder + 라우터</td><td>그대로</td></tr>
+    <tr class="custom"><td><code>custom/CustomProtocolRequest, CustomProtocolResponse</code></td><td>Phase 5 view/builder</td><td>그대로</td></tr>
+    <tr class="host"><td><code>SocketEvent (Linux/Windows)</code></td><td>cross-thread <code>SocketMultiEventListener</code> + 내부 wakeup(eventfd / loopback pair)</td><td>이미 완성 (state-machine.html §5-3 전제 충족)</td></tr>
+  </tbody>
+</table>
+
+<h3>1-2. 미커밋 WIP (이 문서로 재설계 → 폐기/재작성 대상)</h3>
+<ul>
+  <li><code>ClientConnection.{hpp,cpp}</code> — sniff+http+ws+custom 을 한 클래스에 욱여넣은 monolith. <strong>분해 대상.</strong></li>
+  <li><code>RequestServer.{hpp,cpp}</code> — <code>open(RequestHandler*)</code> 로 확장 + 라우터 빌드. (개념은 유지하되 분해에 맞춰 조정)</li>
+  <li><code>SecuritySocket.hpp</code> — <code>RequestHandler</code> 에 RTTI-free self-accessor(<code>asHttpRequestHandler()</code>/<code>asCustomProtocolRequestHandler()</code>) 추가 + <code>RequestServer::open</code> 시그니처 확장. (유지 제안 — §6)</li>
+  <li><code>ObjectPool.hpp</code> — <code>FixedObjectPool</code> 개명 시도. <strong>사용자 승인 필요 항목</strong>(§8). 승인 전까지 보류.</li>
+</ul>
+
+<h2>2. 문제 정의</h2>
+<p>
+  WIP <code>ClientConnectionImpl</code> 은 sniff·HTTP·WebSocket·Custom 의 recv/parse/dispatch/serialize 를
+  <strong>한 클래스의 13-state <code>switch</code></strong> 로 처리한다. 결과:
+</p>
+<ul>
+  <li>한 파일이 4개 프로토콜의 책임을 동시에 짊어져 비대해짐.</li>
+  <li>프로토콜별 로직 경계가 흐려져 읽기/테스트가 어려움.</li>
+  <li>(사용자 지적) 합의 없이 <code>Outcome</code> 같은 통합 enum 이 끼어들어 명세(state-machine.html)와 어긋남.</li>
+</ul>
+
+<h2>3. 설계 원칙</h2>
+<ol>
+  <li><strong>한 connection = 한 protocol identity</strong> (state-machine.html §3, §8). Sniff 는 최대 1회. 이후 그룹 고정.</li>
+  <li><strong>프로토콜별 Phase 클래스로 분해.</strong> 각 Phase 가 자기 그룹의 state·action·result enum 만 책임진다.</li>
+  <li><strong>Host 가 공유 자원 소유.</strong> socket, 단일 input/output buffer, SLOW worker, listener 조작은 Host(+worker) 만.</li>
+  <li><strong>명세 어휘 유지.</strong> <code>ConnectionState</code>(13) + <code>Event</code>(4) 가 유일한 host-level 공용 어휘. action별 result enum 은 state-machine.html §7-3 그대로. <u>통합 Outcome enum 없음.</u></li>
+  <li><strong>Custom dispatch 는 공유.</strong> raw Custom 과 WS-tunnelled Custom 은 동일한 <code>CustomProtocolRequestHandler</code> 를 호출 — 한 벌의 dispatch 헬퍼를 두 Phase 가 공유.</li>
+</ol>
+
+<h2>4. 클래스 분해</h2>
+
+<div class="mermaid">
+classDiagram
+    class ClientConnectionImpl {
+      +handleEvent(Event) Disposition
+      -socket, input/output buffer
+      -SLOW worker (lazy, 1 slot)
+      -listener 조작 (단독)
+      -ConnectionPhase* _phase
+      +ip/port/isSecure/isWebSocket()
+    }
+    class ConnectionPhase {
+      <<interface>>
+      +onReadable(Host&, listener&) ConnectionState
+      +onWritable(Host&, listener&) ConnectionState
+      +group() Group
+    }
+    class SniffPhase
+    class HttpPhase
+    class CustomPhase
+    class WebSocketPhase
+    class CustomDispatch {
+      <<helper>>
+      +run(handler, header, payload, mode) ...
+    }
+    ClientConnectionImpl o-- ConnectionPhase
+    ConnectionPhase <|-- SniffPhase
+    ConnectionPhase <|-- HttpPhase
+    ConnectionPhase <|-- CustomPhase
+    ConnectionPhase <|-- WebSocketPhase
+    CustomPhase ..> CustomDispatch
+    WebSocketPhase ..> CustomDispatch
+</div>
+
+<h3>4-1. 책임 분담</h3>
+<table>
+  <thead><tr><th>구성요소</th><th>소유/책임</th></tr></thead>
+  <tbody>
+    <tr class="host"><td><strong>ClientConnectionImpl (Host)</strong></td>
+      <td>socket, 단일 input/output buffer + offset, SLOW worker thread(lazy, single slot), listener add/modify/remove,
+          현재 <code>ConnectionPhase</code> 보유 및 <strong>그룹 전환 시 Phase 교체</strong>, <code>ClientConnection</code> 공개 인터페이스, pool 반환용 teardown.</td></tr>
+    <tr class="sniff"><td><strong>SniffPhase</strong></td>
+      <td><code>Sniffing</code> state. <code>handleSniff()</code> → <code>SniffResult</code>. HTTP/Custom 판별 후 다음 그룹의 시작 state 반환.</td></tr>
+    <tr class="http"><td><strong>HttpPhase</strong></td>
+      <td><code>ReceivingHttpRequest / SendingHttpResponse / WaitingForNextHttpRequest</code> + (handshake) <code>SendingHandshakeResponse</code>.
+          action: <code>handleHttpRequest()</code>, <code>handleHttpResponseWrite()</code>, <code>handleHandshakeWrite()</code>. keep-alive 루프. Upgrade 검출 시 핸드셰이크 직렬화.</td></tr>
+    <tr class="ws"><td><strong>WebSocketPhase</strong></td>
+      <td><code>ReceivingWebSocketFrame / SendingWebSocketResponse / WaitingForNextWebSocketMessage</code>.
+          action: <code>handleWebSocketFrame()</code>, <code>handleWebSocketResponseWrite()</code>. frame 디코드·재조립·PING/PONG/CLOSE·Custom dispatch(WS binary wrap).</td></tr>
+    <tr class="custom"><td><strong>CustomPhase</strong></td>
+      <td><code>ReceivingCustomMessage / SendingCustomResponse / WaitingForNextCustomMessage</code>.
+          action: <code>handleCustomMessage()</code>, <code>handleCustomResponseWrite()</code>.</td></tr>
+    <tr><td><strong>CustomDispatch (헬퍼)</strong></td>
+      <td>header/payload span + mode → <code>CustomProtocolRequestHandler</code> 호출. FAST 즉시 / SLOW 큐잉 / STREAM no-response. CustomPhase·WebSocketPhase 공용.</td></tr>
+    <tr class="host"><td><strong>Closing</strong></td>
+      <td>잔여 byte 송신 후 종료. 작은 상태라 Host 가 직접 처리(별도 Phase 불필요) 제안 — 또는 lifecycle Phase. (§8 결정)</td></tr>
+  </tbody>
+</table>
+
+<h2>5. action별 Output(result enum) 유지 + transition</h2>
+<p>
+  state-machine.html §7-3 의 result enum 을 <strong>그대로</strong> 쓴다. 각 Phase 가 자기 action 의 result 를
+  <code>mapResultToNextState(result)</code> 로 다음 <code>ConnectionState</code> 에 매핑한다(§6 transition table). 통합 enum 없음.
+</p>
+
+<pre><code>// 각 Phase 내부 (예: HttpPhase) — 명세 그대로
+enum class HttpRequestResult {
+    NEED_MORE_BYTES, UPGRADE_REQUESTED,
+    ROUTE_DISPATCHED_FAST, ROUTE_DISPATCHED_SLOW,
+    ERROR_MALFORMED, ERROR_BODY_TOO_LARGE, ERROR_ROUTE_NOT_FOUND, SOCKET_ERROR
+};
+
+ConnectionState HttpPhase::onReadable(Host& h, Listener& lsn) {
+    HttpRequestResult r = handleHttpRequest(h, lsn);   // recv+parse+dispatch
+    return mapResultToNextState(r);                    // §6-2 표
+}</code></pre>
+
+<p>
+  <strong>listener 조작은 누가?</strong> SLOW 진입은 action 안에서 <code>lsn.removeEvent</code> → <code>h.queueToWorker</code> 순서가
+  반드시 지켜져야 하므로(state-machine.html §8 invariant), action 이 listener 를 받는다.
+  READ↔WRITE 의 일반 전환은 Host 가 <strong>새 state 로부터 유도</strong>(§2-3 매핑)해서 처리 → action 은 state 만 바꾸면 됨.
+  SLOW 인 경우만 "socket 이 이미 빠졌으니 Host 는 re-arm 하지 말 것"을 알아야 하는데, 이는
+  <strong>"SLOW 로 간 state(예: SendingHttpResponse) + worker 가 재등록 예정"</strong> 규약으로 표현한다 (§7 참조).
+</p>
+
+<h2>6. 상태 전이 — 그룹 내 vs 그룹 간</h2>
+
+<h3>6-1. 4가지 시나리오</h3>
+<ol>
+  <li><strong>Sniff → Http</strong> → (keep-alive) Http 그룹 순환</li>
+  <li><strong>Sniff → Custom</strong> → Custom 그룹 순환</li>
+  <li><strong>Sniff → Http → WebSocket(Custom)</strong> → WS 그룹 순환</li>
+  <li>(핸들러가 단일 프로토콜만 지원하면 Sniff 생략하고 해당 그룹에서 바로 시작)</li>
+</ol>
+
+<div class="mermaid">
+stateDiagram-v2
+    [*] --> SniffPhase : accept (둘 다 지원)
+    [*] --> HttpPhase : accept (HTTP only)
+    [*] --> CustomPhase : accept (Custom only)
+    SniffPhase --> HttpPhase : DETECTED_HTTP
+    SniffPhase --> CustomPhase : DETECTED_CUSTOM
+    HttpPhase --> WebSocketPhase : 핸드셰이크 송신 완료(101)
+    HttpPhase --> HttpPhase : keep-alive
+    CustomPhase --> CustomPhase : 다음 메시지
+    WebSocketPhase --> WebSocketPhase : 다음 frame
+    HttpPhase --> [*] : close
+    CustomPhase --> [*] : close
+    WebSocketPhase --> [*] : close
+</div>
+
+<h3>6-2. Host 의 Phase 교체 메커니즘</h3>
+<p>
+  Host 는 <code>ConnectionState</code> 가 <em>어느 그룹</em>에 속하는지 안다. Phase action 이 다른 그룹의 state 를 반환하면
+  Host 가 해당 Phase 객체로 교체하고, <strong>buffer 에 남은 byte 가 있으면 새 Phase 에게 즉시 다시 read 를 돌린다</strong>
+  (sniff 가 본 byte 를 HTTP/Custom 이 이어서 파싱; keep-alive/pipelined 동일 메커니즘).
+</p>
+
+<pre><code>// Host 의 read 드라이브 루프 (개념)
+Disposition handleEvent(Event ev, Listener& lsn) {
+    if (ev == E_Disconnected) return CLOSE;
+    if (ev == E_Write) { _state = _phase->onWritable(*this, lsn); afterTransition(lsn); ... }
+    else /* E_Read */  {
+        if (recv() <= 0) return ...;            // Host 가 공유 buffer 로 recv
+        for (;;) {
+            ConnectionState next = _phase->onReadable(*this, lsn);
+            swapPhaseIfGroupChanged(next);      // Sniff→Http 등
+            _state = next;
+            if (!shouldKeepDraining(next)) break;  // 남은 byte 있고 read state 면 계속
+        }
+        afterTransition(lsn);                   // §2-3 으로 READ/WRITE re-arm (SLOW 제외)
+    }
+}</code></pre>
+
+<blockquote>
+  ※ recv 위치 결정 필요(§8): recv 를 <strong>Host 가</strong> 한 번 해서 buffer 를 채우고 Phase 는 buffer 만 보게 할지,
+  아니면 state-machine.html 처럼 <strong>각 action 안에서</strong> recv 할지. Host 일괄 recv 가 분해와 더 잘 맞아 보임(Phase 가 socket 비의존).
+</blockquote>
+
+<h2>7. SLOW worker & listener invariant (Host 소유)</h2>
+<ul>
+  <li>Worker: connection 당 1개, <strong>lazy</strong>(첫 SLOW 때 생성), <strong>single task slot</strong>(<code>listener==nullptr</code> 이 empty 지표, C++14). state-machine.html §7-4 그대로.</li>
+  <li>SLOW 진입 순서 invariant: action 안에서 <code>listener.removeEvent(socket)</code> → <code>host.queueToWorker(call, listener)</code>.</li>
+  <li>Worker 완료: <code>call()</code>(handler+serialize+consume) 후 <code>listener.addEvent(socket, WRITE)</code> → 내부 wakeup 으로 main 깨어남 → 다음 wait 에서 E_Write.</li>
+  <li><code>call</code> 의 serialize 부분은 프로토콜별이므로 각 Phase 가 람다로 캡슐화해 Host 에 넘긴다 (Host 는 protocol-agnostic).</li>
+</ul>
+
+<h2>8. 결정 사항</h2>
+
+<h3>8-1. 확정 (사용자 승인 완료, 2026-05-30)</h3>
+<table>
+  <thead><tr><th>항목</th><th>결정</th></tr></thead>
+  <tbody>
+    <tr><td><strong>D1. Phase 네이밍</strong></td>
+      <td><code>ConnectionPhase</code> 기반 + <code>SniffPhase / HttpPhase / CustomPhase / WebSocketPhase</code>.</td></tr>
+    <tr><td><strong>D2. 무상태 파서 개명</strong></td>
+      <td><code>HttpProcessor</code> → <code>HttpParser</code> 로 개명 (커밋된 <code>protocol/HttpProcessor.{hpp,cpp}</code> + 테스트 include 경로 함께 수정).
+          <code>HttpPhase</code>(상태 보유)와 의미 구분.</td></tr>
+    <tr><td><strong>D3. ObjectPool 충돌</strong></td>
+      <td><code>implementation/ObjectPool.hpp</code>(placement-new, 고정크기) → <strong><code>implementation/core/memory/fixed_pool.hpp</code></strong> 로
+          파일 이동 + 클래스명 정리. index-기반 <code>core/memory/pool.hpp</code> 와 한 TU 공존 가능.
+          (이동이므로 <code>RequestServer</code> include 경로/타입명 갱신.)</td></tr>
+    <tr><td><strong>D6. open 시그니처</strong></td>
+      <td><code>RequestServer::open(RequestHandler*)</code> 로 확장. 단 derived 복원 방식은 §8-3 참조(확정 대기).</td></tr>
+  </tbody>
+</table>
+
+<h3>8-2. 남은 결정 → 확정 (2026-05-31)</h3>
+<table>
+  <thead><tr><th>항목</th><th>결정</th></tr></thead>
+  <tbody>
+    <tr><td><strong>D4. <code>Closing</code> 처리</strong></td><td><strong>Host 가 직접 처리</strong> (작은 상태, 별도 Phase 불필요).</td></tr>
+    <tr><td><strong>D5. recv 위치</strong></td><td><strong>Host 일괄 recv</strong> — Host 가 공유 buffer 로 한 번 recv 후 Phase 는 buffer 만 본다 (Phase 가 socket 비의존). action 내부 recv 안 함.</td></tr>
+  </tbody>
+</table>
+
+<h3>8-3. RequestHandler → derived 복원 방법 (기술 검토)</h3>
+<p>
+  <code>RequestHandler</code> 는 <code>supportHttp()</code> / <code>supportUserProtocol()</code> bool 로 "어떤 derived 인지" 알 수 있다.
+  하지만 그걸 안 뒤 실제 <code>HttpRequestHandler*</code> 로 <strong>변환</strong>하는 게 문제:
+</p>
+<ul>
+  <li>mileston §2-4 대로 <code>HttpRequestHandler</code>·<code>CustomProtocolRequestHandler</code> 는 <code>RequestHandler</code> 를
+      <strong>virtual</strong> 상속한다 (둘 다 상속하는 사용자 핸들러의 diamond 방지).</li>
+  <li><strong>virtual base → derived 로의 <code>static_cast</code> 는 표준상 ill-formed</strong> (컴파일 에러).</li>
+  <li><strong><code>reinterpret_cast</code> 는 컴파일되지만 잘못된 포인터.</strong> virtual base subobject 는 offset 이 비자명 → 비트 재해석 시 UB.</li>
+  <li>RTTI off → <code>dynamic_cast</code> 불가.</li>
+</ul>
+<p>
+  → RTTI 없이 올바른 유일한 방법은 <strong>각 derived 가 자기 타입을 반환하는 virtual self-accessor</strong>.
+  bool 함수의 "타입 반환 버전"이며 파생당 한 줄 override:
+</p>
+<pre><code>class RequestHandler {
+    // 기존 bool 들 유지...
+    virtual HttpRequestHandler*           asHttpRequestHandler()           { return nullptr; }
+    virtual CustomProtocolRequestHandler* asCustomProtocolRequestHandler() { return nullptr; }
+};
+class HttpRequestHandler : public virtual RequestHandler {
+    HttpRequestHandler* asHttpRequestHandler() override { return this; }  // 한 줄
+};
+class CustomProtocolRequestHandler : public virtual RequestHandler {
+    CustomProtocolRequestHandler* asCustomProtocolRequestHandler() override { return this; }  // 한 줄
+};</code></pre>
+<p style="color:#1a7f37;font-weight:bold;">D6 확정: self-accessor 방식 채택 (cast 류는 virtual inheritance 와 호환 불가).</p>
+
+<h2>9. 구현 순서 제안 (승인 후)</h2>
+<ol>
+  <li>WIP <code>ClientConnection.{hpp,cpp}</code> 폐기 → 분해 구조로 재작성. (Phase 5 빌드 그린 상태로 되돌릴지 먼저 결정)</li>
+  <li><code>ConnectionPhase</code> 인터페이스 + <code>ConnectionState</code>/<code>Event</code> enum (Host 헤더).</li>
+  <li><code>SniffPhase</code> → <code>CustomPhase</code> (가장 단순, raw 회귀 테스트로 검증) → <code>HttpPhase</code> → <code>WebSocketPhase</code>.</li>
+  <li><code>CustomDispatch</code> 공유 헬퍼 추출.</li>
+  <li>Host(<code>ClientConnectionImpl</code>) 조립 + SLOW worker + listener 드라이브.</li>
+  <li><code>RequestServer</code> run loop 통합.</li>
+  <li>libcurl 기반 http_server / websocket_server 회귀 테스트 + 기존 Custom 회귀 테스트.</li>
+</ol>
+
+<script>
+  mermaid.initialize({ startOnLoad: true, theme: 'default' });
+</script>
+</body>
+</html>

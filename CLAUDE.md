@@ -42,6 +42,17 @@ MSVC 빌드는 **항상 프로젝트 스크립트**를 사용한다. `d:\claude_
      (단, `startSecuritySocketTest`가 자체 기본 필터를 둘 수 있어 무시될 수 있다 — 그 경우 전체 실행 후 출력에서 해당 스위트 결과를 확인한다.)
    - TCP/TLS/WebSocket 스위트는 포트를 바인딩한다(`script/allow_test_port.ps1` 참고).
 
+### 주의 — test/msvc 트리의 stale object 함정
+`test/msvc/out/build/x64-Debug`는 `build.sh`가 쓰는 `out/build/x64-Debug`와 **별도 Ninja 트리**다.
+이 트리는 `add_subdirectory`로 라이브러리를 끌어와 `src/implementation/*.cpp`를 **절대경로**로 컴파일하는데
+(`library/CMakeFiles/securitysocket.dir/C_/repository/.../*.cpp.obj`), 외부 경로 소스의 변경을 Ninja가
+종종 감지하지 못해 **recompile 없이 relink만 하고 stale .obj를 재사용**한다 → 러너가 옛 코드를 실행.
+- `src/` 파일을 고친 뒤 테스트를 신뢰하기 전에, 바뀐 TU의 obj를 강제 삭제 후 `build_msvctest.sh`:
+  `find test/msvc/out/build/x64-Debug/library/CMakeFiles/securitysocket.dir -name '<File>.cpp.obj' -delete`
+- 빌드 로그에 `Building CXX object ...<File>.cpp.obj`가 보이는지 확인(단순 Linking이면 stale).
+- 어느 코드가 살아있는지 의심되면 obj/src mtime 비교: `date -r <obj>` vs `date -r <src>`.
+  DLL/obj에 `strings`/`grep`로 심볼 유무를 판단하지 말 것(COFF/PE 섹션이 신뢰성 있게 안 보임) — mtime과 실제 실행 출력으로 판단.
+
 생성되는 `script/build*.sh`는 머신별 절대경로라 `.gitignore` 처리되어 있다.
 
 ## 코드 구조 메모
