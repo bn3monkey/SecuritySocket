@@ -9,6 +9,7 @@
 #include "connection/ConnectionPhase.hpp"
 #include "connection/SniffPhase.hpp"
 #include "connection/CustomPhase.hpp"
+#include "core/memory/buffer.hpp"
 
 #include <thread>
 #include <functional>
@@ -71,15 +72,8 @@ namespace Bn3Monkey
         ConnectionState state() const { return _state; }
 
         // ── PhaseHost ──
-        const char* input()      const override { return _input_buffer.data(); }
-        size_t      inputSize()  const override { return _input_received; }
-        void        ensureInputCapacity(size_t total_bytes) override;
-        void        consumeInput(size_t n) override;
-
-        char*  output()         override { return _output_buffer.data(); }
-        size_t outputCapacity() const override { return _output_buffer.size(); }
-        void   ensureOutputCapacity(size_t bytes) override;
-        void   setOutputSize(size_t n) override { _output_size = n; _output_written = 0; }
+        StagingBuffer& input()  override { return _input; }
+        StagingBuffer& output() override { return _output; }
 
         ClientConnection&             connection()    override { return *this; }
         HttpRouterImpl*               router()        override { return _router; }
@@ -130,17 +124,16 @@ namespace Bn3Monkey
         SniffPhase  _sniff;
         CustomPhase _custom_phase;
 
-        // ── single input accumulation buffer (message starts at offset 0) ──
-        std::vector<char> _input_buffer;
-        size_t            _input_received{ 0 };
-
-        // ── response output buffer ──
-        std::vector<char> _output_buffer;
-        size_t            _output_size{ 0 };
-        size_t            _output_written{ 0 };
-        bool              _output_fully_sent{ false };
-
-        size_t _pdu_size{ 0 };
+        // ── input / output staging buffers (see StagingBuffer) ──
+        // input:  recv appends at tail(); the phase parses head()..pending() and
+        //         drain()s consumed messages (pipelined bytes stay pending).
+        // output: the phase fills a response from data(); the host drains
+        //         head()..pending() to the socket, flagging _output_fully_sent
+        //         when empty(). _pdu_size is the initial capacity of both.
+        size_t        _pdu_size{ 0 };
+        StagingBuffer _input;
+        StagingBuffer _output;
+        bool          _output_fully_sent{ false };
 
         // ── SLOW worker (lazy, single task slot; listener==nullptr => empty) ──
         std::thread             _worker_thread;

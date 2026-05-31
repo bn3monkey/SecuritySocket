@@ -1,6 +1,17 @@
 #include "RequestServer.hpp"
 #include "NetworkResult.hpp"
 
+// RequestServer stores this Impl inline via placement-new into a fixed
+// char[IMPLEMENTATION_SIZE] buffer (PImpl-by-inline-storage). If the Impl
+// outgrows that buffer the constructor scribbles past it and corrupts adjacent
+// memory — which surfaced as a teardown access violation in ~HttpRouterImpl
+// (the _router deque lives near the tail of the object). Catch any future
+// growth at compile time instead of at runtime.
+static_assert(sizeof(Bn3Monkey::RequestServerImpl)
+                  <= Bn3Monkey::RequestServer::IMPLEMENTATION_SIZE,
+              "RequestServerImpl no longer fits in RequestServer::_container; "
+              "raise RequestServer::IMPLEMENTATION_SIZE in SecuritySocket.hpp");
+
 Bn3Monkey::RequestServerImpl::~RequestServerImpl()
 {
 	close();

@@ -14,10 +14,9 @@ namespace Bn3Monkey
     {
     public:
         StagingBuffer(size_t initial_capacity) :
-            _length(0),
             _capacity(initial_capacity)
         {
-            _data = std::malloc(sizeof(char) * _capacity);
+            _data = static_cast<char*>(std::malloc(sizeof(char) * _capacity));
             if (!_data) {
                 _capacity = 0;
             }
@@ -28,22 +27,72 @@ namespace Bn3Monkey
             }
         }
 
+        StagingBuffer(const StagingBuffer& other) = delete;
+        StagingBuffer& operator=(const StagingBuffer& other) = delete;
+
+        StagingBuffer(StagingBuffer&& other) = delete;
+        StagingBuffer& operator=(StagingBuffer&& other) = delete;
+        
+
+        bool empty() {
+            return _sent == _received;
+        }
         void clear() {
-            memset(_data, 0, _capacity);
-            _length = 0;
+            _sent = _received = 0;
         }
 
         // Read & Write
-        size_t& length() {return _length; }
         void* data() { return _data; }
         const void* data() const { return _data; }
+        
+        void* head() { return _data + _sent; }
+        const void* head() const { return _data + _sent; }
 
-        bool canAppend(size_t required_size) {
-            return _length + required_size <= _capacity;
+        void* tail() { return _data + _received; }
+        const void* tail() const { return _data + _received; }
+
+        size_t sent() const { return _sent; }
+        size_t received() const { return _received; }
+        size_t pending() const { return _received - _sent;}
+        size_t remaining() const { return _capacity - _received; }
+        size_t capacity() const { return _capacity; }
+
+        void fill(size_t n) { _received += n;}
+        void drain(size_t n) { _sent += n; } 
+
+        bool canAppend(size_t required_size) const {
+            return _received + required_size <= _capacity;
         }
-        bool grow(size_t required_size) {
-            size_t new_capacity = nextPowerOfTwo(_length + required_size);
-            void* new_data = std::realloc(_data, new_capacity * sizeof(char));
+
+        void compact() {
+            if (_sent == 0) {
+                return;
+            }
+            auto live = pending();
+            if (live > 0) {
+                std::memmove(_data, _data + live, live);
+            }
+            _received = live;
+            _sent = 0;
+        }
+
+        // Guarantee at least `extra` more bytes can be appended at tail(): try
+        // in-place compaction first (cheap), then realloc only if still short.
+        // Returns false on allocation failure. May invalidate data()/head()/tail().
+        bool reserve(size_t extra) {
+            if (remaining() >= extra) {
+                return true;                  // already room at tail
+            }
+
+            if (_sent > 0) {                  // reclaim drained prefix first
+                compact();
+                if (remaining() >= extra) {
+                    return true;
+                }
+            }
+
+            size_t new_capacity = nextPowerOfTwo(_received + extra);
+            char* new_data = static_cast<char*>(std::realloc(_data, new_capacity * sizeof(char)));
             if (!new_data) {
                 return false;
             }
@@ -52,8 +101,6 @@ namespace Bn3Monkey
             return true;
         }
 
-
-        size_t capacity() { return _capacity; }
 
     private:
         size_t nextPowerOfTwo(size_t value) {
@@ -68,8 +115,9 @@ namespace Bn3Monkey
             return value + 1;
         }
 
-        void* _data {nullptr};
-        size_t _length {0};
+        char* _data {nullptr};
+        size_t _received {0};
+        size_t _sent {0};
         size_t _capacity {0};
     };
 }

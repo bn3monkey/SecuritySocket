@@ -1,106 +1,131 @@
-# Phase 6 진행상황 — 2026-05-31
+# 진행상황 — 2026-06-01
 
-> **대상:** v3 Phase 6 (Server 흐름 통합 — sniffing + dispatch + WS frame + SLOW)
-> **참조:** [mileston_http.md](./mileston_http.md) §Phase 6, [state-machine.html](./state-machine.html), [client_connection.html](./client_connection.html)
 > **브랜치:** `v3`
+> **이번 세션 범위:** ① 연결 입출력 버퍼를 `StagingBuffer` 로 교체, ② 종료 시
+> AV 크래시(이전 진행 문서 §4) 근본 원인 확정 및 수정, ③ 파이프라인 경로
+> 데이터 불일치 발견(미해결).
 
 ---
 
 ## 1. 한 줄 요약
 
-프로토콜 헬퍼(Ws/Sniff/Http) + ClientConnection 분해 골격(SniffPhase/CustomPhase + Host) 까지 구현·커밋됨.
-**단, 현재 HEAD 는 raw Custom 경로에서 종료 시 크래시(AV)가 있다 — 원인 진단 완료, 수정은 미적용 (아래 §4).**
-HttpPhase / WebSocketPhase 는 아직 미구현.
+- `ClientConnectionImpl` 의 input/output 버퍼를 `core/memory/buffer.hpp` 의
+  **`StagingBuffer`(2-커서: `_received`/`_sent`)** 로 교체. `consumeInput`(memmove
+  shift) → `drain()` + 필요 시 `compact()`. **빌드 green.**
+- 종료 시 AV 크래시(raw Custom 경로) **근본 원인 확정**: `sizeof(RequestServerImpl)
+  = 2240 > IMPLEMENTATION_SIZE(2048)` → pImpl 인라인 컨테이너 오버플로우. **수정 적용**
+  (`IMPLEMENTATION_SIZE` 4096 + 컴파일타임 `static_assert`). `TCPRequestEcho` **pass**.
+- **미해결:** 크래시가 사라지자 가려져 있던 `TCPRequestFile` 의 **파이프라인
+  STREAM 경로 데이터 불일치**가 드러남(아래 §4). 회귀/기존버그 여부 미확정.
 
 ---
 
-## 2. 완료된 것 (커밋됨, 브랜치 v3)
+## 2. StagingBuffer 버퍼 교체
 
-순서대로 커밋:
+### 동기
+기존 `PhaseHost` 는 버퍼를 8개 메서드(`input/inputSize/ensureInputCapacity/
+consumeInput/output/outputCapacity/ensureOutputCapacity/setOutputSize`)로 노출했고,
+`consumeInput(n)` 은 메시지 소비 후 뒤따르는(파이프라인) 바이트를 **memmove 로 앞으로
+shift** 해 항상 offset 0 에서 시작하게 했다. 이를 커서 기반 버퍼로 정리.
 
-| 커밋 | 내용 | 테스트 |
-| --- | --- | --- |
-| `652c7c5` | `protocol/WsFrameCodec` — RFC 6455 frame decode(in-place unmask)/encode/close/pong | 15 gtest pass |
-| `31adb67` | `protocol/ProtocolSniffer` — HTTP/CUSTOM/NEED_MORE 단일포트 판별 | 7 gtest pass |
-| `e9ca1d0` | `protocol/HttpProcessor`(→ 이후 HttpParser 로 개명) — picohttpparser 래퍼 + Sec-WebSocket-Accept(SHA1+base64) + 101 직렬화 | 15 gtest pass |
-| `997889f` | **D2/D3**: HttpProcessor→`HttpParser`, `ObjectPool`→`core/memory/fixed_pool.hpp`(클래스 `FixedObjectPool`) | 빌드 green |
-| `c7755c2` | **D6**: `RequestHandler` self-accessor(`asHttpRequestHandler`/`asCustomProtocolRequestHandler`) + `RequestServer::open(RequestHandler*)` | — |
-| `42d71fe` | `connection/ConnectionState`(13 state + 4 event + groupOf/isRead/isWrite) + `ConnectionPhase`/`PhaseHost` 계약 + `SniffPhase` | 빌드 green |
-| `d784121` | `connection/CustomPhase` — raw Custom 그룹(header→payload→FAST/SLOW/STREAM dispatch) | — |
-| `d33c0a3` | Host `ClientConnectionImpl`(PhaseHost 구현) + `RequestServer` run loop 통합 | ⚠ 크래시 |
-| `cd5196a` | Host `.cpp` 실제 본문 보강(d33c0a3 의 .cpp 누락분) | ⚠ 크래시 |
-| `e7cf5a4` | docs: `client_connection.html` 설계서 + CLAUDE.md stale-obj 경고 | — |
-
-**Step A(listener cross-thread wakeup)** 는 별도 구현 불필요 — 이미 `SocketEvent_*.cpp` 에 eventfd/loopback pair + `wake()` 로 구현되어 있었음(검증만).
-
-### 합의된 설계 결정 (client_connection.html §8, D1~D6)
-- **D1** `ConnectionPhase` 기반 분해 + `SniffPhase/HttpPhase/CustomPhase/WebSocketPhase`
-- **D2** 무상태 파서 `HttpProcessor`→`HttpParser` (상태 보유 `HttpPhase` 와 구분)
-- **D3** `ObjectPool`→`core/memory/fixed_pool.hpp` / `FixedObjectPool` (index 기반 `core/memory/pool.hpp` 의 `ObjectPool` 과 한 TU 공존)
-- **D4** `Closing` 은 Host 가 직접 처리(별도 Phase 없음)
-- **D5** recv 는 Host 가 일괄 — Phase 는 buffer 만 봄(socket 비의존)
-- **D6** `open(RequestHandler*)` + RTTI-free virtual self-accessor (virtual base + RTTI-off 라 cast 불가)
-
-### 분해 구조 (구현된 골격)
+### 설계 — `StagingBuffer` (2 커서)
 ```
-ClientConnectionImpl (Host = PhaseHost)
-  - 소유: socket, 단일 _input_buffer/_output_buffer, lazy SLOW worker(single slot), listener 조작
-  - phaseForState(state) 로 현재 ConnectionPhase 선택/교체
-  - driveRead / onWriteEvent / armListener / dispatchSlow
-  - phases: SniffPhase, CustomPhase   ← HttpPhase/WebSocketPhase 자리 비어있음
-RequestServerImpl
-  - open(): self-accessor 로 http/custom 판별, 라우터 빌드, run loop 시작
-  - run(): accept → onAccept/onConnected → handleEvent 위임 → CLOSE 시 teardown
+_data            버퍼 시작
+_received        recv 로 채운 양 (write 커서)   tail() = _data + _received
+_sent            소비/전송한 양 (read 커서)     head() = _data + _sent
+_capacity        전체 용량
+  pending()   = _received - _sent   (파싱/전송 대상 바이트)
+  remaining() = _capacity - _received (tail 에 더 받을 수 있는 양)
+  empty()     = (_sent == _received)
 ```
+- `fill(n)` recv 후 전진, `drain(n)` 소비/전송 후 전진, `clear()` 0/0 리셋.
+- **`compact()`** — 소비된 prefix(`_sent`) 회수: 살아있는 `pending()` 바이트만 앞으로
+  memmove(다 비웠으면 복사 0), `_sent=0`. base 포인터 무효화 → recv 직전 등 안전
+  지점에서만.
+- **`reserve(extra)`** — tail 에 `extra` 더 쓸 공간 보장: ① 충분하면 no-op → ②
+  `_sent>0` 이면 `compact()` 로 회수 → ③ 그래도 부족하면 `realloc`(grow 를 쪼갠 것).
+- 복사/이동 `= delete`(raw malloc 소유), `clear()` 의 불필요한 zero-fill 제거.
+
+### 적용 (`PhaseHost` 계약 축소: 8 메서드 → 2)
+- `ConnectionPhase.hpp` — `virtual StagingBuffer& input()/output()` 둘만 노출.
+- `ClientConnectionImpl` — 멤버를 `StagingBuffer _input/_output` 로, `_pdu_size` 초기
+  용량. `recvChunk` = `reserve(kRecvChunk)`→`read(tail(), remaining())`→`fill(n)`,
+  `if(empty()) clear()` 로 완전 소비 시 offset 0 리셋. `flushOutput` =
+  `write(head(), pending())`→`drain(n)`, `empty()` 로 완송 판정.
+- `SniffPhase` — `head()/pending()` 로 detect, **drain 안 함**(carry-over 유지).
+- `CustomPhase` — `consumeInput→drain`, `ensureInputCapacity→reserve`,
+  `setOutputSize→clear()+fill()`. SLOW 람다는 실행 시점에 `head()` 재취득.
+
+### 검증
+- 라이브러리/러너 **컴파일·링크 green**.
+- `TCPRequestEcho.runFourClient`(엄격 req/resp, keep-alive 다중 메시지) — **40/40
+  에코 정확히 왕복, pass**. drain → `empty()→clear()` → reserve 사이클 정상 동작 확인.
 
 ---
 
-## 3. 미완료 (다음 작업)
+## 3. 종료 시 AV 크래시 — 근본 원인 확정 및 수정 (이전 §4)
 
-1. **(최우선) §4 의 크래시 수정** — 이게 막혀서 raw Custom 회귀가 안 돈다.
-2. **HttpPhase** — parse/route 매칭/keep-alive/Upgrade 검출 + handshake. host `phaseForState` 의 HTTP 그룹 분기 연결.
-3. **WebSocketPhase** — frame decode/재조립/PING·PONG·CLOSE/Text거부 + Custom dispatch(binary wrap). HTTP→WS 그룹 전환.
-4. **서버 회귀 테스트** — `SECURITYSOCKET_TEST_USE_CURL=ON` 으로 libcurl 기반 http_server / websocket_server 테스트.
+### 확정
+이전 문서 §4 의 가설(“`HttpRouterImpl _router` 값 멤버 인라인 추가로
+`sizeof(RequestServerImpl)` 이 2048 초과 → `char _container[2048]` placement-new
+오버플로우 → 종료 시 손상된 라우터 deque 소멸에서 AV”)을 **측정으로 확정**:
 
----
+- 런타임 probe: `sizeof(RequestServerImpl) = 2240` (> 2048, 192 바이트 초과).
+- VEH 백트레이스: AV 는 `~HttpRouterImpl → ~deque<string> _patterns → free`
+  (손상 포인터 `0xFFFF...FFED`) 에서 발생, 호출원은 test body 의 `~RequestServer`.
+- `FixedObjectPool<ClientConnectionImpl>{32}` 는 **힙 저장**이라 풋프린트에 거의
+  기여 안 함 → 초과분은 config/tls/router/thread 등 다른 인라인 멤버 합.
 
-## 4. ⚠ 미해결 크래시 — 진단 완료, 수정 미적용
+### 수정 (§4 선택지 2 채택)
+- `RequestServer::IMPLEMENTATION_SIZE` **2048 → 4096**(Phase 6 HTTP/WS phase 가
+  `ClientConnectionImpl` 에 더해질 여유 포함).
+- `RequestServer.cpp` 에 **`static_assert(sizeof(RequestServerImpl) <=
+  IMPLEMENTATION_SIZE)`** 추가 → 재발 시 런타임이 아니라 **컴파일 타임**에 잡힘.
+- 결과: `TCPRequestEcho` **pass**(이전 100% AV → 해소).
 
-### 증상
-- `TCPRequestEcho.runFourClient`(raw Custom, FAST) 가 **100% 재현**으로 종료 시 AV (SEH `0xc0000005`, rc=139).
-- 흐름 자체는 정상: 모든 echo 응답이 올바르게 오가고, 4 클라이언트 정상 disconnect, run loop 정상 종료, `close()` 정상 완료까지 trace 로 확인. 그 **직후** test body 에서 AV.
-
-### 원인 (강한 가설 — 타이밍/구조로 특정)
-`d33c0a3` 에서 `RequestServerImpl` 에 **`HttpRouterImpl _router;` 를 값 멤버로 인라인 추가**한 것이 원인으로 보인다.
-- `RequestServer` 는 `RequestServerImpl` 을 고정 크기 `char _container[2048]` 에 **placement-new** 한다(pImpl).
-- `HttpRouterImpl` 은 `SegmentTrie _tries[7]` + `std::vector<Route> _actions[7]` + `std::deque<std::string> _patterns` 등으로 덩치가 커서, 인라인 멤버로 넣으면 `sizeof(RequestServerImpl)` 이 **2048 을 초과 → 컨테이너 오버플로우 → 인접 메모리 손상 → 종료 시 AV**.
-- Phase 5(custom-only, `_router` 없음)에서는 정상이었고, `_router` 인라인 추가 시점부터 크래시 → 정황 일치.
-- (정확한 `sizeof` 측정은 probe 컴파일이 막혀 아직 숫자로 확정 못 함. 다음 세션에서 `static_assert(sizeof(RequestServerImpl) <= 2048)` 로 즉시 확인 가능.)
-
-### 제안 수정 (이번에 "왜 갑자기 unique_ptr?" 의 맥락)
-컨테이너 오버플로우를 피하려고 `_router` 를 **`std::unique_ptr<HttpRouterImpl>`** 로 바꿔 힙에 두고 open() 에서 `reset(new ...)` 하려 했음.
-→ 작긴 하지만 합의 없이 들어간 변경이라 **되돌렸고**, working tree 는 HEAD 와 일치(수정 미적용).
-
-**다음 세션 선택지 (택1, 사용자 결정 필요):**
-1. `_router` 를 `unique_ptr<HttpRouterImpl>` 로 (힙). RequestServerImpl 풋프린트에서 라우터 제외. — 가장 국소적.
-2. `RequestServer::IMPLEMENTATION_SIZE` 를 2048 → 충분히 키움. — pImpl 관례 유지, 인라인 멤버 그대로.
-3. 라우터를 RequestServerImpl 밖(별도 소유)으로.
-
-먼저 `static_assert` 로 실제 초과 여부/초과량부터 확정할 것.
+> 참고: `BroadcastServer`/`Client` 도 동일한 `char _container[2048]` pImpl 패턴.
+> Broadcast 단위/통합은 통과 중이지만, 같은 가드(static_assert)를 거는 것을 권장.
 
 ---
 
-## 5. 프로세스 메모 (이번에 깨진 것 / 교훈)
+## 4. 미해결 — `TCPRequestFile` 파이프라인 데이터 불일치
 
-- **병렬 편집 race**: 같은 파일에 Edit/Write 를 한 배치에서 여러 개 + 빌드까지 섞어 돌렸더니, linter 재읽기와 충돌해 일부 Write 가 "modified since read" 로 드롭 → **빌드 안 되는 상태로 커밋**되는 사고(d33c0a3/cd5196a). 이후 순차 적용으로 수습. → 소스 파일은 **한 번에 하나씩, 순차로** 편집.
-- **test/msvc stale object 함정**: `test/msvc` 트리는 `src/` 를 절대경로로 컴파일하는데 외부경로 변경을 Ninja 가 자주 못 잡아 **relink 만 하고 옛 .obj 재사용** → 러너가 옛 코드 실행. "67/67 pass" 로 보였던 게 실은 stale 바이너리였음(여러 번 오판). 대응: 바뀐 TU 의 `.obj` 강제 삭제 후 빌드, `Building CXX object ...` 로그 확인, obj/src mtime 비교. (CLAUDE.md 에 경고 추가함.)
-- **무단 변경 자제**: 합의 안 된 리네임/리팩터(예: ObjectPool 무단 개명, 통합 Outcome enum, unique_ptr)는 사용자에게 먼저 확인.
+크래시 수정 후 `TCPRequestFile` 이 **완주는 하지만** 데이터 단언에서 실패:
+- `EXPECT_EQ(response_header.response_no, request_no)` 불일치,
+  `EXPECT_TRUE(memcmp(response.data, test_case.data(), 4096) == 0)` false 등
+  (file.cpp:327/345/369/373…).
+
+### 정황
+- `TCPRequestEcho`(엄격 req/resp, 파이프라인 없음)는 **통과**.
+- `TCPRequestFile` 은 **응답 없는 WRITE_FILE(STREAM, `processWithoutResponse`)
+  메시지를 응답을 읽지 않고 연속 전송** → 서버 recv 버퍼에 **여러 메시지가 파이프라인으로
+  적재** → 이후 CLOSE/READ 응답이 desync/손상.
+- 즉 실패는 정확히 **다중 메시지 파이프라인(drain/compact) 경로**에 국한.
+
+### 미확정 — 회귀 vs 기존버그
+- **이게 StagingBuffer 변경의 회귀인지, 아니면 원래 있던 파이프라인 버그가 종료
+  크래시에 가려져 있다가 드러난 것인지 아직 확정 못 함.** (baseline(vector 기반)
+  + 사이즈픽스 비교 실행을 진행하던 중 중단됨.)
+- 다음 단계: **stash 로 버퍼 6파일만 되돌린 baseline + 사이즈픽스**로 `TCPRequestFile`
+  을 돌려 동일 실패면 기존버그, 통과면 StagingBuffer 회귀로 확정. (러너는 현재
+  baseline 바이너리로 빌드돼 있어 그대로 실행 가능.)
+
+---
+
+## 5. 다음 작업
+
+1. **(최우선) §4 회귀/기존버그 판정** 후 해당 경로 수정.
+2. `BroadcastServer`/`Client` 에도 `static_assert(sizeof(Impl) <= IMPLEMENTATION_SIZE)`.
+3. **HttpPhase / WebSocketPhase** 구현 + host `phaseForState` HTTP/WS 그룹 연결.
+4. libcurl 기반 http/websocket 서버 통합 테스트.
 
 ---
 
 ## 6. 현재 상태 한눈에
 
-- 빌드: 두 라이브러리 **컴파일/링크는 green** (HEAD 기준).
-- 단위 테스트: 프로토콜 헬퍼(Ws/Sniff/HttpParser) + HTTP view/router/url 등 순수 단위 테스트 **pass**.
-- 통합(raw Custom 서버) 회귀: **§4 크래시로 실패** — HEAD 는 Phase 5 대비 이 경로가 regress 상태.
-- HttpPhase/WebSocketPhase/libcurl 서버 테스트: **미착수**.
+- 빌드: 라이브러리/러너 **green**.
+- `TCPRequestEcho`(raw Custom, FAST, keep-alive): **pass** (종료 크래시 해소).
+- `TCPRequestFile`(raw Custom, STREAM 파이프라인): **데이터 단언 실패** — §4, 원인
+  판정 대기.
+- 단위 테스트(프로토콜 헬퍼/HTTP view·router·url): pass.
+- HttpPhase/WebSocketPhase/libcurl 서버 테스트: 미착수.

@@ -2,6 +2,7 @@
 #define __BN3MONKEY_CONNECTION_PHASE__
 
 #include "ConnectionState.hpp"
+#include "../core/memory/buffer.hpp"
 
 #include <cstddef>
 #include <functional>
@@ -27,20 +28,18 @@ namespace Bn3Monkey
     public:
         virtual ~PhaseHost() = default;
 
-        // ── accumulated input (message starts at offset 0) ──
-        virtual const char* input()      const = 0;
-        virtual size_t      inputSize()  const = 0;
-        virtual void        ensureInputCapacity(size_t total_bytes) = 0;
-        // Drop the first n bytes of input; trailing (pipelined) bytes shift to
-        // the front so the next message again starts at offset 0.
-        virtual void        consumeInput(size_t n) = 0;
+        // ── input accumulation buffer ──
+        // recv appends at tail(); the active phase parses the current message
+        // from head() for pending() bytes, then drain()s it once consumed —
+        // trailing (pipelined) bytes stay pending for the next parse. The host
+        // reserve()s / compact()s it around recv, so a phase must re-fetch
+        // head() after any reserve(). See StagingBuffer.
+        virtual StagingBuffer& input()  = 0;
 
         // ── response output buffer (host flushes it after a Sending* state) ──
-        virtual char*  output()         = 0;
-        virtual size_t outputCapacity() const = 0;
-        virtual void   ensureOutputCapacity(size_t bytes) = 0;
-        // Mark n bytes in output() as the response to flush (resets written=0).
-        virtual void   setOutputSize(size_t n) = 0;
+        // A phase clear()s it, writes the response into data(), then fill()s the
+        // produced length; the host drains head()..pending() to the socket.
+        virtual StagingBuffer& output() = 0;
 
         // ── collaborators ──
         // The ClientConnection passed to user handler callbacks (the host itself).
@@ -70,12 +69,12 @@ namespace Bn3Monkey
         virtual ~ConnectionPhase() = default;
 
         // Buffered input is available while in a read-state of this group.
-        // Consume/parse/dispatch as much as possible and return the next
-        // ConnectionState. NEED_MORE is expressed by returning the same
-        // Receiving* state WITHOUT consuming input (the host then waits for the
-        // socket). For SLOW, call host.dispatchSlow(call, listener) and return
-        // the Sending* state. To send an error/close, fill output() +
-        // setOutputSize() and return ConnectionState::Closing.
+        // Parse/dispatch as much as possible (drain()ing input as messages are
+        // consumed) and return the next ConnectionState. NEED_MORE is expressed
+        // by returning the same Receiving* state WITHOUT draining input (the host
+        // then waits for the socket). For SLOW, call host.dispatchSlow(call,
+        // listener) and return the Sending* state. To send an error/close,
+        // clear()+write+fill() output() and return ConnectionState::Closing.
         virtual ConnectionState onReadable(PhaseHost& host,
                                            SocketMultiEventListener& listener) = 0;
 

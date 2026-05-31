@@ -17,47 +17,50 @@ namespace Bn3Monkey
     {
         CustomProtocolRequestHandler* handler = host.customHandler();
         // The host only routes to this phase when a Custom handler exists.
-        const size_t available = host.inputSize();
+        StagingBuffer& in = host.input();
 
         // 1. header accumulation
         const size_t header_len = handler->headerSize();
-        if (available < header_len) {
-            host.ensureInputCapacity(header_len);
+        if (in.pending() < header_len) {
+            in.reserve(header_len - in.pending());   // room to receive the rest
             return CustomMessageResult::NEED_MORE_BYTES;
         }
 
         // 2. payload size derived from the (now-complete) header
-        const size_t payload_len = handler->payloadSize(host.input());
+        const size_t payload_len = handler->payloadSize(static_cast<const char*>(in.head()));
         const size_t total = header_len + payload_len;
-        host.ensureInputCapacity(total);   // may realloc — re-fetch base below
-        if (host.inputSize() < total) {
+        if (in.pending() < total) {
+            in.reserve(total - in.pending());        // room for the full message
             return CustomMessageResult::NEED_MORE_BYTES;
         }
 
         // 3. dispatch by mode
-        const RequestProcessingMode mode = handler->classifyMode(host.input());
+        const RequestProcessingMode mode = handler->classifyMode(static_cast<const char*>(in.head()));
 
         if (mode == RequestProcessingMode::READ_STREAM ||
             mode == RequestProcessingMode::WRITE_STREAM) {
-            const char* base = host.input();
+            const char* base = static_cast<const char*>(in.head());
             CustomProtocolRequestImpl req(base, header_len, base + header_len, payload_len);
             handler->processWithoutResponse(host.connection(), req);
-            host.consumeInput(total);
+            in.drain(total);
             return CustomMessageResult::DISPATCHED_FAST_NO_RESPONSE;
         }
 
         // FAST and SLOW share the same body; SLOW just defers it to the worker.
         // The message bytes stay valid until the call runs because the host does
-        // not recv() (and thus never grows/shifts the buffer) while a SLOW
-        // dispatch holds the socket out of the listener.
+        // not recv() (and thus never reserve()s/compact()s the buffer) while a
+        // SLOW dispatch holds the socket out of the listener.
         auto call = [&host, handler, header_len, payload_len, total]() {
-            const char* base = host.input();
+            StagingBuffer& in  = host.input();
+            StagingBuffer& out = host.output();
+            const char* base = static_cast<const char*>(in.head());
             CustomProtocolRequestImpl req(base, header_len, base + header_len, payload_len);
+            out.clear();                    // reset previous send state to offset 0
             size_t produced = 0;
-            CustomProtocolResponseImpl resp(host.output(), host.outputCapacity(), &produced);
+            CustomProtocolResponseImpl resp(out.data(), out.capacity(), &produced);
             handler->process(host.connection(), req, resp);
-            host.setOutputSize(produced);
-            host.consumeInput(total);
+            out.fill(produced);
+            in.drain(total);
         };
 
         if (mode == RequestProcessingMode::FAST) {

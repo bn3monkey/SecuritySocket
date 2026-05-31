@@ -23,7 +23,9 @@ ClientConnectionImpl::ClientConnectionImpl(ServerActiveSocketContainer&  contain
       _router(router),
       _custom(custom),
       _is_secure(is_secure),
-      _pdu_size(pdu_size ? pdu_size : kRecvChunk)
+      _pdu_size(pdu_size ? pdu_size : kRecvChunk),
+      _input(pdu_size ? pdu_size : kRecvChunk),
+      _output(pdu_size ? pdu_size : kRecvChunk)
 {
     _socket = _container.get();
     fd = _socket->descriptor();   // SocketEventContext::fd — listener key
@@ -31,9 +33,6 @@ ClientConnectionImpl::ClientConnectionImpl(ServerActiveSocketContainer&  contain
     if (_custom && _custom->supportWebSocket()) {
         _ws_pattern = _custom->webSocketConfig().pattern;
     }
-
-    _input_buffer.resize(_pdu_size);
-    _output_buffer.resize(_pdu_size);
 }
 
 ClientConnectionImpl::~ClientConnectionImpl()
@@ -62,8 +61,9 @@ void ClientConnectionImpl::onAccept()
     }
     _listener_event = SocketEventType::READ;   // server registered READ on accept
     _detached = false;
-    _input_received = 0;
-    _output_size = _output_written = 0;
+    _input.clear();
+    _output.clear();
+    _output_fully_sent = false;
     _is_websocket = false;
     _closed = false;
 }
@@ -75,56 +75,34 @@ void ClientConnectionImpl::closeSocket()
     _closed = true;
 }
 
-// ── PhaseHost: buffers ──────────────────────────────────────────────────────
-
-void ClientConnectionImpl::ensureInputCapacity(size_t total_bytes)
-{
-    if (_input_buffer.size() < total_bytes) _input_buffer.resize(total_bytes);
-}
-
-void ClientConnectionImpl::ensureOutputCapacity(size_t bytes)
-{
-    if (_output_buffer.size() < bytes) _output_buffer.resize(bytes);
-}
-
-void ClientConnectionImpl::consumeInput(size_t n)
-{
-    if (n >= _input_received) { _input_received = 0; return; }
-    std::memmove(_input_buffer.data(),
-                 _input_buffer.data() + n,
-                 _input_received - n);
-    _input_received -= n;
-}
-
 // ── socket I/O ───────────────────────────────────────────────────────────────
 
 int ClientConnectionImpl::recvChunk()
 {
-    ensureInputCapacity(_input_received + kRecvChunk);
-    const size_t space = _input_buffer.size() - _input_received;
+    if (_input.empty()) _input.clear();          // fully consumed → reset to offset 0
+    if (!_input.reserve(kRecvChunk)) return -1;   // OOM → treat as fatal
 
-    auto r = _socket->read(_input_buffer.data() + _input_received, space);
+    auto r = _socket->read(_input.tail(), _input.remaining());
     const NetworkResultCode code = r.code();
     if (code == NetworkResultCode::SOCKET_CLOSED) return -1;
     if (code == NetworkResultCode::SOCKET_TIMEOUT) return 0;   // would-block
     const int32_t n = r.bytes();
     if (n <= 0) return 0;
-    _input_received += static_cast<size_t>(n);
+    _input.fill(static_cast<size_t>(n));
     return n;
 }
 
 bool ClientConnectionImpl::flushOutput()
 {
     _output_fully_sent = false;
-    auto r = _socket->write(_output_buffer.data() + _output_written,
-                            _output_size - _output_written);
+    auto r = _socket->write(_output.head(), _output.pending());
     const NetworkResultCode code = r.code();
     if (code == NetworkResultCode::SOCKET_CLOSED) return false;
     if (code == NetworkResultCode::SOCKET_TIMEOUT) return true;   // would-block; stay
     const int32_t n = r.bytes();
     if (n < 0) return false;
-    _output_written += static_cast<size_t>(n);
-    _output_fully_sent = (_output_written >= _output_size);
+    _output.drain(static_cast<size_t>(n));
+    _output_fully_sent = _output.empty();
     return true;
 }
 
@@ -188,7 +166,7 @@ ClientConnectionImpl::driveRead(SocketMultiEventListener& listener)
         if (!p) return Disposition::CLOSE;
 
         const ConnectionState prev = _state;
-        const size_t before = _input_received;
+        const size_t before = _input.pending();
 
         _state = p->onReadable(*this, listener);
 
@@ -202,8 +180,8 @@ ClientConnectionImpl::driveRead(SocketMultiEventListener& listener)
 
         // read-state: re-drive only if we made progress and bytes remain
         const bool state_changed = (_state != prev);
-        const bool consumed      = (_input_received < before);
-        if (_input_received > 0 && (state_changed || consumed)) continue;
+        const bool consumed      = (_input.pending() < before);
+        if (_input.pending() > 0 && (state_changed || consumed)) continue;
 
         armListener(listener);
         return Disposition::KEEP;
@@ -228,7 +206,7 @@ ClientConnectionImpl::onWriteEvent(SocketMultiEventListener& listener)
 
     // read-state: re-arm READ, then drain any pipelined bytes immediately.
     armListener(listener);
-    if (_input_received > 0) return driveRead(listener);
+    if (_input.pending() > 0) return driveRead(listener);
     return Disposition::KEEP;
 }
 

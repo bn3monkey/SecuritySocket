@@ -8,9 +8,10 @@ namespace Bn3Monkey
                                            SocketMultiEventListener& listener)
     {
         (void)listener;   // sniff never dispatches SLOW
-        // Do NOT consume: the HTTP/Custom phase re-reads these same bytes as the
+        // Do NOT drain: the HTTP/Custom phase re-reads these same bytes as the
         // start of its first message (single-buffer carry-over, no copy).
-        switch (ProtocolSniffer::detect(host.input(), host.inputSize())) {
+        StagingBuffer& in = host.input();
+        switch (ProtocolSniffer::detect(static_cast<const char*>(in.head()), in.pending())) {
         case Protocol::HTTP:
             return ConnectionState::ReceivingHttpRequest;
         case Protocol::CUSTOM:

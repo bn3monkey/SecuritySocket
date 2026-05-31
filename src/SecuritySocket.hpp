@@ -621,7 +621,11 @@ namespace Bn3Monkey
     class SECURITYSOCKET_API RequestServer
     {
     public:
-        static constexpr size_t IMPLEMENTATION_SIZE = 2048;
+        // Inline storage for RequestServerImpl (placement-new'd into _container).
+        // Must stay >= sizeof(RequestServerImpl); a static_assert in
+        // RequestServer.cpp enforces it. Sized with headroom for the Phase 6
+        // HTTP/WebSocket phases still to be wired into ClientConnectionImpl.
+        static constexpr size_t IMPLEMENTATION_SIZE = 4096;
 
         explicit RequestServer(const NetworkConfiguration& configuration);
         explicit RequestServer(const NetworkConfiguration& configuration, const TlsServerConfiguration& tls_configuration);
