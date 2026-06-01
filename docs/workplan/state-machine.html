@@ -254,10 +254,14 @@ sequenceDiagram
     <tr class="http"><td><code>WaitingForNextHttpRequest</code></td><td>READ</td><td>keep-alive</td></tr>
     <tr class="wshs"><td><code>SendingHandshakeResponse</code></td><td>WRITE</td><td>101 송신</td></tr>
     <tr class="wstunnel"><td><code>ReceivingWebSocketFrame</code></td><td>READ</td><td>frame 누적 + unmask</td></tr>
+    <tr class="wstunnel"><td><code>ReceivingWebSocketStream</code></td><td>READ</td><td>WRITE_STREAM 청크(WS 메시지) 수신 — §6-7</td></tr>
     <tr class="wstunnel"><td><code>SendingWebSocketResponse</code></td><td>WRITE</td><td>encoded frame 송신</td></tr>
+    <tr class="wstunnel"><td><code>SendingWebSocketStream</code></td><td>WRITE</td><td>READ_STREAM 청크를 WS frame 으로 연속 송신 — §6-7</td></tr>
     <tr class="wstunnel"><td><code>WaitingForNextWebSocketMessage</code></td><td>READ</td><td>다음 frame 대기</td></tr>
     <tr class="custom"><td><code>ReceivingCustomMessage</code></td><td>READ</td><td>header + payload 누적</td></tr>
+    <tr class="custom"><td><code>ReceivingCustomStream</code></td><td>READ</td><td>WRITE_STREAM 청크 수신(무응답) — §6-7</td></tr>
     <tr class="custom"><td><code>SendingCustomResponse</code></td><td>WRITE</td><td></td></tr>
+    <tr class="custom"><td><code>SendingCustomStream</code></td><td>WRITE</td><td>READ_STREAM 청크 연속 송신 — §6-7</td></tr>
     <tr class="custom"><td><code>WaitingForNextCustomMessage</code></td><td>READ</td><td>다음 메시지 대기</td></tr>
     <tr class="lifecycle"><td><code>Closing</code></td><td>WRITE</td><td>잔여 byte 송신 후 close</td></tr>
     <tr class="lifecycle"><td><code>Closed</code></td><td>(removed from listener)</td><td>connection pool 반환 직전</td></tr>
@@ -348,10 +352,10 @@ void adjustListener(SocketMultiEventListener&amp; listener, ClientConnectionImpl
       <td>worker가 직접 <code>listener.addEvent(socket, WRITE)</code> 호출<br>→ listener 내부 wakeup → event loop 즉시 깨어남 → 다음 wait()에서 WRITE 이벤트 fire → 자연스레 case WRITE 처리</td>
     </tr>
     <tr>
-      <td><code>READ_STREAM</code> / <code>WRITE_STREAM</code></td>
-      <td>worker</td>
-      <td>handleRead 즉시 반환. event loop가 더 이상 이 fd 안 봄</td>
-      <td>stream 종료 시 worker가 connection 해제 또는 normal flow 복귀 signal</td>
+      <td><code>WRITE_STREAM</code> / <code>READ_STREAM</code></td>
+      <td><strong>Event loop thread</strong> (청크 단위 inline)</td>
+      <td>fd는 listener에 그대로. 한 E_Read/E_Write마다 <strong>청크 1개</strong>만 처리 후 반환 → 다른 fd와 자연 인터리브</td>
+      <td>별도 통지 없음. 핸들러가 <code>onXxxStreamData</code> 에서 <code>StreamProgress::COMPLETE</code> 반환 시 <code>WaitingForNextCustomMessage</code>로 복귀. 상세 §6-7</td>
     </tr>
   </tbody>
 </table>
@@ -416,22 +420,41 @@ stateDiagram-v2
 
     ReceivingWebSocketFrame --> ReceivingWebSocketFrame : E_Read (incomplete / fragment)
     ReceivingWebSocketFrame --> SendingWebSocketResponse : E_Read (FAST done or SLOW dispatched or PING)
+    ReceivingWebSocketFrame --> ReceivingWebSocketStream : E_Read (WRITE_STREAM begin)
+    ReceivingWebSocketFrame --> SendingWebSocketStream : E_Read (READ_STREAM begin)
     ReceivingWebSocketFrame --> WaitingForNextWebSocketMessage : E_Read (control / no response)
     ReceivingWebSocketFrame --> Closing : E_Read (Close / text / invalid)
     ReceivingWebSocketFrame --> Closed : E_Disconnected
+
+    ReceivingWebSocketStream --> ReceivingWebSocketStream : E_Read (chunk, CONTINUE)
+    ReceivingWebSocketStream --> WaitingForNextWebSocketMessage : E_Read (chunk, COMPLETE)
+    ReceivingWebSocketStream --> Closed : E_Disconnected
 
     SendingWebSocketResponse --> SendingWebSocketResponse : E_Write (partial)
     SendingWebSocketResponse --> WaitingForNextWebSocketMessage : E_Write (done)
     SendingWebSocketResponse --> Closed : E_Disconnected
 
+    SendingWebSocketStream --> SendingWebSocketStream : E_Write (chunk sent, more)
+    SendingWebSocketStream --> WaitingForNextWebSocketMessage : E_Write (last chunk sent)
+    SendingWebSocketStream --> Closed : E_Disconnected
+
     ReceivingCustomMessage --> ReceivingCustomMessage : E_Read (incomplete)
     ReceivingCustomMessage --> SendingCustomResponse : E_Read (FAST done or SLOW dispatched)
-    ReceivingCustomMessage --> WaitingForNextCustomMessage : E_Read (no response)
+    ReceivingCustomMessage --> ReceivingCustomStream : E_Read (WRITE_STREAM begin)
+    ReceivingCustomMessage --> SendingCustomStream : E_Read (READ_STREAM begin)
     ReceivingCustomMessage --> Closed : E_Disconnected
+
+    ReceivingCustomStream --> ReceivingCustomStream : E_Read (chunk, CONTINUE)
+    ReceivingCustomStream --> WaitingForNextCustomMessage : E_Read (chunk, COMPLETE)
+    ReceivingCustomStream --> Closed : E_Disconnected
 
     SendingCustomResponse --> SendingCustomResponse : E_Write (partial)
     SendingCustomResponse --> WaitingForNextCustomMessage : E_Write (done)
     SendingCustomResponse --> Closed : E_Disconnected
+
+    SendingCustomStream --> SendingCustomStream : E_Write (chunk sent, more)
+    SendingCustomStream --> WaitingForNextCustomMessage : E_Write (last chunk sent)
+    SendingCustomStream --> Closed : E_Disconnected
 
     WaitingForNextCustomMessage --> ReceivingCustomMessage : E_Read
     WaitingForNextCustomMessage --> Closed : E_Disconnected
@@ -459,8 +482,8 @@ stateDiagram-v2
 </p>
 <ul>
   <li><strong>HTTP 그룹:</strong> <code>ReceivingHttpRequest</code> → <code>SendingHttpResponse</code> → <code>WaitingForNextHttpRequest</code> → ... (keep-alive)</li>
-  <li><strong>WebSocket 그룹:</strong> <code>SendingHandshakeResponse</code> → <code>WaitingForNextWebSocketMessage</code> → <code>ReceivingWebSocketFrame</code> → <code>SendingWebSocketResponse</code> → ...</li>
-  <li><strong>Custom 그룹:</strong> <code>ReceivingCustomMessage</code> → <code>SendingCustomResponse</code> → <code>WaitingForNextCustomMessage</code> → ...</li>
+  <li><strong>WebSocket 그룹:</strong> <code>SendingHandshakeResponse</code> → <code>WaitingForNextWebSocketMessage</code> → <code>ReceivingWebSocketFrame</code> → <code>SendingWebSocketResponse</code> → ... (스트림은 <code>ReceivingWebSocketStream</code> / <code>SendingWebSocketStream</code> self-loop, §6-7)</li>
+  <li><strong>Custom 그룹:</strong> <code>ReceivingCustomMessage</code> → <code>SendingCustomResponse</code> → <code>WaitingForNextCustomMessage</code> → ... (스트림은 <code>ReceivingCustomStream</code> / <code>SendingCustomStream</code> self-loop, §6-7)</li>
 </ul>
 <p style="font-size:0.9em; color:#666;">
   Cross-protocol transition 없음 (예: Custom 메시지 후 HTTP 요청, WebSocket → HTTP 등).
@@ -507,8 +530,18 @@ stateDiagram-v2
       <td><strong>READ</strong></td>
     </tr>
     <tr class="wstunnel">
+      <td><code>ReceivingWebSocketStream</code></td>
+      <td>WRITE_STREAM 진입 후, WS 메시지(=Custom 청크)를 <code>onWriteStreamData</code>로 수신 중 (§6-7)</td>
+      <td><strong>READ</strong></td>
+    </tr>
+    <tr class="wstunnel">
       <td><code>SendingWebSocketResponse</code></td>
       <td>Custom 응답을 WS binary frame으로 wrap한 후 송신 중</td>
+      <td><strong>WRITE</strong></td>
+    </tr>
+    <tr class="wstunnel">
+      <td><code>SendingWebSocketStream</code></td>
+      <td>READ_STREAM 진입 후, <code>onReadStreamData</code> 청크를 WS frame으로 wrap해 연속 송신 중 (§6-7)</td>
       <td><strong>WRITE</strong></td>
     </tr>
     <tr class="wstunnel">
@@ -522,8 +555,18 @@ stateDiagram-v2
       <td><strong>READ</strong></td>
     </tr>
     <tr class="custom">
+      <td><code>ReceivingCustomStream</code></td>
+      <td>WRITE_STREAM 진입 후, 청크 메시지를 <code>onWriteStreamData</code>로 수신 중 (무응답, §6-7)</td>
+      <td><strong>READ</strong></td>
+    </tr>
+    <tr class="custom">
       <td><code>SendingCustomResponse</code></td>
       <td>Custom 응답 송신 중</td>
+      <td><strong>WRITE</strong></td>
+    </tr>
+    <tr class="custom">
+      <td><code>SendingCustomStream</code></td>
+      <td>READ_STREAM 진입 후, <code>onReadStreamData</code>로 청크를 연속 송신 중 (§6-7)</td>
       <td><strong>WRITE</strong></td>
     </tr>
     <tr class="custom">
@@ -832,15 +875,21 @@ HttpResponseWriteResult handleHttpResponseWrite() {
     <tr class="wstunnel"><td>E_Read</td><td>위 동일</td><td><code>handleWebSocketFrame()</code></td><td><code>PONG_TO_SEND</code> (PONG frame이 _output_buffer에 채워짐)</td><td><code>SendingWebSocketResponse</code></td><td>WRITE (modify)</td></tr>
     <tr class="wstunnel"><td>E_Read</td><td>위 동일</td><td><code>handleWebSocketFrame()</code></td><td><code>CONTROL_PONG_HANDLED</code> (수신한 PONG은 무시)</td><td><code>WaitingForNextWebSocketMessage</code></td><td>READ (unchanged)</td></tr>
     <tr class="wstunnel"><td>E_Read</td><td>위 동일</td><td><code>handleWebSocketFrame()</code></td><td><code>DISPATCHED_FAST</code> (with response)</td><td><code>SendingWebSocketResponse</code></td><td>WRITE (modify)</td></tr>
-    <tr class="wstunnel"><td>E_Read</td><td>위 동일</td><td><code>handleWebSocketFrame()</code></td><td><code>DISPATCHED_FAST_NO_RESPONSE</code> (STREAM mode)</td><td><code>WaitingForNextWebSocketMessage</code></td><td>READ (unchanged)</td></tr>
+    <tr class="wstunnel"><td>E_Read</td><td>위 동일</td><td><code>handleWebSocketFrame()</code></td><td><code>WRITE_STREAM_STARTED</code> (<code>onWriteStreamBegin</code> — 모드 진입)</td><td><code>ReceivingWebSocketStream</code></td><td>READ (unchanged)</td></tr>
+    <tr class="wstunnel"><td>E_Read</td><td>위 동일</td><td><code>handleWebSocketFrame()</code></td><td><code>READ_STREAM_STARTED</code> (<code>onReadStreamBegin</code> + 첫 청크 WS frame wrap)</td><td><code>SendingWebSocketStream</code></td><td>WRITE (modify)</td></tr>
     <tr class="wstunnel"><td>E_Read</td><td>위 동일</td><td><code>handleWebSocketFrame()</code></td><td><code>DISPATCHED_SLOW</code></td><td><code>SendingWebSocketResponse</code></td><td>remove socket (worker가 나중에 addEvent WRITE 호출)</td></tr>
     <tr class="wstunnel"><td>E_Read</td><td>위 동일</td><td><code>handleWebSocketFrame()</code></td><td><code>ERROR_CONTROL_CLOSE</code> (Close echo 송신됨)</td><td><code>Closing</code></td><td>WRITE (modify)</td></tr>
     <tr class="wstunnel"><td>E_Read</td><td>위 동일</td><td><code>handleWebSocketFrame()</code></td><td><code>ERROR_TEXT_FRAME</code> (Close 1003 송신됨)</td><td><code>Closing</code></td><td>WRITE (modify)</td></tr>
     <tr class="wstunnel"><td>E_Read</td><td>위 동일</td><td><code>handleWebSocketFrame()</code></td><td><code>ERROR_INVALID_FRAME</code> (Close 1002 송신됨)</td><td><code>Closing</code></td><td>WRITE (modify)</td></tr>
     <tr class="wstunnel"><td>E_Read</td><td>위 동일</td><td><code>handleWebSocketFrame()</code></td><td><code>SOCKET_ERROR</code></td><td><code>Closed</code></td><td>remove from listener</td></tr>
+    <tr class="wstunnel"><td>E_Read</td><td><code>ReceivingWebSocketStream</code> (R)</td><td><code>handleWebSocketFrame()</code></td><td><code>WRITE_STREAM_DOING</code> (청크 메시지, <code>onWriteStreamData==CONTINUE</code>)</td><td><code>ReceivingWebSocketStream</code> (self)</td><td>READ (unchanged)</td></tr>
+    <tr class="wstunnel"><td>E_Read</td><td><code>ReceivingWebSocketStream</code> (R)</td><td><code>handleWebSocketFrame()</code></td><td><code>WRITE_STREAM_DONE</code> (<code>onWriteStreamData==COMPLETE</code>)</td><td><code>WaitingForNextWebSocketMessage</code></td><td>READ (unchanged)</td></tr>
     <tr class="wstunnel"><td>E_Write</td><td><code>SendingWebSocketResponse</code> (W)</td><td><code>handleWebSocketResponseWrite()</code></td><td><code>SEND_INCOMPLETE</code></td><td><code>SendingWebSocketResponse</code> (self)</td><td>WRITE (unchanged)</td></tr>
     <tr class="wstunnel"><td>E_Write</td><td><code>SendingWebSocketResponse</code> (W)</td><td><code>handleWebSocketResponseWrite()</code></td><td><code>SENT_DONE</code></td><td><code>WaitingForNextWebSocketMessage</code></td><td>READ (modify)</td></tr>
-    <tr class="wstunnel"><td>E_Write</td><td><code>SendingWebSocketResponse</code> (W)</td><td><code>handleWebSocketResponseWrite()</code></td><td><code>SOCKET_ERROR</code></td><td><code>Closed</code></td><td>remove from listener</td></tr>
+    <tr class="wstunnel"><td>E_Write</td><td><code>SendingWebSocketStream</code> (W)</td><td><code>handleWebSocketResponseWrite()</code></td><td><code>READ_STREAM_DOING</code> (직전 청크 송신완료 → 다음 청크 WS frame wrap)</td><td><code>SendingWebSocketStream</code> (self)</td><td>WRITE (unchanged)</td></tr>
+    <tr class="wstunnel"><td>E_Write</td><td><code>SendingWebSocketStream</code> (W)</td><td><code>handleWebSocketResponseWrite()</code></td><td><code>READ_STREAM_DONE</code> (마지막 청크 송신완료 — 끝)</td><td><code>WaitingForNextWebSocketMessage</code></td><td>READ (modify)</td></tr>
+    <tr class="wstunnel"><td>E_Write</td><td><code>SendingWebSocketResponse</code> / <code>SendingWebSocketStream</code> (W)</td><td><code>handleWebSocketResponseWrite()</code></td><td><code>SOCKET_ERROR</code></td><td><code>Closed</code></td><td>remove from listener</td></tr>
+    <tr class="wstunnel"><td>E_Read</td><td><code>ReceivingWebSocketStream</code> (R)</td><td><code>handleWebSocketFrame()</code></td><td><code>PONG_TO_SEND</code> / <code>ERROR_*</code> (스트림 중 제어 프레임 — 아래 주석)</td><td><code>SendingWebSocketResponse</code>* / <code>Closing</code></td><td>WRITE (modify)</td></tr>
     <tr class="wstunnel"><td>E_Disconnected</td><td>(any WS state)</td><td><code>handleDisconnect()</code></td><td>—</td><td><code>Closed</code></td><td>remove from listener</td></tr>
   </tbody>
 </table>
@@ -851,7 +900,10 @@ HttpResponseWriteResult handleHttpResponseWrite() {
     CONTROL_PING_HANDLED,             // PONG 자동 송신됨
     CONTROL_PONG_HANDLED,             // 통계만 갱신
     DISPATCHED_FAST,                  // Custom handler 호출 완료 + response 직렬화
-    DISPATCHED_FAST_NO_RESPONSE,      // STREAM mode (processWithoutResponse)
+    WRITE_STREAM_STARTED,             // onWriteStreamBegin — 모드 진입 → ReceivingWebSocketStream (§6-7)
+    WRITE_STREAM_DOING,               // onWriteStreamData==CONTINUE — 청크 메시지, 계속 → 유지
+    WRITE_STREAM_DONE,                // onWriteStreamData==COMPLETE — 끝 → WaitingForNextWebSocketMessage
+    READ_STREAM_STARTED,             // onReadStreamBegin + 첫 청크 WS frame wrap → SendingWebSocketStream
     DISPATCHED_SLOW,                  // worker queue로 enqueue
     ERROR_CONTROL_CLOSE,              // Close echo 송신됨
     ERROR_TEXT_FRAME,                 // Close 1003 송신됨
@@ -916,20 +968,35 @@ WebSocketFrameResult handleWebSocketFrame(SocketMultiEventListener&amp; listener
     _header_end  = _input_consumed + hs;
     _payload_end = _header_end + ps;
 
-    // Custom handler dispatch
+    auto req = makeCustomProtocolRequest();   // 완성된 WS 메시지 = Custom (header+payload)
+
+    // ── ReceivingWebSocketStream 상태: 이 WS 메시지는 WRITE_STREAM 데이터 청크 (모드=상태) ──
+    if (state() == ConnectionState::ReceivingWebSocketStream) {
+        StreamProgress p = _custom_handler-&gt;onWriteStreamData(*this, req);  // 헤더 분기 + fwrite
+        consumeMessage();
+        return (p == StreamProgress::COMPLETE)
+                 ? WebSocketFrameResult::WRITE_STREAM_DONE       // → WaitingForNextWebSocketMessage
+                 : WebSocketFrameResult::WRITE_STREAM_DOING;     // 계속 → 유지
+    }
+
+    // ── 일반 수신 상태: classifyMode 로 진입/디스패치 결정 ──
     auto mode = _custom_handler-&gt;classifyMode(header);
     if (mode == RequestProcessingMode::FAST) {
-        auto req  = makeCustomProtocolRequest();
         auto resp = makeCustomProtocolResponse();
         _custom_handler-&gt;process(*this, req, resp);
         encodeWebSocketFrame(resp.data(), resp.length(), /*binary=*/true);
         return WebSocketFrameResult::DISPATCHED_FAST;
     }
-    if (mode == RequestProcessingMode::READ_STREAM ||
-        mode == RequestProcessingMode::WRITE_STREAM) {
-        auto req = makeCustomProtocolRequest();
-        _custom_handler-&gt;processWithoutResponse(*this, req);
-        return WebSocketFrameResult::DISPATCHED_FAST_NO_RESPONSE;
+    if (mode == RequestProcessingMode::WRITE_STREAM) {           // 트리거(START) 메시지
+        _custom_handler-&gt;onWriteStreamBegin(*this, req);         // 셋업(파일 open 등)
+        consumeMessage();
+        return WebSocketFrameResult::WRITE_STREAM_STARTED;       // → ReceivingWebSocketStream
+    }
+    if (mode == RequestProcessingMode::READ_STREAM) {
+        _custom_handler-&gt;onReadStreamBegin(*this, req);          // 송신환경 셋업
+        consumeMessage();
+        _read_last = (fillNextReadStreamFrame() == StreamProgress::COMPLETE);  // 첫 청크 (= onReadStreamData + WS wrap)
+        return WebSocketFrameResult::READ_STREAM_STARTED;        // → SendingWebSocketStream
     }
     // ★ SLOW: socket을 listener에서 빼고 queue
     //   worker가 완료 후 listener.addEvent(socket, WRITE) 직접 호출 → 내부 wakeup으로 main thread 깨움
@@ -938,7 +1005,22 @@ WebSocketFrameResult handleWebSocketFrame(SocketMultiEventListener&amp; listener
     return WebSocketFrameResult::DISPATCHED_SLOW;
 }
 
-enum class WebSocketResponseWriteResult { SEND_INCOMPLETE, SENT_DONE, SOCKET_ERROR };
+// onReadStreamData 로 청크를 채워 WS BINARY frame 으로 감싸 _output_buffer 에 넣고
+// 그 StreamProgress 를 반환. (raw Custom 의 fillNextReadStreamChunk 에 WS wrap 만 추가)
+StreamProgress fillNextReadStreamFrame() {
+    auto res = makeCustomProtocolResponse();
+    StreamProgress p = _custom_handler-&gt;onReadStreamData(*this, res);   // res.setLength()
+    encodeWebSocketFrame(res.data(), res.length(), /*binary=*/true);   // ★ WS frame 으로 wrap
+    return p;
+}
+
+enum class WebSocketResponseWriteResult {
+    SEND_INCOMPLETE,
+    SENT_DONE,                        // 단발 응답/handshake/PONG 송신완료 → WaitingForNextWebSocketMessage
+    READ_STREAM_DOING,                // 직전 청크 송신완료 → 다음 청크 WS wrap → SendingWebSocketStream 유지
+    READ_STREAM_DONE,                 // 마지막 청크 송신완료 — 끝 → WaitingForNextWebSocketMessage
+    SOCKET_ERROR
+};
 
 WebSocketResponseWriteResult handleWebSocketResponseWrite() {
     int n = send(_output_buffer.data() + _output_written, ...);
@@ -948,9 +1030,27 @@ WebSocketResponseWriteResult handleWebSocketResponseWrite() {
     if (_output_written &lt; _output_buffer.size())
         return WebSocketResponseWriteResult::SEND_INCOMPLETE;
 
+    // ── SendingWebSocketStream 상태: 다음 청크 or 종료 (§6-7, raw Custom 과 동형) ──
+    if (state() == ConnectionState::SendingWebSocketStream) {
+        if (_read_last) {                                       // ★ 마지막 청크 송신 완료
+            resetMessageOffsets();
+            return WebSocketResponseWriteResult::READ_STREAM_DONE;
+        }
+        _read_last = (fillNextReadStreamFrame() == StreamProgress::COMPLETE);  // 다음 청크 (= onReadStreamData + WS wrap)
+        return WebSocketResponseWriteResult::READ_STREAM_DOING;
+    }
     resetMessageOffsets();
     return WebSocketResponseWriteResult::SENT_DONE;
 }</code></pre>
+
+<p style="font-size:0.9em; color:#666;">
+  <strong>※ 스트림 중 제어 프레임(PING / CLOSE).</strong> <code>ReceivingWebSocketStream</code> 에서도
+  데이터 청크 이전에 opcode 분기가 먼저 도므로 PING→PONG / CLOSE→echo 는 그대로 동작한다. 단
+  PONG 송신을 위해 <code>SendingWebSocketResponse</code> 로 잠깐 빠졌다가 <strong>다시
+  <code>ReceivingWebSocketStream</code> 으로 복귀</strong>해야 한다(원래 모드 = 상태이므로 "resume
+  state" 를 기억해 <code>SendingWebSocketResponse</code> 의 <code>SENT_DONE</code> 가 Waiting 대신
+  스트림 상태로 돌아가게 함). 1차 구현 세부 — §12 리스크.
+</p>
 
 <h3>6-4. Custom (raw)</h3>
 
@@ -961,12 +1061,18 @@ WebSocketResponseWriteResult handleWebSocketResponseWrite() {
   <tbody>
     <tr class="custom"><td>E_Read</td><td><code>ReceivingCustomMessage</code> / <code>WaitingForNextCustomMessage</code> (R)</td><td><code>handleCustomMessage()</code></td><td><code>NEED_MORE_BYTES</code></td><td><code>ReceivingCustomMessage</code></td><td>READ (unchanged)</td></tr>
     <tr class="custom"><td>E_Read</td><td>위 동일</td><td><code>handleCustomMessage()</code></td><td><code>DISPATCHED_FAST</code></td><td><code>SendingCustomResponse</code></td><td>WRITE (modify)</td></tr>
-    <tr class="custom"><td>E_Read</td><td>위 동일</td><td><code>handleCustomMessage()</code></td><td><code>DISPATCHED_FAST_NO_RESPONSE</code></td><td><code>WaitingForNextCustomMessage</code></td><td>READ (unchanged)</td></tr>
     <tr class="custom"><td>E_Read</td><td>위 동일</td><td><code>handleCustomMessage()</code></td><td><code>DISPATCHED_SLOW</code></td><td><code>SendingCustomResponse</code></td><td>remove socket (worker가 나중에 addEvent WRITE 호출)</td></tr>
+    <tr class="custom"><td>E_Read</td><td>위 동일</td><td><code>handleCustomMessage()</code></td><td><code>WRITE_STREAM_STARTED</code> (<code>onWriteStreamBegin</code> — 모드 진입)</td><td><code>ReceivingCustomStream</code></td><td>READ (unchanged)</td></tr>
+    <tr class="custom"><td>E_Read</td><td>위 동일</td><td><code>handleCustomMessage()</code></td><td><code>READ_STREAM_STARTED</code> (<code>onReadStreamBegin</code> + 첫 청크 — 모드 진입)</td><td><code>SendingCustomStream</code></td><td>WRITE (modify)</td></tr>
     <tr class="custom"><td>E_Read</td><td>위 동일</td><td><code>handleCustomMessage()</code></td><td><code>SOCKET_ERROR</code></td><td><code>Closed</code></td><td>remove from listener</td></tr>
+    <tr class="custom"><td>E_Read</td><td><code>ReceivingCustomStream</code> (R)</td><td><code>handleCustomMessage()</code></td><td><code>WRITE_STREAM_DOING</code> (<code>onWriteStreamData==CONTINUE</code> — 청크 소비, 계속)</td><td><code>ReceivingCustomStream</code> (self)</td><td>READ (unchanged)</td></tr>
+    <tr class="custom"><td>E_Read</td><td><code>ReceivingCustomStream</code> (R)</td><td><code>handleCustomMessage()</code></td><td><code>WRITE_STREAM_DONE</code> (<code>onWriteStreamData==COMPLETE</code> — 끝)</td><td><code>WaitingForNextCustomMessage</code></td><td>READ (unchanged)</td></tr>
     <tr class="custom"><td>E_Write</td><td><code>SendingCustomResponse</code> (W)</td><td><code>handleCustomResponseWrite()</code></td><td><code>SEND_INCOMPLETE</code></td><td><code>SendingCustomResponse</code> (self)</td><td>WRITE (unchanged)</td></tr>
-    <tr class="custom"><td>E_Write</td><td><code>SendingCustomResponse</code> (W)</td><td><code>handleCustomResponseWrite()</code></td><td><code>SENT_DONE</code></td><td><code>WaitingForNextCustomMessage</code></td><td>READ (modify)</td></tr>
-    <tr class="custom"><td>E_Write</td><td><code>SendingCustomResponse</code> (W)</td><td><code>handleCustomResponseWrite()</code></td><td><code>SOCKET_ERROR</code></td><td><code>Closed</code></td><td>remove from listener</td></tr>
+    <tr class="custom"><td>E_Write</td><td><code>SendingCustomResponse</code> (W)</td><td><code>handleCustomResponseWrite()</code></td><td><code>SENT_DONE</code> (단발 응답 송신완료)</td><td><code>WaitingForNextCustomMessage</code></td><td>READ (modify)</td></tr>
+    <tr class="custom"><td>E_Write</td><td><code>SendingCustomStream</code> (W)</td><td><code>handleCustomResponseWrite()</code></td><td><code>SEND_INCOMPLETE</code></td><td><code>SendingCustomStream</code> (self)</td><td>WRITE (unchanged)</td></tr>
+    <tr class="custom"><td>E_Write</td><td><code>SendingCustomStream</code> (W)</td><td><code>handleCustomResponseWrite()</code></td><td><code>READ_STREAM_DOING</code> (직전 청크 송신완료 → 다음 청크 채움, 계속)</td><td><code>SendingCustomStream</code> (self)</td><td>WRITE (unchanged)</td></tr>
+    <tr class="custom"><td>E_Write</td><td><code>SendingCustomStream</code> (W)</td><td><code>handleCustomResponseWrite()</code></td><td><code>READ_STREAM_DONE</code> (마지막 청크 송신완료 — 끝)</td><td><code>WaitingForNextCustomMessage</code></td><td>READ (modify)</td></tr>
+    <tr class="custom"><td>E_Write</td><td><code>SendingCustomResponse</code> / <code>SendingCustomStream</code> (W)</td><td><code>handleCustomResponseWrite()</code></td><td><code>SOCKET_ERROR</code></td><td><code>Closed</code></td><td>remove from listener</td></tr>
     <tr class="custom"><td>E_Disconnected</td><td>(any Custom state)</td><td><code>handleDisconnect()</code></td><td>—</td><td><code>Closed</code></td><td>remove from listener</td></tr>
   </tbody>
 </table>
@@ -974,48 +1080,56 @@ WebSocketResponseWriteResult handleWebSocketResponseWrite() {
 <pre><code>enum class CustomMessageResult {
     NEED_MORE_BYTES,
     DISPATCHED_FAST,                  // process() 호출 완료 + response 직렬화
-    DISPATCHED_FAST_NO_RESPONSE,      // STREAM mode (processWithoutResponse)
     DISPATCHED_SLOW,                  // worker queue로 enqueue
+    WRITE_STREAM_STARTED,             // onWriteStreamBegin — 모드 진입 → Receiving 유지 (§6-7)
+    WRITE_STREAM_DOING,               // onWriteStreamData==CONTINUE — 청크 소비, 계속 → Receiving 유지
+    WRITE_STREAM_DONE,                // onWriteStreamData==COMPLETE — 끝 → WaitingForNext
+    READ_STREAM_STARTED,              // onReadStreamBegin + 첫 청크 → Sending
     SOCKET_ERROR
 };
 
+// 스트림은 "응답 없는 framed 메시지의 연속"(§6-7). 매 메시지를 정상 프레이밍하되
+// process() 대신 onWriteStreamData 로 보내고, 핸들러 반환값(COMPLETE)으로 종료를 결정한다.
 CustomMessageResult handleCustomMessage(SocketMultiEventListener&amp; listener) {
     int n = recv(_input_buffer.data() + _input_received, ...);
     if (n &lt;= 0) return CustomMessageResult::SOCKET_ERROR;
     _input_received += n;
 
-    size_t accumulated = _input_received - _input_consumed;
-
-    // 1. header 누적 미완료
+    // 공통: 완성된 framed 메시지 1개 확보 (header + payloadSize 만큼 payload)
     size_t hs = _custom_handler-&gt;headerSize();
-    if (accumulated &lt; hs) {
-        return CustomMessageResult::NEED_MORE_BYTES;
-    }
-    _header_end = _input_consumed + hs;
-
-    // 2. payload 크기 결정
+    if (_input_received - _input_consumed &lt; hs) return CustomMessageResult::NEED_MORE_BYTES;
     const void* header = _input_buffer.data() + _input_consumed;
-    size_t ps = _custom_handler-&gt;payloadSize(header);
-    _payload_end = _header_end + ps;
+    size_t ps = _custom_handler-&gt;payloadSize(header);             // 청크도 작은 framed 메시지
+    if (_input_received - _input_consumed &lt; hs + ps) return CustomMessageResult::NEED_MORE_BYTES;
+    auto req = makeCustomProtocolRequest();                       // 이 메시지(header+payload) view
 
-    // 3. payload 누적 미완료
-    if (_input_received &lt; _payload_end) {
-        return CustomMessageResult::NEED_MORE_BYTES;
+    // ── ReceivingCustomStream 상태: 이 메시지는 WRITE_STREAM 데이터 청크 (모드=상태) ──
+    if (state() == ConnectionState::ReceivingCustomStream) {
+        StreamProgress p = _custom_handler-&gt;onWriteStreamData(*this, req);  // 헤더 분기 + fwrite
+        _input_consumed += hs + ps;
+        if (p == StreamProgress::COMPLETE)                       // ★ 종료 시점(핸들러가 결정)
+            return CustomMessageResult::WRITE_STREAM_DONE;       //   → WaitingForNextCustomMessage
+        return CustomMessageResult::WRITE_STREAM_DOING;          // 청크 소비, 계속 → 상태 유지
     }
 
-    // 4. dispatch mode 결정
+    // ── 일반 수신 상태: classifyMode 로 진입/디스패치 결정 (process() 의 반환이 아님) ──
     auto mode = _custom_handler-&gt;classifyMode(header);
+    if (mode == RequestProcessingMode::WRITE_STREAM) {           // 트리거(START) 메시지
+        _custom_handler-&gt;onWriteStreamBegin(*this, req);         // 셋업(파일 open 등)
+        _input_consumed += hs + ps;
+        return CustomMessageResult::WRITE_STREAM_STARTED;        // → ReceivingCustomStream (모드=상태)
+    }
+    if (mode == RequestProcessingMode::READ_STREAM) {
+        _custom_handler-&gt;onReadStreamBegin(*this, req);          // 송신환경 셋업
+        _input_consumed += hs + ps;
+        _read_last = (fillNextReadStreamChunk() == StreamProgress::COMPLETE);  // 첫 청크 (= onReadStreamData)
+        return CustomMessageResult::READ_STREAM_STARTED;        // → SendingCustomStream (모드=상태)
+    }
     if (mode == RequestProcessingMode::FAST) {
-        auto req  = makeCustomProtocolRequest();
         auto resp = makeCustomProtocolResponse();
         _custom_handler-&gt;process(*this, req, resp);
+        _input_consumed += hs + ps;
         return CustomMessageResult::DISPATCHED_FAST;
-    }
-    if (mode == RequestProcessingMode::READ_STREAM ||
-        mode == RequestProcessingMode::WRITE_STREAM) {
-        auto req = makeCustomProtocolRequest();
-        _custom_handler-&gt;processWithoutResponse(*this, req);
-        return CustomMessageResult::DISPATCHED_FAST_NO_RESPONSE;
     }
     // ★ SLOW: socket을 listener에서 빼고 queue
     //   worker가 완료 후 listener.addEvent(socket, WRITE) 직접 호출 → 내부 wakeup으로 main thread 깨움
@@ -1024,7 +1138,19 @@ CustomMessageResult handleCustomMessage(SocketMultiEventListener&amp; listener) 
     return CustomMessageResult::DISPATCHED_SLOW;
 }
 
-enum class CustomResponseWriteResult { SEND_INCOMPLETE, SENT_DONE, SOCKET_ERROR };
+// onReadStreamData 로 출력 버퍼를 다음 청크로 채우고 그 StreamProgress 를 반환.
+StreamProgress fillNextReadStreamChunk() {
+    auto res = makeCustomProtocolResponse();
+    return _custom_handler-&gt;onReadStreamData(*this, res);        // res.setLength() 로 청크 길이
+}
+
+enum class CustomResponseWriteResult {
+    SEND_INCOMPLETE,
+    SENT_DONE,                        // 단발 응답 송신 완료 → WaitingForNext
+    READ_STREAM_DOING,                // 직전 청크 송신완료 → 다음 청크 채움, 계속 → Sending 유지
+    READ_STREAM_DONE,                 // 마지막 청크 송신완료 — 끝 → WaitingForNext
+    SOCKET_ERROR
+};
 
 CustomResponseWriteResult handleCustomResponseWrite() {
     int n = send(_output_buffer.data() + _output_written, ...);
@@ -1034,9 +1160,21 @@ CustomResponseWriteResult handleCustomResponseWrite() {
     if (_output_written &lt; _output_buffer.size())
         return CustomResponseWriteResult::SEND_INCOMPLETE;
 
+    // ── SendingCustomStream 상태: 방금 보낸 청크가 마지막이었으면 종료, 아니면 다음 청크 (§6-7) ──
+    if (state() == ConnectionState::SendingCustomStream) {
+        if (_read_last) {                                   // ★ 종료 시점(마지막 청크 송신 완료)
+            resetMessageOffsets();
+            return CustomResponseWriteResult::READ_STREAM_DONE;  // → WaitingForNextCustomMessage
+        }
+        _read_last = (fillNextReadStreamChunk() == StreamProgress::COMPLETE);  // 다음 청크 (= onReadStreamData)
+        return CustomResponseWriteResult::READ_STREAM_DOING;     // → SendingCustomStream 유지
+    }
     resetMessageOffsets();
-    return CustomResponseWriteResult::SENT_DONE;
-}</code></pre>
+    return CustomResponseWriteResult::SENT_DONE;                // 단발 응답(SendingCustomResponse)
+}
+
+// ※ _read_last 는 "현재 모드" 플래그가 아니라, 마지막 청크 판정(fill 시점)과 그 flush 완료
+//   (전이 시점)의 1틱 간극을 잇는 송신 bookkeeping. 모드 자체는 ConnectionState 가 가진다.
 
 <h3>6-5. SLOW Dispatch — Worker thread 동작</h3>
 
@@ -1099,9 +1237,8 @@ listener.removeEvent(_socket);
 queueToWorker(task, listener);
 return ROUTE_DISPATCHED_SLOW;
 // → state = SendingHttpResponse (response 있을 예정)
-//   또는 state = WaitingForNextHttpRequest (processWithoutResponse 예정 — 미리 결정 가능 시)
-//   ※ 현재 state는 일단 SendingHttpResponse로 두고, worker가 no_response면 READ 등록 시
-//      다음 E_Read 처리에서 자연스레 ReceivingHttpRequest로 흐름
+//   ※ SLOW 는 응답을 만드는 process() 전용. 무응답 경로(WRITE_STREAM)는 SLOW 가 아니라
+//     §6-7 의 스트림 ingest 로 처리되므로 여기 분기 없음.
 
 (worker 실행 중... socket이 listener에 없으니 main thread는 다른 fd만 처리)
 
@@ -1175,6 +1312,70 @@ void handleDisconnect() {
   Server event loop의 별도 분기에서 <code>accept()</code> → new <code>ClientConnectionImpl</code> → state = <code>Sniffing</code>으로 시작.
 </p>
 
+<h3>6-7. Streaming — <code>WRITE_STREAM</code> / <code>READ_STREAM</code></h3>
+
+<p>
+  <strong>핵심:</strong> 스트림 "모드"는 별도 플래그가 아니라 <strong>전용 ConnectionState</strong>로
+  표현한다 — <code>ReceivingCustomStream</code>(WRITE_STREAM 수신) / <code>SendingCustomStream</code>
+  (READ_STREAM 송신). 두 상태는 각자 self-loop를 청크 단위로 반복하다가, 핸들러가
+  <code>StreamProgress::COMPLETE</code> 를 반환하면 <code>WaitingForNextCustomMessage</code>로 빠진다.
+  자세한 설계: <a href="./milestone_write_stream.md">milestone_write_stream.md</a> §5.
+</p>
+
+<table>
+  <thead><tr><th>모드 (client 관점)</th><th>전용 state (self-loop)</th><th>handler 훅</th><th>종료 시점</th></tr></thead>
+  <tbody>
+    <tr class="custom">
+      <td><strong>WRITE_STREAM</strong><br>(client→server 쓰기, 무응답)</td>
+      <td><code>ReceivingCustomStream</code> (READ)</td>
+      <td><code>onWriteStreamBegin → onWriteStreamData*</code></td>
+      <td><code>onWriteStreamData()</code>가 <code>COMPLETE</code> 반환</td>
+    </tr>
+    <tr class="custom">
+      <td><strong>READ_STREAM</strong><br>(client←server 읽기, 요청 1개)</td>
+      <td><code>SendingCustomStream</code> (WRITE)</td>
+      <td><code>onReadStreamBegin → onReadStreamData*</code></td>
+      <td><code>onReadStreamData()</code>가 <code>COMPLETE</code> 반환</td>
+    </tr>
+  </tbody>
+</table>
+
+<ul>
+  <li><strong>응답 없는 framed 메시지의 연속:</strong> 스트림은 새 프레이밍을 만들지 않는다.
+    기존 <code>headerSize()</code>+<code>payloadSize()</code> 로 청크 메시지를 프레이밍하되
+    <code>process()</code> 대신 <code>onWriteStreamData</code> 로 보내고 응답을 만들지 않을 뿐이다.</li>
+  <li><strong>종료는 핸들러:</strong> phase 는 길이를 추적하지 않는다. <code>onXxxStreamData</code> 가
+    <code>req.header()</code>(EOF/last 플래그)를 보고 <code>StreamProgress::COMPLETE</code> 를 반환하는
+    순간이 "종료 시점" → 일반 수신 상태로 복귀. 별도 <code>*End</code> 콜백 없음.</li>
+  <li><strong>고정 메모리:</strong> 각 청크가 작은 framed 메시지라 <code>reserve(hs+ps)</code> 가 청크
+    단위로 bounded. 스트림 길이와 무관하게 버퍼는 청크 급(≈16KB) 유지.</li>
+  <li><strong>공정성:</strong> 한 E_Read/E_Write당 청크 1개만 처리하고 listener로 양보 →
+    한 연결의 대용량 전송이 다른 fd를 굶기지 않음(§2-5).</li>
+  <li><strong>모드 = 상태(플래그 없음):</strong> phase 는 <code>host.state()</code> 가
+    <code>ReceivingCustomStream</code>/<code>SendingCustomStream</code> 인지로 분기한다.
+    <code>_write_stream_active</code>/<code>_read_stream_active</code> 같은 별도 모드 플래그가 없다 —
+    상태의 단일 출처는 <code>ConnectionState</code>.</li>
+  <li><strong>응답 모델:</strong> WRITE_STREAM은 <code>output_buffer</code>를 건드리지 않아
+    무응답(<code>ReceivingCustomStream</code> self-loop). READ_STREAM은 매 E_Write 송신 완료 후
+    <code>onReadStreamData</code>로 다음 청크를 채워 <code>SendingCustomStream</code>을 유지하고,
+    <code>COMPLETE</code> 청크를 보낸 뒤 복귀한다(<code>_read_last</code> 는 fill↔flush 1틱 간극용
+    송신 bookkeeping이지 모드 플래그가 아님).</li>
+  <li><strong>WS 터널도 동일 구조:</strong> WebSocket 그룹에도 같은 스트림 상태 짝
+    (<code>ReceivingWebSocketStream</code> / <code>SendingWebSocketStream</code>)을 둔다. 차이는
+    청크가 <strong>WS 메시지(프레임)로 한 겹 더 감싸진다</strong>는 것뿐 — 수신은 WS 메시지 1개 =
+    Custom 청크 1개로 <code>onWriteStreamData</code>, 송신은 <code>onReadStreamData</code> 결과를
+    <code>encodeWebSocketFrame</code>으로 wrap(§6-3). 핸들러 코드는 raw/WS 동일.</li>
+  <li><strong>1차 범위:</strong> 청크 콜백은 listener thread에서 <em>inline</em> 실행(디스크 I/O는
+    페이지 캐시까지라 충분히 빠름). 블로킹 디스크용 SLOW 오프로딩 / 헤더 없는 raw 스트림은 후속.</li>
+</ul>
+
+<p style="font-size:0.85em; color:#666;">
+  ※ 비용: <code>ConnectionState</code> +4(13→17, Custom 2 + WebSocket 2), <code>groupOf</code> /
+  <code>isReadState</code>(<code>Receiving*Stream</code>) / <code>isWriteState</code>
+  (<code>Sending*Stream</code>) / <code>phaseForState</code>(스트림 상태 → 각 phase) 갱신, 그리고 phase 가
+  현재 상태로 분기하도록 <code>PhaseHost::state()</code> 신설(또는 Action 에 <code>current</code> 인자 전달).
+</p>
+
 
 <h2>7. C++ 정의</h2>
 
@@ -1196,16 +1397,23 @@ enum class ConnectionState : uint8_t {
     // WebSocket
     SendingHandshakeResponse,          // [WRITE] 101 송신
     ReceivingWebSocketFrame,           // [READ]  frame 누적 (header + payload + unmask)
+    ReceivingWebSocketStream,          // [READ]  WRITE_STREAM 청크(WS 메시지) 수신 — §6-7
     SendingWebSocketResponse,          // [WRITE] frame-wrapped 응답 송신
+    SendingWebSocketStream,            // [WRITE] READ_STREAM 청크를 WS frame 으로 연속 송신 — §6-7
     WaitingForNextWebSocketMessage,    // [READ]  다음 frame 대기
 
     // Custom (raw)
     ReceivingCustomMessage,            // [READ]  header + payload 누적
+    ReceivingCustomStream,             // [READ]  WRITE_STREAM 청크 수신(무응답) — §6-7
     SendingCustomResponse,             // [WRITE] 응답 송신
+    SendingCustomStream,               // [WRITE] READ_STREAM 청크 연속 송신 — §6-7
     WaitingForNextCustomMessage,       // [READ]  다음 메시지 대기
 };</code></pre>
 
-<p>13개 state. 모두 "어떤 외부 이벤트를 기다리는가"가 명확.</p>
+<p>17개 state. 모두 "어떤 외부 이벤트를 기다리는가"가 명확. Custom 그룹의
+<code>ReceivingCustomStream</code>/<code>SendingCustomStream</code> 과 WebSocket 그룹의
+<code>ReceivingWebSocketStream</code>/<code>SendingWebSocketStream</code> 은 스트림 "모드"를 별도
+플래그가 아니라 <strong>상태 자체로</strong> 표현(§6-7).</p>
 
 <h3>7-2. Event</h3>
 
@@ -1242,23 +1450,41 @@ enum class WebSocketFrameResult {
     CONTROL_PING_HANDLED,
     CONTROL_PONG_HANDLED,
     DISPATCHED_FAST,
-    DISPATCHED_FAST_NO_RESPONSE,
+    WRITE_STREAM_STARTED,             // §6-7: onWriteStreamBegin → ReceivingWebSocketStream
+    WRITE_STREAM_DOING,               // §6-7: onWriteStreamData==CONTINUE — 청크 메시지, 계속
+    WRITE_STREAM_DONE,                // §6-7: onWriteStreamData==COMPLETE — 끝
+    READ_STREAM_STARTED,             // §6-7: onReadStreamBegin + 첫 청크 WS wrap → SendingWebSocketStream
     DISPATCHED_SLOW,
     ERROR_CONTROL_CLOSE,
     ERROR_TEXT_FRAME,
     ERROR_INVALID_FRAME,
     SOCKET_ERROR
 };
-enum class WebSocketResponseWriteResult { SEND_INCOMPLETE, SENT_DONE, SOCKET_ERROR };
+enum class WebSocketResponseWriteResult {
+    SEND_INCOMPLETE,
+    SENT_DONE,                        // 단발 응답/handshake/PONG 송신완료
+    READ_STREAM_DOING,                // §6-7: 직전 청크 송신완료 → 다음 청크 WS wrap
+    READ_STREAM_DONE,                 // §6-7: 마지막 청크 송신완료 — 끝
+    SOCKET_ERROR
+};
 
 enum class CustomMessageResult {
     NEED_MORE_BYTES,
     DISPATCHED_FAST,
-    DISPATCHED_FAST_NO_RESPONSE,
     DISPATCHED_SLOW,
+    WRITE_STREAM_STARTED,             // §6-7: onWriteStreamBegin — 모드 진입
+    WRITE_STREAM_DOING,               // §6-7: onWriteStreamData==CONTINUE — 청크 소비, 계속
+    WRITE_STREAM_DONE,                // §6-7: onWriteStreamData==COMPLETE — 끝
+    READ_STREAM_STARTED,              // §6-7: onReadStreamBegin + 첫 청크
     SOCKET_ERROR
 };
-enum class CustomResponseWriteResult { SEND_INCOMPLETE, SENT_DONE, SOCKET_ERROR };
+enum class CustomResponseWriteResult {
+    SEND_INCOMPLETE,
+    SENT_DONE,                        // 단발 응답 송신완료
+    READ_STREAM_DOING,                // §6-7: 직전 청크 송신완료 → 다음 청크
+    READ_STREAM_DONE,                 // §6-7: 마지막 청크 송신완료 — 끝
+    SOCKET_ERROR
+};
 
 enum class ClosingWriteResult { SEND_INCOMPLETE, SENT_DONE, SOCKET_ERROR };</code></pre>
 
