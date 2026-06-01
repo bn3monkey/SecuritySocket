@@ -153,10 +153,23 @@ if (BUILD_SECURITYSOCKET_TEST)
     list(FILTER SECURITYSOCKET_THIRDPARTY_FILES INCLUDE REGEX "/thirdparty/")
     message(STATUS "SECURITYSOCKET_THIRDPARTY_FILES = ${SECURITYSOCKET_THIRDPARTY_FILES}")
 
+    # ConnectionPhase implementations (SniffPhase / CustomPhase / HttpPhase /
+    # WebSocketPhase) and the CustomProtocol*Impl view/builders they construct are
+    # internal — NOT exported through the DLL surface — so the phase unit tests
+    # (securitysockettest_*_phase.cpp) compile them directly into the test target,
+    # the same way thirdparty sources are pulled in above. Their *exported*
+    # dependencies (HttpParser, WsFrameCodec, HttpRouterImpl, Http*Impl, Url, ...)
+    # still resolve through securitysocket.dll, so only the non-exported sources
+    # are listed here (adding an exported one would double-define its symbols).
+    set(SECURITYSOCKET_CONNECTION_FILES ${securitysocket_source_files})
+    list(FILTER SECURITYSOCKET_CONNECTION_FILES INCLUDE REGEX "/(connection|custom)/.*\\.cpp$")
+    message(STATUS "SECURITYSOCKET_CONNECTION_FILES = ${SECURITYSOCKET_CONNECTION_FILES}")
+
     if (BUILD_SECURITYSOCKETTEST_SHARED)
         add_library(securitysockettest SHARED
             ${SECURITYSOCKET_TEST_FILES}
             ${SECURITYSOCKET_THIRDPARTY_FILES}
+            ${SECURITYSOCKET_CONNECTION_FILES}
             ${SECURITYSOCKET_UTILS_FILES})
         target_compile_definitions(securitysockettest PRIVATE SECURITYSOCKETTEST_EXPORTS)
 
@@ -166,6 +179,7 @@ if (BUILD_SECURITYSOCKET_TEST)
             STATIC
             ${SECURITYSOCKET_TEST_FILES}
             ${SECURITYSOCKET_THIRDPARTY_FILES}
+            ${SECURITYSOCKET_CONNECTION_FILES}
             ${SECURITYSOCKET_UTILS_FILES})
         target_compile_definitions(securitysockettest PUBLIC SECURITYSOCKETTEST_STATIC)
 

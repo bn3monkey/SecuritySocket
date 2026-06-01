@@ -134,11 +134,29 @@ hang/desync. 수정: **WRITE_STREAM 만 무응답**, **READ_STREAM 은 FAST 와 
 ## 5. 다음 작업
 
 1. ~~**(최우선) §4 회귀/기존버그 판정** 후 해당 경로 수정.~~ **완료(§4' 참조).**
-2. `BroadcastServer`/`Client` 에도 `static_assert(sizeof(Impl) <= IMPLEMENTATION_SIZE)`.
-3. **HttpPhase / WebSocketPhase** 구현 + host `phaseForState` HTTP/WS 그룹 연결.
+2. ~~`BroadcastServer`/`Client` 에도 `static_assert(sizeof(Impl) <= IMPLEMENTATION_SIZE)`.~~ **완료.**
+3. ~~**HttpPhase / WebSocketPhase** 구현 + host `phaseForState` HTTP/WS 그룹 연결.~~
+   **완료(§7 참조).** 4개 phase 모두 배선 + phase별 단위 테스트(stub PhaseHost).
 4. libcurl 기반 http/websocket 서버 통합 테스트.
 5. (차후) `WRITE_STREAM` 의 "종료 시점" 기반 연속 송신 메커니즘 설계/구현 —
    현재는 단발 무응답으로만 동작.
+
+---
+
+## 7. HttpPhase / WebSocketPhase 통합 + phase 단위 테스트
+
+- `temp/candidate/Phase6/{HttpPhase,WebSocketPhase}.{hpp,cpp}` → `connection/` 이동.
+- `ClientConnectionImpl`: `_http_phase`/`_websocket_phase` 멤버, `phaseForState()` 에
+  HTTP 3상태→`_http_phase` / WS 4상태→`_websocket_phase` 매핑(업그레이드는 state 키로
+  자동 그룹 전환), `onAccept()` 에서 phase reset(풀 재사용 안전). 후보 API가 현재
+  HttpParser/WsFrameCodec/HttpRouterImpl/Http*Impl/HandlerFn 와 일치 → 클린 컴파일.
+- **phase 단위 테스트**(stub `FakePhaseHost`, feed→drive→상태확인 ×120):
+  `securitysockettest_{sniff,custom,http,websocket}_phase.cpp` +
+  공유 `securitysockettest_phase_host.hpp` → **24 테스트 통과**.
+- **빌드**: 내부 phase/custom Impl 은 DLL export 대신 `SECURITYSOCKET_CONNECTION_FILES`
+  필터로 `securitysockettest` 타겟에 직접 컴파일(thirdparty 패턴). export 된
+  http/protocol 은 제외(중복 심볼 방지).
+- 회귀: 기존 통합/단위 73 테스트 + phase 24 = **전부 green**.
 
 ---
 
@@ -149,4 +167,5 @@ hang/desync. 수정: **WRITE_STREAM 만 무응답**, **READ_STREAM 은 FAST 와 
 - `TCPRequestFile`(raw Custom, STREAM 파이프라인): **pass** (§4' — compact 회귀 +
   READ_STREAM 디스패치 계약 수정).
 - 단위 테스트(프로토콜 헬퍼/HTTP view·router·url, **StagingBuffer compact**): pass.
-- HttpPhase/WebSocketPhase/libcurl 서버 테스트: 미착수.
+- **HttpPhase/WebSocketPhase**: 배선 완료 + phase 단위 테스트 24 **pass**(§7).
+- libcurl 서버 통합 테스트: 미착수.
