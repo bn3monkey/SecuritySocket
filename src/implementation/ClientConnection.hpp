@@ -9,6 +9,8 @@
 #include "connection/ConnectionPhase.hpp"
 #include "connection/SniffPhase.hpp"
 #include "connection/CustomPhase.hpp"
+#include "connection/HttpPhase.hpp"
+#include "connection/WebSocketPhase.hpp"
 #include "core/memory/buffer.hpp"
 
 #include <thread>
@@ -30,10 +32,9 @@ namespace Bn3Monkey
     // WebSocket). It implements PhaseHost to expose exactly those shared
     // resources to the active phase.
     //
-    // Phase 6 staging: SniffPhase + CustomPhase are wired now; HttpPhase and
-    // WebSocketPhase arrive in following slices (their groups currently resolve
-    // to no phase and the host closes the connection — unreachable for a
-    // Custom-only handler).
+    // All four phases (Sniff / Custom / Http / WebSocket) are wired: phaseForState
+    // maps each protocol group to its phase, and an HTTP Upgrade crosses from the
+    // HTTP group into the WebSocket group (the one sanctioned cross-group move).
     class ClientConnectionImpl : public ClientConnection,
                                  public SocketEventContext,
                                  public PhaseHost
@@ -121,8 +122,10 @@ namespace Bn3Monkey
         bool            _detached{ false };   // SLOW handed the socket to worker
 
         // ── phases (per-connection strategies) ──
-        SniffPhase  _sniff;
-        CustomPhase _custom_phase;
+        SniffPhase     _sniff;
+        CustomPhase    _custom_phase;
+        HttpPhase      _http_phase;
+        WebSocketPhase _websocket_phase;
 
         // ── input / output staging buffers (see StagingBuffer) ──
         // input:  recv appends at tail(); the phase parses head()..pending() and

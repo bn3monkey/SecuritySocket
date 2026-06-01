@@ -1,18 +1,11 @@
 #if !defined(__BN3MONKEY_WEBSOCKET_PHASE__)
 #define __BN3MONKEY_WEBSOCKET_PHASE__
 
-// ── CANDIDATE (Phase 6 slice) ────────────────────────────────────────────────
-// Pre-staged, NOT wired into the build. Intended destination on integration:
-//   src/implementation/connection/WebSocketPhase.{hpp,cpp}
-// Include paths are written as if it lives in connection/ (copy-and-compile).
-//
-// Integration checklist (ClientConnection.{hpp,cpp}):
-//   - add `WebSocketPhase _websocket_phase;` member
-//   - phaseForState(): SendingHandshakeResponse / ReceivingWebSocketFrame /
-//     SendingWebSocketResponse / WaitingForNextWebSocketMessage -> &_websocket_phase
-//   - HttpPhase produces the 101 handshake and returns SendingHandshakeResponse;
-//     when the host flushes it, the *WebSocket* phase's onSendComplete runs
-//     (group already switched), moving to WaitingForNextWebSocketMessage.
+// WebSocket phase, wired into ClientConnectionImpl (phaseForState maps the WS
+// group here). HttpPhase produces the 101 handshake and returns
+// SendingHandshakeResponse; once the host flushes it the group has already
+// switched, so this phase's onSendComplete runs and moves to
+// WaitingForNextWebSocketMessage.
 //
 // Buffer model: StagingBuffer-based PhaseHost. WsFrameCodec::decode unmasks the
 // payload in place; it takes char* and StagingBuffer::head() is a mutable void*,

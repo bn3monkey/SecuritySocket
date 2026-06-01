@@ -1,17 +1,9 @@
 #if !defined(__BN3MONKEY_HTTP_PHASE__)
 #define __BN3MONKEY_HTTP_PHASE__
 
-// ── CANDIDATE (Phase 6 slice) ────────────────────────────────────────────────
-// Pre-staged, NOT wired into the build. Intended destination on integration:
-//   src/implementation/connection/HttpPhase.{hpp,cpp}
-// The include paths below are written as if this file already lives in
-// connection/ (same depth as SniffPhase/CustomPhase), so a plain copy compiles.
-//
-// Integration checklist (do these in ClientConnection.{hpp,cpp} when adopting):
-//   - add `HttpPhase _http_phase;` member next to `_custom_phase`
-//   - in phaseForState(): map ReceivingHttpRequest / SendingHttpResponse /
-//     WaitingForNextHttpRequest -> &_http_phase
-//   - SendingHandshakeResponse + the WebSocket group -> &_websocket_phase
+// HTTP/1.1 phase, wired into ClientConnectionImpl alongside SniffPhase /
+// CustomPhase / WebSocketPhase (phaseForState maps the HTTP group here; a
+// matching Upgrade leaves through SendingHandshakeResponse into WebSocketPhase).
 //
 // Buffer model: uses the StagingBuffer-based PhaseHost (input()/output() return
 // StagingBuffer&). The header block is tokenised in place (NUL over the ':'

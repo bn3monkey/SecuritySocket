@@ -66,6 +66,12 @@ void ClientConnectionImpl::onAccept()
     _output_fully_sent = false;
     _is_websocket = false;
     _closed = false;
+
+    // Clear phase-local accumulation — this object is reused from a pool, so a
+    // previous connection's HTTP header index / WS reassembly must not leak in.
+    // (Sniff/Custom phases are stateless.)
+    _http_phase.reset();
+    _websocket_phase.reset();
 }
 
 void ClientConnectionImpl::closeSocket()
@@ -117,8 +123,20 @@ ConnectionPhase* ClientConnectionImpl::phaseForState(ConnectionState s)
     case ConnectionState::SendingCustomResponse:
     case ConnectionState::WaitingForNextCustomMessage:
         return &_custom_phase;
+    case ConnectionState::ReceivingHttpRequest:
+    case ConnectionState::SendingHttpResponse:
+    case ConnectionState::WaitingForNextHttpRequest:
+        return &_http_phase;
+    case ConnectionState::SendingHandshakeResponse:
+    case ConnectionState::ReceivingWebSocketFrame:
+    case ConnectionState::SendingWebSocketResponse:
+    case ConnectionState::WaitingForNextWebSocketMessage:
+        // The HTTP Upgrade flips state to SendingHandshakeResponse, so the WS
+        // phase's onSendComplete runs once the host flushes the 101 — the group
+        // switch happens implicitly through this state->phase mapping.
+        return &_websocket_phase;
     default:
-        // HTTP / WebSocket groups: not yet wired (Phase 6 later slices).
+        // Lifecycle states (Closing/Closed) are host-handled.
         return nullptr;
     }
 }
