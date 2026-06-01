@@ -6,6 +6,16 @@
 
 using namespace Bn3Monkey;
 
+// Client stores ClientImpl inline via placement-new into a fixed
+// char[IMPLEMENTATION_SIZE] buffer (PImpl-by-inline-storage). If the Impl
+// outgrows the buffer the constructor scribbles past it and corrupts adjacent
+// memory; catch any future growth at compile time. (See RequestServer.cpp for
+// the teardown-AV this guards against.)
+static_assert(sizeof(Bn3Monkey::ClientImpl)
+                  <= Bn3Monkey::Client::IMPLEMENTATION_SIZE,
+              "ClientImpl no longer fits in Client::_container; "
+              "raise Client::IMPLEMENTATION_SIZE in SecuritySocket.hpp");
+
 ClientImpl::~ClientImpl()
 {
 	close();

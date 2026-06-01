@@ -4,6 +4,16 @@
 
 using namespace Bn3Monkey;
 
+// BroadcastServer stores BroadcastServerImpl inline via placement-new into a
+// fixed char[IMPLEMENTATION_SIZE] buffer (PImpl-by-inline-storage). If the Impl
+// outgrows the buffer the constructor scribbles past it and corrupts adjacent
+// memory; catch any future growth at compile time. (See RequestServer.cpp for
+// the teardown-AV this guards against.)
+static_assert(sizeof(Bn3Monkey::BroadcastServerImpl)
+                  <= Bn3Monkey::BroadcastServer::IMPLEMENTATION_SIZE,
+              "BroadcastServerImpl no longer fits in BroadcastServer::_container; "
+              "raise BroadcastServer::IMPLEMENTATION_SIZE in SecuritySocket.hpp");
+
 BroadcastServerImpl::~BroadcastServerImpl()
 {
     close();
