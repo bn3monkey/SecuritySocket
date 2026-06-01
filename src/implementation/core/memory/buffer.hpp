@@ -70,7 +70,7 @@ namespace Bn3Monkey
             }
             auto live = pending();
             if (live > 0) {
-                std::memmove(_data, _data + live, live);
+                std::memmove(_data, _data + _sent, live);
             }
             _received = live;
             _sent = 0;

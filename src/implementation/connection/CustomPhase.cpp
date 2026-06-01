@@ -37,8 +37,11 @@ namespace Bn3Monkey
         // 3. dispatch by mode
         const RequestProcessingMode mode = handler->classifyMode(static_cast<const char*>(in.head()));
 
-        if (mode == RequestProcessingMode::READ_STREAM ||
-            mode == RequestProcessingMode::WRITE_STREAM) {
+        // WRITE_STREAM: the client only writes to the server; the server ingests
+        // the payload and produces no response. (READ_STREAM — the client reading
+        // from the server — needs a response, so it falls through to the FAST body
+        // below; its dedicated streaming form is not implemented yet.)
+        if (mode == RequestProcessingMode::WRITE_STREAM) {
             const char* base = static_cast<const char*>(in.head());
             CustomProtocolRequestImpl req(base, header_len, base + header_len, payload_len);
             handler->processWithoutResponse(host.connection(), req);
@@ -63,7 +66,10 @@ namespace Bn3Monkey
             in.drain(total);
         };
 
-        if (mode == RequestProcessingMode::FAST) {
+        // FAST and READ_STREAM run inline and send a response. (READ_STREAM is
+        // treated like FAST for now — see note above.)
+        if (mode == RequestProcessingMode::FAST ||
+            mode == RequestProcessingMode::READ_STREAM) {
             call();
             return CustomMessageResult::DISPATCHED_FAST;
         }

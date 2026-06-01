@@ -15,8 +15,11 @@
 - 종료 시 AV 크래시(raw Custom 경로) **근본 원인 확정**: `sizeof(RequestServerImpl)
   = 2240 > IMPLEMENTATION_SIZE(2048)` → pImpl 인라인 컨테이너 오버플로우. **수정 적용**
   (`IMPLEMENTATION_SIZE` 4096 + 컴파일타임 `static_assert`). `TCPRequestEcho` **pass**.
-- **미해결:** 크래시가 사라지자 가려져 있던 `TCPRequestFile` 의 **파이프라인
-  STREAM 경로 데이터 불일치**가 드러남(아래 §4). 회귀/기존버그 여부 미확정.
+- ~~**미해결:** 크래시가 사라지자 가려져 있던 `TCPRequestFile` 의 파이프라인
+  STREAM 경로 데이터 불일치.~~ **→ 해결(아래 §4').** 원인은 둘이 겹친 것:
+  (a) `StagingBuffer::compact()` 의 memmove 소스 오프셋 버그(회귀), (b) READ_STREAM
+  디스패치가 WRITE_STREAM 과 묶여 무응답이던 계약 오류. 둘 다 수정, `TCPRequestFile`
+  **runOneClient/runFourClient 통과**.
 
 ---
 
@@ -102,22 +105,40 @@ _capacity        전체 용량
   적재** → 이후 CLOSE/READ 응답이 desync/손상.
 - 즉 실패는 정확히 **다중 메시지 파이프라인(drain/compact) 경로**에 국한.
 
-### 미확정 — 회귀 vs 기존버그
-- **이게 StagingBuffer 변경의 회귀인지, 아니면 원래 있던 파이프라인 버그가 종료
-  크래시에 가려져 있다가 드러난 것인지 아직 확정 못 함.** (baseline(vector 기반)
-  + 사이즈픽스 비교 실행을 진행하던 중 중단됨.)
-- 다음 단계: **stash 로 버퍼 6파일만 되돌린 baseline + 사이즈픽스**로 `TCPRequestFile`
-  을 돌려 동일 실패면 기존버그, 통과면 StagingBuffer 회귀로 확정. (러너는 현재
-  baseline 바이너리로 빌드돼 있어 그대로 실행 가능.)
+### 판정 결과 (2026-06-01 확정) — 원인 2개가 겹침
+
+**(a) `StagingBuffer::compact()` memmove 소스 오프셋 버그 → StagingBuffer 회귀.**
+살아있는 바이트는 `head() = _data + _sent` 에서 시작하는데
+`memmove(_data, _data + live, live)` 로 **틀린 오프셋(`_data + live`)** 에서 복사 →
+WRITE 스트림 도중 `reserve()` 가 `compact()` 를 부르면 부분 메시지가 손상 → 이후
+헤더 desync → CLOSE/OPEN 응답 불일치(file.cpp:327/345). vector 기반 `consumeInput`
+의 shift 는 올바른 오프셋을 썼으므로 **`compact()` 도입 시 들어온 회귀**.
+- 수정: `std::memmove(_data, _data + _sent, live)`.
+- 회귀 가드: `test/securitysockettest_staging_buffer.cpp` 3 케이스 추가 — 버그
+  버전에서 `corrupted` 실패 재현, 수정본 전부 통과로 확인.
+
+**(b) READ_STREAM 디스패치 계약 오류 → 기존 설계 갭(StagingBuffer 무관).**
+모드 의미는 **클라이언트 관점**: `READ_STREAM`=클라가 서버에서 **읽음**(서버가 응답을
+보냄), `WRITE_STREAM`=클라가 서버에 **씀**(서버 무응답). 그런데 CustomPhase 가 둘을
+`processWithoutResponse`(무응답)로 묶어 READ_STREAM 도 응답을 안 만들어 READ_FILE 이
+hang/desync. 수정: **WRITE_STREAM 만 무응답**, **READ_STREAM 은 FAST 와 동일하게
+`process()` 로 응답 생성**(전용 스트리밍 형태는 차후). (WRITE_STREAM 의 "종료 시점"
+기반 연속 송신은 아직 미구현 — 현 경로는 단발 무응답.)
+
+### 검증
+`TCPRequestFile.runOneClient`(1.4s) / `runFourClient`(1.8s) **통과**.
+`TCPRequestEcho`, `StagingBuffer.*`, `CustomProtocolHandler.*` 회귀 없음.
 
 ---
 
 ## 5. 다음 작업
 
-1. **(최우선) §4 회귀/기존버그 판정** 후 해당 경로 수정.
+1. ~~**(최우선) §4 회귀/기존버그 판정** 후 해당 경로 수정.~~ **완료(§4' 참조).**
 2. `BroadcastServer`/`Client` 에도 `static_assert(sizeof(Impl) <= IMPLEMENTATION_SIZE)`.
 3. **HttpPhase / WebSocketPhase** 구현 + host `phaseForState` HTTP/WS 그룹 연결.
 4. libcurl 기반 http/websocket 서버 통합 테스트.
+5. (차후) `WRITE_STREAM` 의 "종료 시점" 기반 연속 송신 메커니즘 설계/구현 —
+   현재는 단발 무응답으로만 동작.
 
 ---
 
@@ -125,7 +146,7 @@ _capacity        전체 용량
 
 - 빌드: 라이브러리/러너 **green**.
 - `TCPRequestEcho`(raw Custom, FAST, keep-alive): **pass** (종료 크래시 해소).
-- `TCPRequestFile`(raw Custom, STREAM 파이프라인): **데이터 단언 실패** — §4, 원인
-  판정 대기.
-- 단위 테스트(프로토콜 헬퍼/HTTP view·router·url): pass.
+- `TCPRequestFile`(raw Custom, STREAM 파이프라인): **pass** (§4' — compact 회귀 +
+  READ_STREAM 디스패치 계약 수정).
+- 단위 테스트(프로토콜 헬퍼/HTTP view·router·url, **StagingBuffer compact**): pass.
 - HttpPhase/WebSocketPhase/libcurl 서버 테스트: 미착수.
