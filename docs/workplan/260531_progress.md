@@ -137,7 +137,7 @@ hang/desync. 수정: **WRITE_STREAM 만 무응답**, **READ_STREAM 은 FAST 와 
 2. ~~`BroadcastServer`/`Client` 에도 `static_assert(sizeof(Impl) <= IMPLEMENTATION_SIZE)`.~~ **완료.**
 3. ~~**HttpPhase / WebSocketPhase** 구현 + host `phaseForState` HTTP/WS 그룹 연결.~~
    **완료(§7 참조).** 4개 phase 모두 배선 + phase별 단위 테스트(stub PhaseHost).
-4. libcurl 기반 http/websocket 서버 통합 테스트.
+4. ~~libcurl 기반 http/websocket 서버 통합 테스트.~~ **완료(§8 참조).**
 5. (차후) `WRITE_STREAM` 의 "종료 시점" 기반 연속 송신 메커니즘 설계/구현 —
    현재는 단발 무응답으로만 동작.
 
@@ -160,6 +160,23 @@ hang/desync. 수정: **WRITE_STREAM 만 무응답**, **READ_STREAM 은 FAST 와 
 
 ---
 
+## 8. libcurl 기반 http/websocket 서버 통합 테스트
+
+- 서버는 이미 HTTP 배선됨(`asHttpRequestHandler()`→`registerRoutes(_router)`→
+  `router_ptr`를 ClientConnectionImpl 에 전달). phase 배선까지 끝나 end-to-end 동작.
+- **libcurl 활성화**: `SECURITYSOCKET_TEST_USE_CURL=ON`. FetchContent(curl 8.11,
+  HTTP_ONLY+no-SSL+WS)는 git 필요 → 빌드 스크립트가 PATH sanitize 하므로 **git 살린
+  일회성 configure** 로 `_deps/curl` 채운 뒤 일반 빌드(이후 캐시 ON). 실측 configure
+  ~43s + build ~12s 로 가벼움.
+- `securitysockettest_http_server.cpp`(`curl_easy`): GET 라우트/응답 바디, POST 바디
+  에코, path param(`:id`) 디코드/바인딩, 404, **keep-alive 단일 커넥션 120요청**.
+- `securitysockettest_websocket_server.cpp`(`curl_ws_send/recv`): HTTP+Custom 결합
+  핸들러(WS 패턴 `/ws`) — sniff→HTTP 업그레이드(101)→WebSocket→Custom 디스패치 전
+  경로를 **BINARY 메시지 왕복**(단발 + 단일 커넥션 120왕복)으로 검증.
+- 결과: 서버 통합 7 + smoke 4 통과. 전체 회귀 **85 테스트 green**.
+
+---
+
 ## 6. 현재 상태 한눈에
 
 - 빌드: 라이브러리/러너 **green**.
@@ -168,4 +185,5 @@ hang/desync. 수정: **WRITE_STREAM 만 무응답**, **READ_STREAM 은 FAST 와 
   READ_STREAM 디스패치 계약 수정).
 - 단위 테스트(프로토콜 헬퍼/HTTP view·router·url, **StagingBuffer compact**): pass.
 - **HttpPhase/WebSocketPhase**: 배선 완료 + phase 단위 테스트 24 **pass**(§7).
-- libcurl 서버 통합 테스트: 미착수.
+- **libcurl 서버 통합**(§8): HTTP(`curl_easy`) + WebSocket(`curl_ws_*`) end-to-end
+  **pass**. 전체 회귀 **85 green**.
