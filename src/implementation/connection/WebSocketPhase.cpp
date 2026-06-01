@@ -150,8 +150,13 @@ namespace Bn3Monkey
 
         const RequestProcessingMode mode = handler->classifyMode(fmsg);
 
-        if (mode == RequestProcessingMode::READ_STREAM ||
-            mode == RequestProcessingMode::WRITE_STREAM) {
+        // WRITE_STREAM: client-only push (upload). The server ingests the payload
+        // and produces no response — the natural WebSocket upload model. READ_STREAM
+        // is NOT lumped here: like CustomPhase (raw TCP), it is treated as a FAST
+        // request that yields one response, so the same handler behaves identically
+        // on both transports. (True server-push download streaming — one request,
+        // many frames — is a separate API the single-buffer response can't express.)
+        if (mode == RequestProcessingMode::WRITE_STREAM) {
             CustomProtocolRequestImpl req(fmsg, header_len, fmsg + header_len, payload_len);
             handler->processWithoutResponse(host.connection(), req);
             _fragment.clear(); _message_started = false;

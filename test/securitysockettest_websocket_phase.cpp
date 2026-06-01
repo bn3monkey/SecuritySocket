@@ -154,6 +154,28 @@ TEST(WebSocketPhase, WriteStreamMessageNoResponse)
     EXPECT_EQ(kRounds, handler.no_response_count);
 }
 
+// READ_STREAM message over WS: unlike WRITE_STREAM, this is an RPC-style read
+// (request -> single response), matching CustomPhase (raw TCP) so the same
+// handler behaves identically on both transports. It must dispatch through
+// process() and produce a response, NOT processWithoutResponse().
+TEST(WebSocketPhase, ReadStreamMessageProducesResponse)
+{
+    FakePhaseHost     host;
+    StubCustomHandler handler;
+    host.setCustom(&handler);
+    WebSocketPhase phase;
+
+    for (int i = 0; i < kRounds; ++i) {
+        auto frame = PhaseTest::makeClientBinaryMessage(/*READ_STREAM*/ 2, 16);
+        host.feed(frame);
+        EXPECT_EQ(ConnectionState::SendingWebSocketResponse, host.drive(phase)) << "round " << i;
+        EXPECT_GT(host.outputSize(), 0u);
+        EXPECT_EQ(ConnectionState::WaitingForNextWebSocketMessage, host.completeSend(phase));
+    }
+    EXPECT_EQ(kRounds, handler.process_count);
+    EXPECT_EQ(0, handler.no_response_count);
+}
+
 // A frame delivered in two recvs: the first (partial) is NEED_MORE, the rest
 // completes and dispatches.
 TEST(WebSocketPhase, PartialFrameNeedsMoreThenDispatches)

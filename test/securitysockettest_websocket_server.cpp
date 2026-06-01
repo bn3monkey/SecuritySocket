@@ -20,6 +20,8 @@
 
 #include <SecuritySocket.hpp>
 
+#include "securitysockettest_file_protocol.hpp"   // FileRequestHandler + structs
+
 #include <chrono>
 #include <cstdint>
 #include <cstring>
@@ -78,9 +80,9 @@ public:
 
 class ServerRunner {
 public:
-    explicit ServerRunner(Bn3Monkey::RequestHandler& handler)
+    explicit ServerRunner(Bn3Monkey::RequestHandler& handler, uint16_t port = kWsPort)
         : _server(Bn3Monkey::NetworkConfiguration{
-              "127.0.0.1", kWsPort, false, 5, 1000, 1000, 100, 8192 }) {
+              "127.0.0.1", port, false, 5, 1000, 1000, 100, 8192 }) {
         auto r = _server.open(&handler, 8);
         _ok = (r.code() == Bn3Monkey::NetworkResultCode::SUCCESS);
         std::this_thread::sleep_for(std::chrono::milliseconds(50));
@@ -206,6 +208,196 @@ TEST(WebSocketServer, ManyRoundTripsOnOneConnection) {
     }
 
     curl_easy_cleanup(h);
+}
+
+// ===========================================================================
+// Custom-handler-over-WebSocket parity test.
+//
+// Drives the EXACT SAME FileRequestHandler used by the raw-TCP test
+// (securitysockettest_tcp_request_file.cpp) — now tunnelled over ws:// — through
+// the full file-service flow (create handle, create file, write stream, close,
+// open, read stream, close) and asserts it behaves identically. This exercises:
+//   - FAST messages with a response (CREATE_HANDLE / *_FILE / CLOSE_FILE)
+//   - WRITE_STREAM (upload): client pushes frames, server produces no response
+//   - READ_STREAM (RPC-style read): request -> single response, same as TCP
+// FILE* handles round-trip as raw bytes — valid because libcurl's client and
+// the server live in the same process.
+// ===========================================================================
+namespace {
+
+constexpr uint16_t kWsFilePort = 28783;
+
+std::string wsFileUrl() {
+    return std::string("ws://127.0.0.1:") + std::to_string(kWsFilePort) + "/ws";
+}
+
+// Same protocol handler as the TCP test, but ALSO an HttpRequestHandler so the
+// ws:// Upgrade GET is accepted, and constructed with a WebSocket pattern so
+// tunnelled BINARY messages dispatch through WebSocketPhase -> Custom dispatch.
+class WsFileRequestHandler : public Bn3Monkey::HttpRequestHandler,
+                             public FileRequestHandler {
+public:
+    WsFileRequestHandler()
+        : FileRequestHandler(Bn3Monkey::WebSocketConfiguration{ "/ws" }) {}
+    void registerRoutes(Bn3Monkey::HttpRouter&) override {}
+};
+
+// Send one Custom message (header + payload concatenated) as a single BINARY
+// WebSocket frame.
+bool wsSendMessage(CURL* h, const void* hdr, size_t hlen,
+                   const void* payload, size_t plen) {
+    std::vector<char> msg(hlen + plen);
+    std::memcpy(msg.data(), hdr, hlen);
+    if (plen) std::memcpy(msg.data() + hlen, payload, plen);
+    size_t sent = 0;
+    const CURLcode rc =
+        curl_ws_send(h, msg.data(), msg.size(), &sent, 0, CURLWS_BINARY);
+    return rc == CURLE_OK && sent == msg.size();
+}
+
+// Accumulate exactly `want` bytes of the next BINARY response frame (a single
+// curl_ws_recv may return the frame in pieces for multi-KB payloads).
+bool wsRecvExact(CURL* h, void* buf, size_t want) {
+    size_t total = 0;
+    const struct curl_ws_frame* meta = nullptr;
+    for (int attempt = 0; attempt < 1000; ++attempt) {
+        if (total >= want) return true;
+        size_t got = 0;
+        const CURLcode rc = curl_ws_recv(
+            h, static_cast<char*>(buf) + total, want - total, &got, &meta);
+        if (rc == CURLE_OK) { total += got; continue; }
+        if (rc == CURLE_AGAIN) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            continue;
+        }
+        return false;
+    }
+    return total >= want;
+}
+
+}  // namespace
+
+// Full file-service round-trip over WebSocket, mirroring runFileClient() from
+// the TCP test (smaller volume to keep the WS round-trips quick).
+TEST(WebSocketServer, FileHandlerBehavesSameAsTcp) {
+    WsFileRequestHandler handler;
+    ServerRunner srv(handler, kWsFilePort);
+    ASSERT_TRUE(srv.ok());
+
+    CURL* h = curl_easy_init();
+    ASSERT_NE(nullptr, h);
+    curl_easy_setopt(h, CURLOPT_URL, wsFileUrl().c_str());
+    curl_easy_setopt(h, CURLOPT_CONNECT_ONLY, 2L);   // ws handshake then hand over
+    curl_easy_setopt(h, CURLOPT_NOSIGNAL, 1L);
+    curl_easy_setopt(h, CURLOPT_TIMEOUT_MS, 5000L);
+    const CURLcode hs = curl_easy_perform(h);
+    ASSERT_EQ(CURLE_OK, hs) << "ws handshake failed: " << curl_easy_strerror(hs);
+
+    const char* kFile = "ws_testfile.txt";
+    const int32_t client_no = 7;
+    const size_t kChunks = 16;
+    int32_t request_no = 0;
+    FILE* fp = nullptr;
+
+    // ── CREATE_HANDLE (FAST, header-only request → FileResponseHeader) ──
+    {
+        FileRequestHeader req{ FileRequestType::CREATE_HANDLE, ++request_no, 0, client_no };
+        ASSERT_TRUE(wsSendMessage(h, &req, sizeof(req), nullptr, 0)) << "send CREATE_HANDLE";
+        FileResponseHeader resp{};
+        ASSERT_TRUE(wsRecvExact(h, &resp, sizeof(resp))) << "recv CREATE_HANDLE";
+        EXPECT_EQ(resp.response_no, req.request_no);
+        EXPECT_EQ(resp.request_type, req.request_type);
+    }
+
+    // ── CREATE_FILE (FAST → FileOpenResponse carrying the FILE*) ──
+    {
+        FileRequestHeader req{ FileRequestType::CREATE_FILE, ++request_no,
+                               sizeof(FileOpenRequestPayload), client_no };
+        FileOpenRequestPayload pl{};
+        snprintf(pl.filename, sizeof(pl.filename), "%s", kFile);
+        ASSERT_TRUE(wsSendMessage(h, &req, sizeof(req), &pl, sizeof(pl))) << "send CREATE_FILE";
+        FileOpenResponse resp{};
+        ASSERT_TRUE(wsRecvExact(h, &resp, sizeof(resp))) << "recv CREATE_FILE";
+        EXPECT_EQ(resp.header.response_no, req.request_no);
+        EXPECT_EQ(resp.header.request_type, req.request_type);
+        ASSERT_NE(nullptr, resp.fp) << "server failed to open file for write";
+        fp = resp.fp;
+    }
+
+    // ── WRITE_STREAM × N (upload: client pushes, server produces NO response) ──
+    for (size_t i = 0; i < kChunks; ++i) {
+        FileRequestHeader req{ FileRequestType::WRITE_FILE, ++request_no,
+                               sizeof(FileWriteRequestPayload), client_no };
+        FileWriteRequestPayload pl{};
+        pl.fp = fp;
+        pl.length = sizeof(pl.data);
+        std::memset(pl.data, static_cast<int>('a' + (i % 26)), sizeof(pl.data));
+        ASSERT_TRUE(wsSendMessage(h, &req, sizeof(req), &pl, sizeof(pl))) << "send WRITE " << i;
+    }
+
+    // ── CLOSE_FILE (FAST → FileCloseResponse). Also flushes the writes above. ──
+    {
+        FileRequestHeader req{ FileRequestType::CLOSE_FILE, ++request_no,
+                               sizeof(FileCloseRequestPayload), client_no };
+        FileCloseRequestPayload pl{}; pl.fp = fp;
+        ASSERT_TRUE(wsSendMessage(h, &req, sizeof(req), &pl, sizeof(pl))) << "send CLOSE(write)";
+        FileCloseResponse resp{};
+        ASSERT_TRUE(wsRecvExact(h, &resp, sizeof(resp))) << "recv CLOSE(write)";
+        EXPECT_EQ(resp.header.response_no, req.request_no);
+        EXPECT_EQ(resp.header.request_type, req.request_type);
+    }
+
+    // ── OPEN_FILE (FAST → FileOpenResponse) ──
+    {
+        FileRequestHeader req{ FileRequestType::OPEN_FILE, ++request_no,
+                               sizeof(FileOpenRequestPayload), client_no };
+        FileOpenRequestPayload pl{};
+        snprintf(pl.filename, sizeof(pl.filename), "%s", kFile);
+        ASSERT_TRUE(wsSendMessage(h, &req, sizeof(req), &pl, sizeof(pl))) << "send OPEN_FILE";
+        FileOpenResponse resp{};
+        ASSERT_TRUE(wsRecvExact(h, &resp, sizeof(resp))) << "recv OPEN_FILE";
+        EXPECT_EQ(resp.header.response_no, req.request_no);
+        EXPECT_EQ(resp.header.request_type, req.request_type);
+        ASSERT_NE(nullptr, resp.fp) << "server failed to open file for read";
+        fp = resp.fp;
+    }
+
+    // ── READ_STREAM × N (RPC read: request → single response; PARITY with TCP,
+    //    where WebSocketPhase used to drop READ_STREAM with no response) ──
+    for (size_t i = 0; i < kChunks; ++i) {
+        FileRequestHeader req{ FileRequestType::READ_FILE, ++request_no,
+                               sizeof(FileReadRequestPayload), client_no };
+        FileReadRequestPayload pl{};
+        pl.fp = fp;
+        pl.length = sizeof(FileWriteRequestPayload{}.data);  // 4096
+        ASSERT_TRUE(wsSendMessage(h, &req, sizeof(req), &pl, sizeof(pl))) << "send READ " << i;
+
+        FileReadResponse resp{};
+        ASSERT_TRUE(wsRecvExact(h, &resp, sizeof(resp))) << "recv READ " << i;
+        EXPECT_EQ(resp.header.response_no, req.request_no) << "read " << i;
+        EXPECT_EQ(resp.header.request_type, req.request_type) << "read " << i;
+        EXPECT_EQ(resp.length, pl.length) << "read " << i << " short";
+
+        char expected[4096];
+        std::memset(expected, static_cast<int>('a' + (i % 26)), sizeof(expected));
+        EXPECT_EQ(0, std::memcmp(resp.data, expected, sizeof(expected)))
+            << "read " << i << " payload mismatch";
+    }
+
+    // ── CLOSE_FILE again ──
+    {
+        FileRequestHeader req{ FileRequestType::CLOSE_FILE, ++request_no,
+                               sizeof(FileCloseRequestPayload), client_no };
+        FileCloseRequestPayload pl{}; pl.fp = fp;
+        ASSERT_TRUE(wsSendMessage(h, &req, sizeof(req), &pl, sizeof(pl))) << "send CLOSE(read)";
+        FileCloseResponse resp{};
+        ASSERT_TRUE(wsRecvExact(h, &resp, sizeof(resp))) << "recv CLOSE(read)";
+        EXPECT_EQ(resp.header.response_no, req.request_no);
+        EXPECT_EQ(resp.header.request_type, req.request_type);
+    }
+
+    curl_easy_cleanup(h);
+    std::remove(kFile);
 }
 
 #endif  // SECURITYSOCKET_TEST_USE_CURL
