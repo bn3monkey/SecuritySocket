@@ -27,8 +27,6 @@ struct StubCustomHandler : public Bn3Monkey::CustomProtocolRequestHandler
     void process(const Bn3Monkey::ClientConnection&,
                  const Bn3Monkey::CustomProtocolRequest&,
                  Bn3Monkey::CustomProtocolResponse&) override {}
-    void processWithoutResponse(const Bn3Monkey::ClientConnection&,
-                                const Bn3Monkey::CustomProtocolRequest&) override {}
 };
 
 } // namespace

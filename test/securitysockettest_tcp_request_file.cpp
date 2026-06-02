@@ -52,47 +52,48 @@ void runFileClient(int32_t client_no)
     }
 
     auto test_cases = createTestCases();
+    const size_t ten_mb = 10 * 1024 * 1024;
+    const size_t chunk_count = ten_mb / 4096;
     int32_t request_no{ 0 };
     FILE* fp{ nullptr };
 
-    // Create Handle
+    char filename[256];
+    snprintf(filename, sizeof(filename), "testfile_%d.txt", client_no);
+
+    // ── CREATE_FILE (FAST) — server opens "wb", returns the FILE* ──
     {
-        FileRequestHeader request_header{ FileRequestType::CREATE_HANDLE, ++request_no, 0, client_no };
-        client.write(&request_header, sizeof(request_header));
-
-        FileResponseHeader response;
-        client.read(&response, sizeof(response));
-
-        auto& response_header = response;
-        EXPECT_EQ(response_header.response_no, request_header.request_no);
-        EXPECT_EQ(response_header.request_type, request_header.request_type);
-    }
-
-    // Create File
-    {
-        FileRequestHeader request_header{ FileRequestType::CREATE_FILE, ++request_no, sizeof(FileOpenRequestPayload), client_no};
+        FileRequestHeader request_header{ FileRequestType::CREATE_FILE, ++request_no,
+                                          sizeof(FileOpenRequestPayload), client_no };
         FileOpenRequestPayload createRequest;
-        snprintf(createRequest.filename, sizeof(createRequest.filename), "testfile_%d.txt", client_no);
+        snprintf(createRequest.filename, sizeof(createRequest.filename), "%s", filename);
 
-        printConcurrent("[Server -> Client %d] : Create  File\n", request_header.client_no);
+        printConcurrent("[Server -> Client %d] : Create File\n", request_header.client_no);
         client.write(&request_header, sizeof(request_header));
         client.write(&createRequest, sizeof(createRequest));
 
         FileOpenResponse response;
-        client.read(&response, sizeof(response));
-
-        auto& response_header = response.header;
-        EXPECT_EQ(response_header.response_no, request_header.request_no);
-        EXPECT_EQ(response_header.request_type, request_header.request_type);
-
+        ASSERT_EQ(NetworkResultCode::SUCCESS,
+                  readFully(client, &response, sizeof(response)).code());
+        EXPECT_EQ(response.header.response_no, request_header.request_no);
+        EXPECT_EQ(response.header.request_type, request_header.request_type);
         fp = response.fp;
     }
 
-    // Sending 10MB Byte
-    size_t ten_mb = 10 * 1024 * 1024;
-    for (size_t i = 0; i < ten_mb / 4096; i++)
+    // ── WRITE_BEGIN (WRITE_STREAM entry) ──
     {
-        FileRequestHeader request_header{ FileRequestType::WRITE_FILE, ++request_no, sizeof(FileWriteRequestPayload), client_no };
+        FileRequestHeader begin_header{ FileRequestType::WRITE_BEGIN, ++request_no,
+                                        sizeof(WriteBeginPayload), client_no };
+        WriteBeginPayload begin{ fp };
+        client.write(&begin_header, sizeof(begin_header));
+        client.write(&begin, sizeof(begin));
+    }
+
+    // ── WRITE_CHUNK × N (continuous, response-less; last chunk ends the stream) ──
+    for (size_t i = 0; i < chunk_count; i++)
+    {
+        const int32_t last = (i == chunk_count - 1) ? 1 : 0;
+        FileRequestHeader request_header{ FileRequestType::WRITE_CHUNK, ++request_no,
+                                          sizeof(FileWriteRequestPayload), client_no, last };
         FileWriteRequestPayload writeRequest;
         writeRequest.fp = fp;
         writeRequest.length = 4096;
@@ -100,90 +101,85 @@ void runFileClient(int32_t client_no)
         auto& test_case = test_cases[i % (test_cases.size())];
         memcpy(writeRequest.data, test_case.data(), 4096);
 
-        printConcurrent("[Server -> Client %d] : Write  File (%zu)\n", request_header.client_no, i);
         client.write(&request_header, sizeof(request_header));
         client.write(&writeRequest, sizeof(writeRequest));
     }
 
-    // Close File
+    // ── CLOSE_FILE (FAST) — flushes the upload to disk ──
     {
-        FileRequestHeader request_header{ FileRequestType::CLOSE_FILE, ++request_no, sizeof(FileCloseRequestPayload), client_no };
-        FileCloseRequestPayload closeRequest;
-        closeRequest.fp = fp;
+        FileRequestHeader request_header{ FileRequestType::CLOSE_FILE, ++request_no,
+                                          sizeof(FileCloseRequestPayload), client_no };
+        FileCloseRequestPayload closeRequest{ fp };
 
-        printConcurrent("[Server -> Client %d] : Close  File\n", request_header.client_no);
+        printConcurrent("[Server -> Client %d] : Close File (write)\n", request_header.client_no);
         client.write(&request_header, sizeof(request_header));
         client.write(&closeRequest, sizeof(closeRequest));
 
         FileCloseResponse response;
-        client.read(&response, sizeof(response));
-
-        auto& response_header = response.header;
-        EXPECT_EQ(response_header.response_no, request_header.request_no);
-        EXPECT_EQ(response_header.request_type, request_header.request_type);
+        ASSERT_EQ(NetworkResultCode::SUCCESS,
+                  readFully(client, &response, sizeof(response)).code());
+        EXPECT_EQ(response.header.response_no, request_header.request_no);
+        EXPECT_EQ(response.header.request_type, request_header.request_type);
     }
 
-    // Open File
+    // ── OPEN_FILE (FAST) — reopen "rb", learn the total size ──
+    size_t total = 0;
     {
-        FileRequestHeader request_header{ FileRequestType::OPEN_FILE, ++request_no, sizeof(FileOpenRequestPayload), client_no };
+        FileRequestHeader request_header{ FileRequestType::OPEN_FILE, ++request_no,
+                                          sizeof(FileOpenRequestPayload), client_no };
         FileOpenRequestPayload openRequest;
-        snprintf(openRequest.filename, sizeof(openRequest.filename), "testfile_%d.txt", client_no);
+        snprintf(openRequest.filename, sizeof(openRequest.filename), "%s", filename);
 
-        printConcurrent("[Server -> Client %d] : Open  File\n", request_header.client_no);
+        printConcurrent("[Server -> Client %d] : Open File\n", request_header.client_no);
         client.write(&request_header, sizeof(request_header));
         client.write(&openRequest, sizeof(openRequest));
 
         FileOpenResponse response;
-        client.read(&response, sizeof(response));
-
-        auto& response_header = response.header;
-        EXPECT_EQ(response_header.response_no, request_header.request_no);
-        EXPECT_EQ(response_header.request_type, request_header.request_type);
-
+        ASSERT_EQ(NetworkResultCode::SUCCESS,
+                  readFully(client, &response, sizeof(response)).code());
+        EXPECT_EQ(response.header.response_no, request_header.request_no);
+        EXPECT_EQ(response.header.request_type, request_header.request_type);
         fp = response.fp;
+        total = response.total_size;
     }
+    EXPECT_EQ(ten_mb, total);
 
-    // Receive 10MB Byte
-    for (size_t i = 0; i < ten_mb / 4096; i++)
+    // ── READ_BEGIN (READ_STREAM entry) — server streams `total` raw bytes ──
     {
-        FileRequestHeader request_header{ FileRequestType::READ_FILE, ++request_no, sizeof(FileReadRequestPayload), client_no };
-        FileReadRequestPayload readRequest;
-        readRequest.fp = fp;
-        readRequest.length = 4096;
+        FileRequestHeader request_header{ FileRequestType::READ_BEGIN, ++request_no,
+                                          sizeof(ReadBeginPayload), client_no };
+        ReadBeginPayload readBegin{ fp, 4096, total };
 
-        auto& test_case = test_cases[i % (test_cases.size())];
-        
-        printConcurrent("[Server -> Client %d] : Read  File (%zu)\n", request_header.client_no, i);
+        printConcurrent("[Server -> Client %d] : Read Begin\n", request_header.client_no);
         client.write(&request_header, sizeof(request_header));
-        client.write(&readRequest, sizeof(readRequest));
+        client.write(&readBegin, sizeof(readBegin));
 
-        FileReadResponse response;
-        client.read(&response, sizeof(response));
+        std::vector<char> got(total);
+        ASSERT_EQ(NetworkResultCode::SUCCESS,
+                  readFully(client, got.data(), total).code());
 
-        auto& response_header = response.header;
-        EXPECT_EQ(response_header.response_no, request_header.request_no);
-        EXPECT_EQ(response_header.request_type, request_header.request_type);
-
-        EXPECT_EQ(response.length, readRequest.length);
-        EXPECT_TRUE(memcmp(response.data, test_case.data(), 4096) == 0);
+        for (size_t i = 0; i < chunk_count; i++) {
+            auto& test_case = test_cases[i % (test_cases.size())];
+            EXPECT_TRUE(memcmp(got.data() + i * 4096, test_case.data(), 4096) == 0)
+                << "mismatch at chunk " << i;
+        }
     }
 
-    // Close File
+    // ── CLOSE_FILE (FAST) ──
     {
-        FileRequestHeader request_header{ FileRequestType::CLOSE_FILE, ++request_no, sizeof(FileCloseRequestPayload), client_no };
-        FileCloseRequestPayload closeRequest;
-        closeRequest.fp = fp;
+        FileRequestHeader request_header{ FileRequestType::CLOSE_FILE, ++request_no,
+                                          sizeof(FileCloseRequestPayload), client_no };
+        FileCloseRequestPayload closeRequest{ fp };
 
-        printConcurrent("[Server -> Client %d] : Close  File\n", request_header.client_no);
+        printConcurrent("[Server -> Client %d] : Close File (read)\n", request_header.client_no);
         client.write(&request_header, sizeof(request_header));
         client.write(&closeRequest, sizeof(closeRequest));
 
         FileCloseResponse response;
-        client.read(&response, sizeof(response));
-
-        auto& response_header = response.header;
-        EXPECT_EQ(response_header.response_no, request_header.request_no);
-        EXPECT_EQ(response_header.request_type, request_header.request_type);
+        ASSERT_EQ(NetworkResultCode::SUCCESS,
+                  readFully(client, &response, sizeof(response)).code());
+        EXPECT_EQ(response.header.response_no, request_header.request_no);
+        EXPECT_EQ(response.header.request_type, request_header.request_type);
     }
 }
 

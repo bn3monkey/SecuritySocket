@@ -8,9 +8,10 @@
 //   PING                          -> SendingWebSocketResponse (Pong)
 //   PONG                          -> ReceivingWebSocketFrame (noop)
 //   CLOSE / TEXT                  -> Closing
-//   WRITE_STREAM message          -> ReceivingWebSocketFrame (no response)
+//   WRITE_STREAM                  -> ReceivingWebSocketStream (begin), chunks ingested
+//   READ_STREAM                   -> SendingWebSocketStream (begin + framed chunks)
+//   PING mid WRITE_STREAM         -> Pong, then resume ReceivingWebSocketStream
 //   partial frame                 -> ReceivingWebSocketFrame (NEED_MORE)
-// Each test pushes 100+ frames/messages through the phase.
 
 #include <gtest/gtest.h>
 
@@ -53,7 +54,7 @@ TEST(WebSocketPhase, FragmentedMessageReassembles)
     WebSocketPhase phase;
 
     for (int i = 0; i < kRounds; ++i) {
-        auto msg = PhaseTest::makeCustomMessage(/*FAST*/ 0, 16);   // 24 bytes
+        auto msg = PhaseTest::makeCustomMessage(/*FAST*/ 0, 16);
         const size_t half = msg.size() / 2;
 
         auto f1 = PhaseTest::makeClientFrame(WsOpcode::BINARY, msg.data(), half, /*fin=*/false);
@@ -137,43 +138,102 @@ TEST(WebSocketPhase, TextFrameCloses)
     }
 }
 
-// WRITE_STREAM message over WS: ingested without a response, stay reading.
-TEST(WebSocketPhase, WriteStreamMessageNoResponse)
+// WRITE_STREAM over WS: the begin message parks in ReceivingWebSocketStream;
+// each subsequent BINARY message is a chunk routed to onWriteStreamData (no
+// response) until the last chunk returns COMPLETE.
+TEST(WebSocketPhase, WriteStreamIngestsChunks)
 {
     FakePhaseHost     host;
     StubCustomHandler handler;
     host.setCustom(&handler);
     WebSocketPhase phase;
 
-    for (int i = 0; i < kRounds; ++i) {
-        auto frame = PhaseTest::makeClientBinaryMessage(/*WRITE_STREAM*/ 3, 16);
-        host.feed(frame);
-        EXPECT_EQ(ConnectionState::ReceivingWebSocketFrame, host.drive(phase)) << "round " << i;
-        EXPECT_EQ(0u, host.outputSize());
+    auto begin = PhaseTest::makeClientBinaryMessage(/*WRITE_STREAM*/ 3, 0);
+    host.feed(begin);
+    EXPECT_EQ(ConnectionState::ReceivingWebSocketStream, host.drive(phase));
+    EXPECT_EQ(1, handler.write_begin_count);
+
+    constexpr int N = 30;
+    std::vector<char> expected;
+    for (int i = 0; i < N; ++i) {
+        const int last = (i == N - 1) ? 1 : 0;
+        auto chunk = PhaseTest::makeClientBinaryMessage(/*tag*/ 3, 50, /*fin*/ true, last);
+        for (int j = 0; j < 50; ++j) expected.push_back(static_cast<char>('A' + (j % 26)));
+        host.feed(chunk);
+        const auto st = host.drive(phase);
+        if (last) {
+            EXPECT_EQ(ConnectionState::WaitingForNextWebSocketMessage, st) << "last " << i;
+        } else {
+            EXPECT_EQ(ConnectionState::ReceivingWebSocketStream, st) << "chunk " << i;
+        }
+        EXPECT_EQ(0u, host.outputSize());   // no response
     }
-    EXPECT_EQ(kRounds, handler.no_response_count);
+    EXPECT_EQ(N, handler.write_data_count);
+    EXPECT_EQ(0, handler.process_count);
+    ASSERT_EQ(expected.size(), handler.write_accum.size());
+    EXPECT_TRUE(std::memcmp(expected.data(), handler.write_accum.data(), expected.size()) == 0);
 }
 
-// READ_STREAM message over WS: unlike WRITE_STREAM, this is an RPC-style read
-// (request -> single response), matching CustomPhase (raw TCP) so the same
-// handler behaves identically on both transports. It must dispatch through
-// process() and produce a response, NOT processWithoutResponse().
-TEST(WebSocketPhase, ReadStreamMessageProducesResponse)
+// A control frame (PING) arriving mid WRITE_STREAM is answered with a Pong, and
+// after the Pong flushes the connection RESUMES the stream state (rather than
+// falling back to WaitingForNextWebSocketMessage).
+TEST(WebSocketPhase, ControlFrameMidStreamResumes)
 {
     FakePhaseHost     host;
     StubCustomHandler handler;
     host.setCustom(&handler);
     WebSocketPhase phase;
 
-    for (int i = 0; i < kRounds; ++i) {
-        auto frame = PhaseTest::makeClientBinaryMessage(/*READ_STREAM*/ 2, 16);
-        host.feed(frame);
-        EXPECT_EQ(ConnectionState::SendingWebSocketResponse, host.drive(phase)) << "round " << i;
-        EXPECT_GT(host.outputSize(), 0u);
-        EXPECT_EQ(ConnectionState::WaitingForNextWebSocketMessage, host.completeSend(phase));
+    auto begin = PhaseTest::makeClientBinaryMessage(/*WRITE_STREAM*/ 3, 0);
+    host.feed(begin);
+    EXPECT_EQ(ConnectionState::ReceivingWebSocketStream, host.drive(phase));
+
+    // Ingest a couple of chunks, then a PING interrupts.
+    auto c0 = PhaseTest::makeClientBinaryMessage(3, 32, true, /*last*/ 0);
+    host.feed(c0);
+    EXPECT_EQ(ConnectionState::ReceivingWebSocketStream, host.drive(phase));
+
+    const char ping[] = "ka";
+    auto pingFrame = PhaseTest::makeClientFrame(WsOpcode::PING, ping, sizeof(ping) - 1, true);
+    host.feed(pingFrame);
+    EXPECT_EQ(ConnectionState::SendingWebSocketResponse, host.drive(phase));   // Pong queued
+    EXPECT_GT(host.outputSize(), 0u);
+
+    // After the Pong flush, resume the stream.
+    EXPECT_EQ(ConnectionState::ReceivingWebSocketStream, host.completeSend(phase));
+
+    // Streaming continues: a chunk still routes to onWriteStreamData.
+    auto last = PhaseTest::makeClientBinaryMessage(3, 32, true, /*last*/ 1);
+    host.feed(last);
+    EXPECT_EQ(ConnectionState::WaitingForNextWebSocketMessage, host.drive(phase));
+    EXPECT_EQ(2, handler.write_data_count);   // c0 + last
+}
+
+// READ_STREAM over WS: begin produces the first framed chunk and parks in
+// SendingWebSocketStream; each send completion frames the next chunk until
+// COMPLETE. Each chunk is wrapped in one BINARY frame (framed > raw payload).
+TEST(WebSocketPhase, ReadStreamEmitsFramedChunks)
+{
+    FakePhaseHost     host;
+    StubCustomHandler handler;
+    host.setCustom(&handler);
+    WebSocketPhase phase;
+
+    constexpr int K = 10;
+    auto begin = PhaseTest::makeClientBinaryMessage(/*READ_STREAM*/ 2, 0, /*fin*/ true,
+                                                    /*last*/ 0, /*chunk_count*/ K);
+    host.feed(begin);
+    EXPECT_EQ(ConnectionState::SendingWebSocketStream, host.drive(phase));
+    EXPECT_EQ(1, handler.read_begin_count);
+    EXPECT_EQ(1, handler.read_data_count);
+    EXPECT_GT(host.outputSize(), StubCustomHandler::kReadChunkSize);   // framed
+
+    for (int i = 1; i < K; ++i) {
+        EXPECT_EQ(ConnectionState::SendingWebSocketStream, host.completeSend(phase)) << "chunk " << i;
+        EXPECT_GT(host.outputSize(), StubCustomHandler::kReadChunkSize);
     }
-    EXPECT_EQ(kRounds, handler.process_count);
-    EXPECT_EQ(0, handler.no_response_count);
+    EXPECT_EQ(K, handler.read_data_count);
+    EXPECT_EQ(ConnectionState::WaitingForNextWebSocketMessage, host.completeSend(phase));
 }
 
 // A frame delivered in two recvs: the first (partial) is NEED_MORE, the rest

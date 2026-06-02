@@ -13,6 +13,13 @@ using Bn3Monkey::HttpParser;
 namespace {
 using PR = HttpParser::ParsedRequest;
 
+// NOTE: ParsedRequest holds *pointers into the source buffer* (picohttpparser
+// returns views, not copies). This helper is only safe when the result is
+// consumed within the same full-expression (e.g. contentLength(parse("..."))),
+// because the string temporary lives until the end of that statement. A test
+// that STORES the PR and reads its pointer fields (method/path/header values)
+// in later statements must instead keep its own named source buffer alive —
+// see the tests below that parse into a local `raw`.
 PR parse(const std::string& s) {
     return HttpParser::parse(s.data(), s.size(), 0);
 }
@@ -24,19 +31,21 @@ std::string headerValue(const PR& r, const char* name) {
 }  // namespace
 
 TEST(HttpParser, ParsesCompleteRequestLineAndHeaders) {
-    PR r = parse("GET /path/to?x=1 HTTP/1.1\r\n"
-                 "Host: example.com\r\n"
-                 "Content-Length: 0\r\n"
-                 "\r\n");
+    // `raw` must outlive every access to `r` — r.method/r.path/header values
+    // are pointers into it.
+    std::string raw = "GET /path/to?x=1 HTTP/1.1\r\n"
+                      "Host: example.com\r\n"
+                      "Content-Length: 0\r\n"
+                      "\r\n";
+    PR r = HttpParser::parse(raw.data(), raw.size(), 0);
     ASSERT_EQ(HttpParser::ParseStatus::OK, r.status);
     EXPECT_EQ(std::string("GET"),        std::string(r.method, r.method_len));
     EXPECT_EQ(std::string("/path/to?x=1"), std::string(r.path, r.path_len));
     EXPECT_EQ(1, r.minor_version);
     EXPECT_EQ(std::string("example.com"), headerValue(r, "Host"));
-    // header_end points just past the blank line — the body would start there.
-    EXPECT_EQ(r.header_end,
-              std::string("GET /path/to?x=1 HTTP/1.1\r\nHost: example.com\r\n"
-                          "Content-Length: 0\r\n\r\n").size());
+    // header_end points just past the blank line — the body would start there
+    // (here the request has no body, so it equals the whole buffer size).
+    EXPECT_EQ(r.header_end, raw.size());
 }
 
 TEST(HttpParser, IncompleteHeaderBlockIsIncomplete) {
@@ -54,7 +63,8 @@ TEST(HttpParser, MalformedRequestLineIsMalformed) {
 }
 
 TEST(HttpParser, FindHeaderIsCaseInsensitive) {
-    PR r = parse("GET / HTTP/1.1\r\nContent-Type: text/plain\r\n\r\n");
+    std::string raw = "GET / HTTP/1.1\r\nContent-Type: text/plain\r\n\r\n";
+    PR r = HttpParser::parse(raw.data(), raw.size(), 0);
     EXPECT_EQ(std::string("text/plain"), headerValue(r, "content-type"));
     EXPECT_EQ(std::string("text/plain"), headerValue(r, "CONTENT-TYPE"));
     EXPECT_EQ(nullptr, HttpParser::findHeader(r, "Authorization"));
@@ -93,12 +103,13 @@ TEST(HttpParser, KeepAliveTokenWiseInMultiValueConnection) {
 }
 
 TEST(HttpParser, DetectsWebSocketUpgrade) {
-    PR r = parse("GET /ws HTTP/1.1\r\n"
-                 "Host: x\r\n"
-                 "Upgrade: websocket\r\n"
-                 "Connection: Upgrade\r\n"
-                 "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
-                 "Sec-WebSocket-Version: 13\r\n\r\n");
+    std::string raw = "GET /ws HTTP/1.1\r\n"
+                      "Host: x\r\n"
+                      "Upgrade: websocket\r\n"
+                      "Connection: Upgrade\r\n"
+                      "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
+                      "Sec-WebSocket-Version: 13\r\n\r\n";
+    PR r = HttpParser::parse(raw.data(), raw.size(), 0);
     EXPECT_TRUE(HttpParser::isWebSocketUpgrade(r));
 }
 
@@ -119,15 +130,17 @@ TEST(HttpParser, ComputeAcceptMatchesRfc6455Vector) {
 }
 
 TEST(HttpParser, ComputeAcceptFromParsedRequest) {
-    PR r = parse("GET /ws HTTP/1.1\r\n"
-                 "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n\r\n");
+    std::string raw = "GET /ws HTTP/1.1\r\n"
+                      "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n\r\n";
+    PR r = HttpParser::parse(raw.data(), raw.size(), 0);
     char out[HttpParser::ACCEPT_BUF_SIZE];
     ASSERT_TRUE(HttpParser::computeAccept(r, out, sizeof(out)));
     EXPECT_STREQ("s3pPLMBiTxaQ9kYGzzhZRbK+xOo=", out);
 }
 
 TEST(HttpParser, ComputeAcceptFailsWithoutKey) {
-    PR r = parse("GET /ws HTTP/1.1\r\nHost: x\r\n\r\n");
+    std::string raw = "GET /ws HTTP/1.1\r\nHost: x\r\n\r\n";
+    PR r = HttpParser::parse(raw.data(), raw.size(), 0);
     char out[HttpParser::ACCEPT_BUF_SIZE];
     EXPECT_FALSE(HttpParser::computeAccept(r, out, sizeof(out)));
 }

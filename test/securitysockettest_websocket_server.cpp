@@ -74,8 +74,6 @@ public:
         std::memcpy(out + hlen, req.payload(), plen);
         res.setLength(hlen + plen);
     }
-    void processWithoutResponse(const Bn3Monkey::ClientConnection&,
-                                const Bn3Monkey::CustomProtocolRequest&) override {}
 };
 
 class ServerRunner {
@@ -296,18 +294,10 @@ TEST(WebSocketServer, FileHandlerBehavesSameAsTcp) {
     const char* kFile = "ws_testfile.txt";
     const int32_t client_no = 7;
     const size_t kChunks = 16;
+    const size_t kChunkBytes = sizeof(FileWriteRequestPayload{}.data);  // 4096
+    const size_t kTotal = kChunks * kChunkBytes;
     int32_t request_no = 0;
     FILE* fp = nullptr;
-
-    // ── CREATE_HANDLE (FAST, header-only request → FileResponseHeader) ──
-    {
-        FileRequestHeader req{ FileRequestType::CREATE_HANDLE, ++request_no, 0, client_no };
-        ASSERT_TRUE(wsSendMessage(h, &req, sizeof(req), nullptr, 0)) << "send CREATE_HANDLE";
-        FileResponseHeader resp{};
-        ASSERT_TRUE(wsRecvExact(h, &resp, sizeof(resp))) << "recv CREATE_HANDLE";
-        EXPECT_EQ(resp.response_no, req.request_no);
-        EXPECT_EQ(resp.request_type, req.request_type);
-    }
 
     // ── CREATE_FILE (FAST → FileOpenResponse carrying the FILE*) ──
     {
@@ -324,10 +314,19 @@ TEST(WebSocketServer, FileHandlerBehavesSameAsTcp) {
         fp = resp.fp;
     }
 
-    // ── WRITE_STREAM × N (upload: client pushes, server produces NO response) ──
+    // ── WRITE_BEGIN (WRITE_STREAM entry, no response) ──
+    {
+        FileRequestHeader req{ FileRequestType::WRITE_BEGIN, ++request_no,
+                               sizeof(WriteBeginPayload), client_no };
+        WriteBeginPayload pl{ fp };
+        ASSERT_TRUE(wsSendMessage(h, &req, sizeof(req), &pl, sizeof(pl))) << "send WRITE_BEGIN";
+    }
+
+    // ── WRITE_CHUNK × N (upload: client pushes, server produces NO response) ──
     for (size_t i = 0; i < kChunks; ++i) {
-        FileRequestHeader req{ FileRequestType::WRITE_FILE, ++request_no,
-                               sizeof(FileWriteRequestPayload), client_no };
+        const int32_t last = (i == kChunks - 1) ? 1 : 0;
+        FileRequestHeader req{ FileRequestType::WRITE_CHUNK, ++request_no,
+                               sizeof(FileWriteRequestPayload), client_no, last };
         FileWriteRequestPayload pl{};
         pl.fp = fp;
         pl.length = sizeof(pl.data);
@@ -347,7 +346,7 @@ TEST(WebSocketServer, FileHandlerBehavesSameAsTcp) {
         EXPECT_EQ(resp.header.request_type, req.request_type);
     }
 
-    // ── OPEN_FILE (FAST → FileOpenResponse) ──
+    // ── OPEN_FILE (FAST → FileOpenResponse with total size) ──
     {
         FileRequestHeader req{ FileRequestType::OPEN_FILE, ++request_no,
                                sizeof(FileOpenRequestPayload), client_no };
@@ -359,29 +358,26 @@ TEST(WebSocketServer, FileHandlerBehavesSameAsTcp) {
         EXPECT_EQ(resp.header.response_no, req.request_no);
         EXPECT_EQ(resp.header.request_type, req.request_type);
         ASSERT_NE(nullptr, resp.fp) << "server failed to open file for read";
+        EXPECT_EQ(kTotal, resp.total_size);
         fp = resp.fp;
     }
 
-    // ── READ_STREAM × N (RPC read: request → single response; PARITY with TCP,
-    //    where WebSocketPhase used to drop READ_STREAM with no response) ──
-    for (size_t i = 0; i < kChunks; ++i) {
-        FileRequestHeader req{ FileRequestType::READ_FILE, ++request_no,
-                               sizeof(FileReadRequestPayload), client_no };
-        FileReadRequestPayload pl{};
-        pl.fp = fp;
-        pl.length = sizeof(FileWriteRequestPayload{}.data);  // 4096
-        ASSERT_TRUE(wsSendMessage(h, &req, sizeof(req), &pl, sizeof(pl))) << "send READ " << i;
+    // ── READ_BEGIN (READ_STREAM entry) — server streams kTotal raw bytes back
+    //    across N BINARY frames; wsRecvExact reassembles them by byte count. ──
+    {
+        FileRequestHeader req{ FileRequestType::READ_BEGIN, ++request_no,
+                               sizeof(ReadBeginPayload), client_no };
+        ReadBeginPayload pl{ fp, kChunkBytes, kTotal };
+        ASSERT_TRUE(wsSendMessage(h, &req, sizeof(req), &pl, sizeof(pl))) << "send READ_BEGIN";
 
-        FileReadResponse resp{};
-        ASSERT_TRUE(wsRecvExact(h, &resp, sizeof(resp))) << "recv READ " << i;
-        EXPECT_EQ(resp.header.response_no, req.request_no) << "read " << i;
-        EXPECT_EQ(resp.header.request_type, req.request_type) << "read " << i;
-        EXPECT_EQ(resp.length, pl.length) << "read " << i << " short";
-
-        char expected[4096];
-        std::memset(expected, static_cast<int>('a' + (i % 26)), sizeof(expected));
-        EXPECT_EQ(0, std::memcmp(resp.data, expected, sizeof(expected)))
-            << "read " << i << " payload mismatch";
+        std::vector<char> got(kTotal);
+        ASSERT_TRUE(wsRecvExact(h, got.data(), kTotal)) << "recv read stream";
+        for (size_t i = 0; i < kChunks; ++i) {
+            char expected[4096];
+            std::memset(expected, static_cast<int>('a' + (i % 26)), sizeof(expected));
+            EXPECT_EQ(0, std::memcmp(got.data() + i * kChunkBytes, expected, sizeof(expected)))
+                << "read chunk " << i << " mismatch";
+        }
     }
 
     // ── CLOSE_FILE again ──

@@ -5,28 +5,43 @@
 
 namespace Bn3Monkey
 {
-    // Raw (non-tunnelled) Custom Protocol group: ReceivingCustomMessage ->
-    // SendingCustomResponse -> WaitingForNextCustomMessage (state-machine.html
-    // §6-4). A message is a fixed-size header (handler.headerSize()) followed by
-    // a payload whose length the handler derives from the header.
+    // Raw (non-tunnelled) Custom Protocol group (state-machine.html §6-4).
+    //
+    // A message is a fixed-size header (handler.headerSize()) followed by a
+    // payload whose length the handler derives from the header. classifyMode()
+    // picks the dispatch path per message:
+    //   FAST / SLOW  : ReceivingCustomMessage -> SendingCustomResponse -> Waiting
+    //   WRITE_STREAM : the client streams response-less framed chunks into the
+    //                  server. Entry fires onWriteStreamBegin and parks the
+    //                  connection in ReceivingCustomStream; every later framed
+    //                  message routes to onWriteStreamData until it returns
+    //                  COMPLETE (-> WaitingForNextCustomMessage) or ABORT
+    //                  (-> Closing). No response is ever produced.
+    //   READ_STREAM  : one request triggers a server-driven chunk stream. Entry
+    //                  fires onReadStreamBegin, produces the first chunk, and
+    //                  parks in SendingCustomStream; each flush completion
+    //                  (onSendComplete) produces the next chunk until COMPLETE.
     class CustomPhase : public ConnectionPhase
     {
     public:
         ConnectionState onReadable(PhaseHost& host,
                                    SocketMultiEventListener& listener) override;
         ConnectionState onSendComplete(PhaseHost& host) override;
+        void            reset() override;
 
     private:
-        // Per-action result (state-machine.html §7-3), mapped to ConnectionState.
-        enum class CustomMessageResult {
-            NEED_MORE_BYTES,
-            DISPATCHED_FAST,              // process() ran, response in output()
-            DISPATCHED_FAST_NO_RESPONSE, // STREAM mode (processWithoutResponse)
-            DISPATCHED_SLOW,             // handed to the worker
-        };
+        // Parse / dispatch the next framed message according to the current
+        // (local) state, looping over all complete messages in the buffer.
+        ConnectionState handle(PhaseHost& host, SocketMultiEventListener& listener);
 
-        CustomMessageResult handle(PhaseHost& host, SocketMultiEventListener& listener);
-        static ConnectionState mapResultToNextState(CustomMessageResult r);
+        // Produce one READ_STREAM chunk into output() and update _read_last.
+        // Returns SendingCustomStream on CONTINUE/COMPLETE, Closing on ABORT.
+        ConnectionState produceReadChunk(PhaseHost& host);
+
+        // READ_STREAM bookkeeping: the last-chunk decision happens when the
+        // chunk is *produced* (fill time), one tick before its flush completes
+        // (the transition point). Cleared on reset().
+        bool _read_last{ false };
     };
 }
 

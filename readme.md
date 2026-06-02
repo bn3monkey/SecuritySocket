@@ -369,15 +369,6 @@ int main()
                 break;
             }
         }
-
-        void processWithoutResponse(
-            const Bn3Monkey::ClientConnection& conn,
-            const Bn3Monkey::CustomProtocolRequest& req
-        ) override {
-            (void)conn;
-            (void)req;
-            return;
-        }
     };
 
     EchoRequestHandler handler;

@@ -522,8 +522,53 @@ namespace Bn3Monkey
         virtual void process(const ClientConnection&     conn,
                              const CustomProtocolRequest& req,
                              CustomProtocolResponse&      res) = 0;
-        virtual void processWithoutResponse(const ClientConnection&     conn,
-                                            const CustomProtocolRequest& req) = 0;
+
+        // ── Stream hooks (WRITE_STREAM / READ_STREAM) ──
+        //
+        // A stream is a *boundary-less sequence of response-less framed
+        // messages* — the existing [header][payload] framing is reused as-is.
+        // classifyMode(header) decides mode entry (NOT process()): the first
+        // message whose header classifies as WRITE_STREAM/READ_STREAM fires the
+        // matching *Begin hook and switches the connection into a dedicated
+        // stream state; every subsequent framed message routes only to the
+        // *Data hook until it returns COMPLETE (or ABORT). There is no separate
+        // *End callback — the *Data return value is the termination point, and
+        // an abnormal disconnect still surfaces through onDisconnected().
+        //
+        // All four have empty default implementations, so FAST/SLOW handlers are
+        // unaffected. The req view (and res, for READ) is valid only for the
+        // duration of the call — consume or copy it before returning.
+
+        // Progress signal returned by the *Data hooks: "more coming" /
+        // "this was the last one" / "I failed, tear the connection down".
+        enum class StreamProgress { CONTINUE, COMPLETE, ABORT };
+
+        // WRITE_STREAM (server receives, no response). Begin = setup (open a
+        // file, etc.); Data = once per chunk (branch on the header, decide the
+        // end). Returning COMPLETE/ABORT ends the stream.
+        virtual void          onWriteStreamBegin(const ClientConnection&     conn,
+                                                 const CustomProtocolRequest& req)
+        {
+            (void)conn; (void)req;
+        }
+        virtual StreamProgress onWriteStreamData(const ClientConnection&     conn,
+                                                 const CustomProtocolRequest& req)
+        {
+            (void)conn; (void)req; return StreamProgress::COMPLETE;
+        }
+
+        // READ_STREAM (server sends, one request -> N chunks). Begin = setup;
+        // Data = fill res per send completion. Returning COMPLETE/ABORT ends it.
+        virtual void          onReadStreamBegin(const ClientConnection&     conn,
+                                                const CustomProtocolRequest& req)
+        {
+            (void)conn; (void)req;
+        }
+        virtual StreamProgress onReadStreamData(const ClientConnection& conn,
+                                                CustomProtocolResponse& res)
+        {
+            (void)conn; (void)res; return StreamProgress::COMPLETE;
+        }
 
     private:
         WebSocketConfiguration _ws_config{};

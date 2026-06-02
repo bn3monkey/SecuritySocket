@@ -70,7 +70,7 @@ namespace Bn3Monkey
         // during teardown, after onDisconnected and before pool release.
         void closeSocket();
 
-        ConnectionState state() const { return _state; }
+        ConnectionState state() const override { return _state; }
 
         // ── PhaseHost ──
         StagingBuffer& input()  override { return _input; }

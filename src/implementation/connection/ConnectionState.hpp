@@ -27,11 +27,15 @@ namespace Bn3Monkey
         ReceivingWebSocketFrame,         // [READ]  frame accumulation + unmask
         SendingWebSocketResponse,        // [WRITE] frame-wrapped response send
         WaitingForNextWebSocketMessage,  // [READ]  next frame
+        ReceivingWebSocketStream,        // [READ]  WS tunnel WRITE_STREAM chunks
+        SendingWebSocketStream,          // [WRITE] WS tunnel READ_STREAM chunks
 
         // Custom group (raw)
         ReceivingCustomMessage,          // [READ]  header + payload accumulation
         SendingCustomResponse,           // [WRITE] response send
         WaitingForNextCustomMessage,     // [READ]  next message
+        ReceivingCustomStream,           // [READ]  WRITE_STREAM chunk ingestion
+        SendingCustomStream,             // [WRITE] READ_STREAM chunk emission
     };
 
     // The four external events (state-machine.html §7-2). A SLOW worker
@@ -66,10 +70,14 @@ namespace Bn3Monkey
             (s == ConnectionState::SendingHandshakeResponse ||
              s == ConnectionState::ReceivingWebSocketFrame ||
              s == ConnectionState::SendingWebSocketResponse ||
-             s == ConnectionState::WaitingForNextWebSocketMessage)       ? PhaseGroup::WebSocket :
+             s == ConnectionState::WaitingForNextWebSocketMessage ||
+             s == ConnectionState::ReceivingWebSocketStream ||
+             s == ConnectionState::SendingWebSocketStream)               ? PhaseGroup::WebSocket :
             (s == ConnectionState::ReceivingCustomMessage ||
              s == ConnectionState::SendingCustomResponse ||
-             s == ConnectionState::WaitingForNextCustomMessage)          ? PhaseGroup::Custom    :
+             s == ConnectionState::WaitingForNextCustomMessage ||
+             s == ConnectionState::ReceivingCustomStream ||
+             s == ConnectionState::SendingCustomStream)                  ? PhaseGroup::Custom    :
                                                                           PhaseGroup::Lifecycle;
     }
 
@@ -83,8 +91,10 @@ namespace Bn3Monkey
                s == ConnectionState::WaitingForNextHttpRequest ||
                s == ConnectionState::ReceivingWebSocketFrame ||
                s == ConnectionState::WaitingForNextWebSocketMessage ||
+               s == ConnectionState::ReceivingWebSocketStream ||
                s == ConnectionState::ReceivingCustomMessage ||
-               s == ConnectionState::WaitingForNextCustomMessage;
+               s == ConnectionState::WaitingForNextCustomMessage ||
+               s == ConnectionState::ReceivingCustomStream;
     }
 
     constexpr bool isWriteState(ConnectionState s)
@@ -93,7 +103,9 @@ namespace Bn3Monkey
                s == ConnectionState::SendingHttpResponse ||
                s == ConnectionState::SendingHandshakeResponse ||
                s == ConnectionState::SendingWebSocketResponse ||
-               s == ConnectionState::SendingCustomResponse;
+               s == ConnectionState::SendingWebSocketStream ||
+               s == ConnectionState::SendingCustomResponse ||
+               s == ConnectionState::SendingCustomStream;
     }
 }
 

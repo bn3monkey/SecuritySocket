@@ -68,10 +68,11 @@ void ClientConnectionImpl::onAccept()
     _closed = false;
 
     // Clear phase-local accumulation — this object is reused from a pool, so a
-    // previous connection's HTTP header index / WS reassembly must not leak in.
-    // (Sniff/Custom phases are stateless.)
+    // previous connection's HTTP header index / WS reassembly / stream
+    // bookkeeping must not leak in. (Sniff phase is stateless.)
     _http_phase.reset();
     _websocket_phase.reset();
+    _custom_phase.reset();
 }
 
 void ClientConnectionImpl::closeSocket()
@@ -122,6 +123,8 @@ ConnectionPhase* ClientConnectionImpl::phaseForState(ConnectionState s)
     case ConnectionState::ReceivingCustomMessage:
     case ConnectionState::SendingCustomResponse:
     case ConnectionState::WaitingForNextCustomMessage:
+    case ConnectionState::ReceivingCustomStream:
+    case ConnectionState::SendingCustomStream:
         return &_custom_phase;
     case ConnectionState::ReceivingHttpRequest:
     case ConnectionState::SendingHttpResponse:
@@ -131,6 +134,8 @@ ConnectionPhase* ClientConnectionImpl::phaseForState(ConnectionState s)
     case ConnectionState::ReceivingWebSocketFrame:
     case ConnectionState::SendingWebSocketResponse:
     case ConnectionState::WaitingForNextWebSocketMessage:
+    case ConnectionState::ReceivingWebSocketStream:
+    case ConnectionState::SendingWebSocketStream:
         // The HTTP Upgrade flips state to SendingHandshakeResponse, so the WS
         // phase's onSendComplete runs once the host flushes the 101 — the group
         // switch happens implicitly through this state->phase mapping.

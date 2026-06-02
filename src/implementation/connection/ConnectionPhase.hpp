@@ -28,6 +28,14 @@ namespace Bn3Monkey
     public:
         virtual ~PhaseHost() = default;
 
+        // The connection's current state. A streaming phase reads this to know
+        // whether it is entering a stream (normal receive-state) or already
+        // mid-stream (a Receiving*Stream / Sending*Stream state). The host owns
+        // the authoritative value and only assigns it the phase's *return*; the
+        // phase must NOT assume mid-call transitions are reflected here, so it
+        // tracks its own local state while looping inside onReadable().
+        virtual ConnectionState state() const = 0;
+
         // ── input accumulation buffer ──
         // recv appends at tail(); the active phase parses the current message
         // from head() for pending() bytes, then drain()s it once consumed —

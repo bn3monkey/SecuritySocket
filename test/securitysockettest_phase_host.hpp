@@ -47,6 +47,7 @@ namespace PhaseTest
         bool        isWebSocket() const override { return _is_websocket; }
 
         // ── PhaseHost ──
+        Bn3Monkey::ConnectionState state() const override { return _state; }
         Bn3Monkey::StagingBuffer& input()  override { return _in; }
         Bn3Monkey::StagingBuffer& output() override { return _out; }
         Bn3Monkey::ClientConnection&             connection()    override { return *this; }
@@ -65,6 +66,7 @@ namespace PhaseTest
         void setRouter   (Bn3Monkey::HttpRouterImpl* r)               { _router = r; }
         void setCustom   (Bn3Monkey::CustomProtocolRequestHandler* c) { _custom = c; }
         void setWsPattern(const char* p)                             { _ws_pattern = p; }
+        void setState    (Bn3Monkey::ConnectionState s)              { _state = s; }
 
         // recv-equivalent: append n bytes at the tail. Resets the cursor to 0
         // when the buffer has been fully drained (mirrors the host's recvChunk),
@@ -79,10 +81,13 @@ namespace PhaseTest
         void feed(const std::vector<char>& bytes) { feed(bytes.data(), bytes.size()); }
 
         // One parse pass (host's per-READ-event entry into the active phase).
+        // Mirrors the host assigning _state = phase.onReadable(...), so a phase
+        // that reads host.state() observes its own previous transition.
         Bn3Monkey::ConnectionState drive(Bn3Monkey::ConnectionPhase& phase)
         {
             _slow_used = false;
-            return phase.onReadable(*this, _listener);
+            _state = phase.onReadable(*this, _listener);
+            return _state;
         }
 
         // The host flushed output() (we clear it to mimic the drained socket)
@@ -90,7 +95,8 @@ namespace PhaseTest
         Bn3Monkey::ConnectionState completeSend(Bn3Monkey::ConnectionPhase& phase)
         {
             _out.clear();
-            return phase.onSendComplete(*this);
+            _state = phase.onSendComplete(*this);
+            return _state;
         }
 
         // ── observation ──
@@ -101,6 +107,9 @@ namespace PhaseTest
         void        clearInput()         { _in.clear(); }
 
     private:
+        // Default to a lifecycle state so phases take their normal (non-stream)
+        // entry path until a test feeds a stream-entry message (or setState()).
+        Bn3Monkey::ConnectionState _state{ Bn3Monkey::ConnectionState::Sniffing };
         Bn3Monkey::StagingBuffer _in;
         Bn3Monkey::StagingBuffer _out;
         Bn3Monkey::HttpRouterImpl*               _router{ nullptr };
@@ -112,18 +121,25 @@ namespace PhaseTest
     };
 
     // ── stub Custom Protocol handler (used by custom + websocket tests) ──
-    // 8-byte fixed header: { int32 mode_tag, int32 payload_len }. mode_tag
-    // selects the dispatch mode so a single handler can exercise every path.
+    // 16-byte fixed header. mode_tag selects the dispatch mode so a single
+    // handler can exercise every path; last/chunk_count drive the streaming
+    // hooks (WRITE_STREAM chunk termination / READ_STREAM chunk count).
     struct StubHeader
     {
         int32_t mode_tag{ 0 };      // 0 FAST, 1 SLOW, 2 READ_STREAM, 3 WRITE_STREAM
         int32_t payload_len{ 0 };
+        int32_t last{ 0 };          // WRITE_STREAM chunk: 1 = last, -1 = abort
+        int32_t chunk_count{ 0 };   // READ_STREAM begin: number of chunks to emit
     };
 
     class StubCustomHandler : public Bn3Monkey::CustomProtocolRequestHandler
     {
     public:
-        using Mode = Bn3Monkey::RequestProcessingMode;
+        using Mode     = Bn3Monkey::RequestProcessingMode;
+        using Progress = Bn3Monkey::CustomProtocolRequestHandler::StreamProgress;
+
+        // Fixed READ_STREAM chunk size the handler emits per onReadStreamData.
+        static constexpr size_t kReadChunkSize = 32;
 
         size_t headerSize() override { return sizeof(StubHeader); }
         size_t payloadSize(const void* header) override
@@ -145,29 +161,77 @@ namespace PhaseTest
                      Bn3Monkey::CustomProtocolResponse& res) override
         {
             ++process_count;
-            // Echo the header back as a fixed 8-byte response.
+            // Echo the header back as a fixed-size response.
             auto* h = reinterpret_cast<const StubHeader*>(req.header());
             auto* out = reinterpret_cast<StubHeader*>(res.data());
-            out->mode_tag    = h->mode_tag;
-            out->payload_len = h->payload_len;
+            *out = *h;
             res.setLength(sizeof(StubHeader));
         }
-        void processWithoutResponse(const Bn3Monkey::ClientConnection&,
-                                    const Bn3Monkey::CustomProtocolRequest&) override
+
+        // ── WRITE_STREAM ──
+        void onWriteStreamBegin(const Bn3Monkey::ClientConnection&,
+                                const Bn3Monkey::CustomProtocolRequest&) override
         {
-            ++no_response_count;
+            ++write_begin_count;
+            write_accum.clear();
+        }
+        Progress onWriteStreamData(const Bn3Monkey::ClientConnection&,
+                                   const Bn3Monkey::CustomProtocolRequest& req) override
+        {
+            ++write_data_count;
+            auto* h = reinterpret_cast<const StubHeader*>(req.header());
+            const char* p = reinterpret_cast<const char*>(req.payload());
+            write_accum.insert(write_accum.end(), p, p + h->payload_len);
+            if (h->last < 0) return Progress::ABORT;
+            if (h->last > 0) return Progress::COMPLETE;
+            return Progress::CONTINUE;
+        }
+
+        // ── READ_STREAM ──
+        void onReadStreamBegin(const Bn3Monkey::ClientConnection&,
+                               const Bn3Monkey::CustomProtocolRequest& req) override
+        {
+            ++read_begin_count;
+            auto* h = reinterpret_cast<const StubHeader*>(req.header());
+            read_chunks_remaining = h->chunk_count > 0 ? h->chunk_count : 1;
+            read_data_count = 0;
+            read_total_produced = 0;
+        }
+        Progress onReadStreamData(const Bn3Monkey::ClientConnection&,
+                                  Bn3Monkey::CustomProtocolResponse& res) override
+        {
+            ++read_data_count;
+            if (read_abort_at > 0 && read_data_count == read_abort_at) {
+                return Progress::ABORT;
+            }
+            char* out = reinterpret_cast<char*>(res.data());
+            for (size_t i = 0; i < kReadChunkSize; ++i) {
+                out[i] = static_cast<char>('a' + (i % 26));
+            }
+            res.setLength(kReadChunkSize);
+            read_total_produced += kReadChunkSize;
+            --read_chunks_remaining;
+            return read_chunks_remaining > 0 ? Progress::CONTINUE : Progress::COMPLETE;
         }
 
         int process_count{ 0 };
-        int no_response_count{ 0 };
+        int write_begin_count{ 0 };
+        int write_data_count{ 0 };
+        int read_begin_count{ 0 };
+        int read_data_count{ 0 };
+        size_t read_total_produced{ 0 };
+        int read_chunks_remaining{ 0 };
+        int read_abort_at{ 0 };           // emit ABORT on this chunk index (0 = never)
+        std::vector<char> write_accum;    // WRITE_STREAM payload accumulation
     };
 
     // Build one Custom Protocol message (StubHeader + payload bytes) into a
     // contiguous byte vector. payload is filled with a deterministic pattern.
-    inline std::vector<char> makeCustomMessage(int32_t mode_tag, int32_t payload_len)
+    inline std::vector<char> makeCustomMessage(int32_t mode_tag, int32_t payload_len,
+                                               int32_t last = 0, int32_t chunk_count = 0)
     {
         std::vector<char> msg(sizeof(StubHeader) + static_cast<size_t>(payload_len));
-        StubHeader h{ mode_tag, payload_len };
+        StubHeader h{ mode_tag, payload_len, last, chunk_count };
         std::memcpy(msg.data(), &h, sizeof(h));
         for (int32_t i = 0; i < payload_len; ++i) {
             msg[sizeof(StubHeader) + static_cast<size_t>(i)] =
@@ -196,9 +260,10 @@ namespace PhaseTest
     }
 
     inline std::vector<char> makeClientBinaryMessage(int32_t mode_tag, int32_t payload_len,
-                                                     bool fin = true)
+                                                     bool fin = true,
+                                                     int32_t last = 0, int32_t chunk_count = 0)
     {
-        std::vector<char> msg = makeCustomMessage(mode_tag, payload_len);
+        std::vector<char> msg = makeCustomMessage(mode_tag, payload_len, last, chunk_count);
         return makeClientFrame(Bn3Monkey::WsOpcode::BINARY, msg.data(), msg.size(), fin);
     }
 }

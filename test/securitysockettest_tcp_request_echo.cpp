@@ -101,15 +101,6 @@ struct EchoRequestHandler : public Bn3Monkey::CustomProtocolRequestHandler
             break;
         }
     }
-
-    void processWithoutResponse(
-        const Bn3Monkey::ClientConnection& conn,
-        const Bn3Monkey::CustomProtocolRequest& req
-    ) override {
-        (void)conn;
-        (void)req;
-        return;
-    }
 };
 
 void runEchoClient(int32_t client_no)
