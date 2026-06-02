@@ -58,6 +58,25 @@ namespace Bn3Monkey
         static size_t encode(WsOpcode opcode, const char* payload, size_t len,
                              bool fin, char* out, size_t out_capacity);
 
+        // ── Client-side helpers (Phase 8 RequestClient) ──
+        //
+        // Mirror of the server path for the opposite masking convention:
+        // RFC 6455 §5.1 requires client->server frames to be masked, and
+        // server->client frames to be unmasked. These are additive — the
+        // server-side decode()/encode() above keep their masked-in/unmasked-out
+        // contract unchanged.
+
+        // Encode a client->server frame masked with the given 4-byte key.
+        // Returns bytes written, or 0 if out_capacity is insufficient.
+        static size_t encodeMasked(WsOpcode opcode, const char* payload, size_t len,
+                                   bool fin, const unsigned char mask_key[4],
+                                   char* out, size_t out_capacity);
+
+        // Decode a server->client frame: accepts unmasked frames (the normal
+        // case) and still unmasks if a mask happens to be present. Same
+        // NEED_MORE / OK / INVALID contract as decode().
+        static DecodeResult decodeServer(char* in, size_t in_len, WsFrameView& view);
+
         // Control-frame convenience builders (all unmasked, FIN=1).
         // Close with a 2-byte big-endian status code and no reason text.
         static size_t encodeClose(uint16_t status_code,

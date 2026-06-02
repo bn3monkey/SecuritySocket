@@ -163,6 +163,12 @@ if (BUILD_SECURITYSOCKET_TEST)
     # are listed here (adding an exported one would double-define its symbols).
     set(SECURITYSOCKET_CONNECTION_FILES ${securitysocket_source_files})
     list(FILTER SECURITYSOCKET_CONNECTION_FILES INCLUDE REGEX "/(connection|custom)/.*\\.cpp$")
+    # RequestClient (Phase 8) lives under custom/ but, unlike the internal phase/
+    # impl sources, it defines *exported* (SECURITYSOCKET_API) symbols — the
+    # public RequestClient facade. Tests resolve it through securitysocket.dll
+    # like HttpClient; compiling it into securitysockettest too would duplicate
+    # those symbols at link time, so exclude it here.
+    list(FILTER SECURITYSOCKET_CONNECTION_FILES EXCLUDE REGEX "/custom/RequestClient\\.cpp$")
     message(STATUS "SECURITYSOCKET_CONNECTION_FILES = ${SECURITYSOCKET_CONNECTION_FILES}")
 
     if (BUILD_SECURITYSOCKETTEST_SHARED)

@@ -723,6 +723,145 @@ namespace Bn3Monkey
     };
        
 
+    // ── HTTP Client (Phase 7) ──
+    //
+    // Concrete client-side types, symmetric with the server-side HttpRequest/
+    // HttpResponse pair but owned by user code. Both request and response keep
+    // their Impl inline via the same _container[] + placement-new pattern as
+    // Client (PImpl-by-inline-storage, DLL-boundary safe).
+
+    // Builder for an outgoing HTTP request. Fluent: every setter returns *this.
+    // query() auto percent-encodes both name and value (RFC 3986); path() is
+    // printf-style and is NOT auto-encoded — call Url::encode() on the pieces
+    // you interpolate. header()/body() pass through verbatim.
+    class SECURITYSOCKET_API HttpClientRequest
+    {
+    public:
+        static constexpr size_t IMPLEMENTATION_SIZE = 1024;
+
+        HttpClientRequest();
+        ~HttpClientRequest();
+        HttpClientRequest(const HttpClientRequest&)            = delete;
+        HttpClientRequest& operator=(const HttpClientRequest&) = delete;
+
+        HttpClientRequest& method(const char* m);
+
+        // printf-style single path setter. The compiler validates the format
+        // string against the varargs on GCC/Clang.
+        HttpClientRequest& path(const char* fmt, ...)
+#if defined(__GNUC__) || defined(__clang__)
+            __attribute__((format(printf, 2, 3)))
+#endif
+            ;
+
+        HttpClientRequest& query (const char* name, const char* value); // auto-encode
+        HttpClientRequest& header(const char* name, const char* value);
+        HttpClientRequest& body  (const void* data, size_t len);
+        HttpClientRequest& json  (const char* json_str);
+
+    private:
+        friend class HttpClient;
+        alignas(double) char _container[IMPLEMENTATION_SIZE]{ 0 };
+    };
+
+    // Value-returned result of an HttpClient call. resultCode() reports the
+    // transport-level outcome (could the request be sent and a response read);
+    // status() is the HTTP status code, valid only when resultCode()==SUCCESS.
+    class SECURITYSOCKET_API HttpClientResponse
+    {
+    public:
+        static constexpr size_t IMPLEMENTATION_SIZE = 1024;
+
+        HttpClientResponse();
+        ~HttpClientResponse();
+        HttpClientResponse(const HttpClientResponse&)            = delete;
+        HttpClientResponse& operator=(const HttpClientResponse&) = delete;
+
+        HttpClientResponse(HttpClientResponse&&) noexcept;
+        HttpClientResponse& operator=(HttpClientResponse&&) noexcept;
+
+        NetworkResultCode resultCode()              const;
+        int               status()                  const;
+        const char*       header(const char* name)  const;
+        const void*       body()                    const;
+        size_t            bodySize()                const;
+
+    private:
+        friend class HttpClient;
+        alignas(double) char _container[IMPLEMENTATION_SIZE]{ 0 };
+    };
+
+    // Synchronous HTTP/1.1 client over the existing Client transport (TCP/TLS).
+    // Connection is established lazily on the first call and reused across
+    // calls (HTTP/1.1 keep-alive); a "Connection: close" response or a transport
+    // error drops it so the next call reconnects.
+    class SECURITYSOCKET_API HttpClient : public Client
+    {
+    public:
+        static constexpr size_t IMPLEMENTATION_SIZE = 2048;
+
+        explicit HttpClient(const NetworkConfiguration& cfg);
+        explicit HttpClient(const NetworkConfiguration& cfg,
+                            const TlsClientConfiguration& tls);
+        ~HttpClient() override;
+
+        // Body-less helpers.
+        HttpClientResponse get    (const char* path);
+        HttpClientResponse head   (const char* path);
+        HttpClientResponse del    (const char* path);
+        HttpClientResponse options(const char* path);
+
+        // Body-carrying helpers.
+        HttpClientResponse post (const char* path, const void* body, size_t len);
+        HttpClientResponse put  (const char* path, const void* body, size_t len);
+        HttpClientResponse patch(const char* path, const void* body, size_t len);
+
+        // Full control — custom method / headers / query.
+        HttpClientResponse request(const HttpClientRequest& req);
+
+    private:
+        HttpClientResponse simple(const char* method, const char* path,
+                                  const void* body, size_t len);
+        alignas(double) char _http_container[IMPLEMENTATION_SIZE]{ 0 };
+    };
+
+    // ── Request Client (Phase 8) ──
+    //
+    // Custom Protocol client. Constructing with a WebSocketConfiguration flips
+    // it into WS-tunnelled mode (TCP + HTTP Upgrade handshake, then masked
+    // binary frames); without one it is a raw TCP/TLS client whose send/receive
+    // map straight onto Client::write/read. Exactly symmetric with the
+    // server-side CustomProtocolRequestHandler, so the same test code exercises
+    // both transports.
+    class SECURITYSOCKET_API RequestClient : public Client
+    {
+    public:
+        static constexpr size_t IMPLEMENTATION_SIZE = 4096;
+
+        explicit RequestClient(const NetworkConfiguration& cfg);
+        explicit RequestClient(const NetworkConfiguration& cfg,
+                               const TlsClientConfiguration& tls);
+        RequestClient(const NetworkConfiguration& cfg,
+                      const WebSocketConfiguration& ws);
+        RequestClient(const NetworkConfiguration& cfg,
+                      const TlsClientConfiguration& tls,
+                      const WebSocketConfiguration& ws);
+        ~RequestClient() override;
+
+        // raw: TCP connect. WS: TCP connect + Upgrade handshake.
+        NetworkResult connect();
+        NetworkResult send   (const void* data, size_t len);
+        // Returns one message. WS: one reassembled binary message (control
+        // frames handled internally — auto PONG, CLOSE → SOCKET_CLOSED).
+        NetworkResult receive(void* buf, size_t buf_size, size_t* received,
+                              uint64_t timeout_ms = 0);
+
+        bool isWebSocket() const;
+
+    private:
+        alignas(double) char _rc_container[IMPLEMENTATION_SIZE]{ 0 };
+    };
+
     bool SECURITYSOCKET_API initializeSecuritySocket();
     void SECURITYSOCKET_API releaseSecuritySocket();
 }

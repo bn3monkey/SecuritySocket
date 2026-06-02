@@ -117,6 +117,128 @@ namespace Bn3Monkey
         return header + len;
     }
 
+    size_t WsFrameCodec::encodeMasked(WsOpcode opcode, const char* payload,
+                                      size_t len, bool fin,
+                                      const unsigned char mask_key[4],
+                                      char* out, size_t out_capacity)
+    {
+        // Header: 2 bytes + extended length (0 / 2 / 8) + 4-byte mask key.
+        size_t header = 2;
+        if (len > 0xFFFF)    header += 8;
+        else if (len > 125)  header += 2;
+        header += 4;   // mask key
+
+        if (out_capacity < header + len) return 0;
+
+        unsigned char* o = reinterpret_cast<unsigned char*>(out);
+        o[0] = static_cast<unsigned char>(
+            (fin ? 0x80 : 0x00) | (static_cast<uint8_t>(opcode) & 0x0F));
+
+        size_t off = 2;
+        if (len > 0xFFFF) {
+            o[1] = static_cast<unsigned char>(0x80 | 127);
+            const uint64_t n = static_cast<uint64_t>(len);
+            for (size_t i = 0; i < 8; ++i)
+                o[2 + i] = static_cast<unsigned char>((n >> (56 - 8 * i)) & 0xFF);
+            off = 10;
+        } else if (len > 125) {
+            o[1] = static_cast<unsigned char>(0x80 | 126);
+            o[2] = static_cast<unsigned char>((len >> 8) & 0xFF);
+            o[3] = static_cast<unsigned char>(len & 0xFF);
+            off = 4;
+        } else {
+            o[1] = static_cast<unsigned char>(0x80 | len);
+            off = 2;
+        }
+
+        // Mask key.
+        o[off + 0] = mask_key[0];
+        o[off + 1] = mask_key[1];
+        o[off + 2] = mask_key[2];
+        o[off + 3] = mask_key[3];
+        off += 4;
+
+        // Masked payload.
+        for (size_t i = 0; i < len; ++i)
+            o[off + i] = static_cast<unsigned char>(
+                static_cast<unsigned char>(payload[i]) ^ mask_key[i & 3]);
+
+        return header + len;
+    }
+
+    WsFrameCodec::DecodeResult WsFrameCodec::decodeServer(char* in, size_t in_len,
+                                                          WsFrameView& view)
+    {
+        const unsigned char* p = reinterpret_cast<const unsigned char*>(in);
+
+        if (in_len < 2) return DecodeResult::NEED_MORE;
+
+        const uint8_t b0 = p[0];
+        const uint8_t b1 = p[1];
+
+        const bool    fin     = (b0 & 0x80) != 0;
+        const uint8_t rsv     = static_cast<uint8_t>((b0 >> 4) & 0x07);
+        const uint8_t opcode  = static_cast<uint8_t>(b0 & 0x0F);
+        const bool    masked  = (b1 & 0x80) != 0;
+        uint64_t      payload_len = static_cast<uint64_t>(b1 & 0x7F);
+
+        if (rsv != 0) return DecodeResult::INVALID;
+
+        switch (opcode) {
+            case 0x0: case 0x1: case 0x2:
+            case 0x8: case 0x9: case 0xA:
+                break;
+            default:
+                return DecodeResult::INVALID;
+        }
+
+        const bool is_control = (opcode & 0x08) != 0;
+        if (is_control) {
+            if (!fin)              return DecodeResult::INVALID;
+            if (payload_len > 125) return DecodeResult::INVALID;
+        }
+
+        size_t offset = 2;
+        if (payload_len == 126) {
+            if (in_len < offset + 2) return DecodeResult::NEED_MORE;
+            payload_len = (static_cast<uint64_t>(p[2]) << 8) |
+                           static_cast<uint64_t>(p[3]);
+            offset += 2;
+        } else if (payload_len == 127) {
+            if (in_len < offset + 8) return DecodeResult::NEED_MORE;
+            payload_len = 0;
+            for (size_t i = 0; i < 8; ++i)
+                payload_len = (payload_len << 8) | static_cast<uint64_t>(p[offset + i]);
+            offset += 8;
+            if (payload_len & (static_cast<uint64_t>(1) << 63))
+                return DecodeResult::INVALID;
+        }
+
+        unsigned char mask_key[4] = { 0, 0, 0, 0 };
+        if (masked) {
+            if (in_len < offset + 4) return DecodeResult::NEED_MORE;
+            mask_key[0] = p[offset];     mask_key[1] = p[offset + 1];
+            mask_key[2] = p[offset + 2]; mask_key[3] = p[offset + 3];
+            offset += 4;
+        }
+
+        if (in_len < offset + payload_len) return DecodeResult::NEED_MORE;
+
+        char* payload = in + offset;
+        if (masked) {
+            for (uint64_t i = 0; i < payload_len; ++i)
+                payload[i] = static_cast<char>(
+                    static_cast<unsigned char>(payload[i]) ^ mask_key[i & 3]);
+        }
+
+        view.fin         = fin;
+        view.opcode      = static_cast<WsOpcode>(opcode);
+        view.payload     = payload;
+        view.payload_len = static_cast<size_t>(payload_len);
+        view.frame_len   = offset + static_cast<size_t>(payload_len);
+        return DecodeResult::OK;
+    }
+
     size_t WsFrameCodec::encodeClose(uint16_t status_code,
                                      char* out, size_t out_capacity)
     {
