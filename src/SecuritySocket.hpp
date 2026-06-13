@@ -126,14 +126,23 @@ namespace Bn3Monkey
     public:
         constexpr static size_t MAX_PDU_SIZE = 65536;
 
-        inline char* ip() { return _ip; } 
-        inline char* port() {return _port;} 
+        // Largest HTTP request body (Content-Length) the server accepts before
+        // replying 413. This is a *policy* ceiling — distinct from pdu_size,
+        // which is only the input/output buffer's initial capacity (the buffer
+        // grows automatically as a body streams in). The cap is checked BEFORE
+        // any allocation, so it bounds the per-connection memory a single
+        // declared Content-Length can force. See HttpPhase.
+        constexpr static size_t DEFAULT_MAX_HTTP_REQUEST_BODY_SIZE = 64 * 1024 * 1024;  // 64 MB
+
+        inline char* ip() { return _ip; }
+        inline char* port() {return _port;}
         inline bool is_unix_domain() { return _is_unix_domain; }
-        inline size_t pdu_size() { return _pdu_size;} 
-        inline uint32_t max_retries() { return _max_retries; } 
-        inline uint32_t read_timeout() { return _read_timeout; } 
+        inline size_t pdu_size() { return _pdu_size;}
+        inline uint32_t max_retries() { return _max_retries; }
+        inline uint32_t read_timeout() { return _read_timeout; }
         inline uint32_t write_timeout() { return _write_timeout; }
         inline uint32_t time_between_retries() { return _time_between_retries;  }
+        inline size_t max_http_request_body_size() { return _max_http_request_body_size; }
 
 
         explicit NetworkConfiguration(
@@ -144,12 +153,14 @@ namespace Bn3Monkey
             uint32_t read_timeout = 2000,
             uint32_t write_timeout = 2000,
             uint32_t time_between_retries = 100,
-            size_t pdu_size = MAX_PDU_SIZE) : 
+            size_t pdu_size = MAX_PDU_SIZE,
+            size_t max_http_request_body_size = DEFAULT_MAX_HTTP_REQUEST_BODY_SIZE) :
             _pdu_size(pdu_size),
             _max_retries(max_retries),
             _read_timeout(read_timeout),
             _write_timeout(write_timeout),
             _time_between_retries(time_between_retries),
+            _max_http_request_body_size(max_http_request_body_size),
             _is_unix_domain(is_unix_domain)
         {
             ::memcpy(_ip, ip, strlen(ip));
@@ -165,6 +176,7 @@ namespace Bn3Monkey
         uint32_t _read_timeout{ 0 };
         uint32_t _write_timeout{ 0 };
         uint32_t _time_between_retries{ 0 };
+        size_t _max_http_request_body_size { DEFAULT_MAX_HTTP_REQUEST_BODY_SIZE };
         bool _is_unix_domain{ false };
     };
 

@@ -20,10 +20,28 @@
 
 #include <atomic>
 #include <chrono>
+#include <cstdint>
 #include <cstring>
+#include <filesystem>
+#include <fstream>
+#include <random>
 #include <string>
 #include <thread>
 #include <vector>
+
+// Resolving the running test executable's own directory (the multipart test
+// stages its large-file scratch tree next to the binary).
+#if defined(_WIN32)
+#  ifndef NOMINMAX
+#    define NOMINMAX
+#  endif
+#  ifndef WIN32_LEAN_AND_MEAN
+#    define WIN32_LEAN_AND_MEAN
+#  endif
+#  include <windows.h>
+#elif defined(__linux__)
+#  include <unistd.h>
+#endif
 
 namespace {
 
@@ -580,6 +598,252 @@ TEST(HttpServerStress, FullMatrixOverTheWire) {
     }
 
     server.close();
+}
+
+// ===========================================================================
+// Multipart/form-data large-file upload, end-to-end over a real RequestServer.
+//
+// The server (this test's main thread) registers a POST /upload route that
+// parses a multipart/form-data body by hand — the framework hands the handler
+// the raw body via req.body()/bodySize(), it does NOT parse multipart — and
+// writes the extracted file into <scratch>/out/. A separate client thread
+// drives 10 uploads of 10 MB files each via libcurl's curl_mime API (a real
+// multipart/form-data request, not our own codec). The main thread waits for
+// the client thread to finish, then byte-compares every original against its
+// out/ copy. Both the source tree and the prior run's tree are wiped first,
+// and the whole scratch tree is removed at the end.
+//
+// This relies on NetworkConfiguration::max_http_request_body_size (default
+// 64 MB) being large enough for a 10 MB multipart body; a 1 MB cap would 413.
+// ===========================================================================
+namespace {
+
+namespace fs = std::filesystem;
+
+constexpr uint16_t kMultipartPort = 28773;
+constexpr int      kMultipartFileCount = 10;
+constexpr size_t   kMultipartFileSize  = 10 * 1024 * 1024;   // 10 MB each
+
+// Directory of the running test binary; the scratch tree is created here per
+// the test spec ("테스트 실행 파일이 있는 디렉토리"). Falls back to the CWD if
+// the platform path can't be resolved.
+fs::path executableDir() {
+#if defined(_WIN32)
+    char buf[MAX_PATH];
+    const DWORD n = ::GetModuleFileNameA(nullptr, buf, MAX_PATH);
+    if (n > 0 && n < MAX_PATH) return fs::path(std::string(buf, n)).parent_path();
+#elif defined(__linux__)
+    char buf[4096];
+    const ssize_t n = ::readlink("/proc/self/exe", buf, sizeof(buf));
+    if (n > 0) return fs::path(std::string(buf, static_cast<size_t>(n))).parent_path();
+#endif
+    return fs::current_path();
+}
+
+// Deterministic-but-not-trivial file content: a per-file seeded PRNG so each
+// file differs and the bytes aren't all-equal (which would hide off-by-one
+// boundary-trim bugs in the multipart parser).
+void writeRandomFile(const fs::path& path, size_t size, uint32_t seed) {
+    std::mt19937 rng(seed);
+    std::ofstream f(path, std::ios::binary | std::ios::trunc);
+    std::vector<char> chunk(64 * 1024);
+    size_t written = 0;
+    while (written < size) {
+        const size_t n = std::min(chunk.size(), size - written);
+        for (size_t i = 0; i < n; ++i) chunk[i] = static_cast<char>(rng() & 0xFF);
+        f.write(chunk.data(), static_cast<std::streamsize>(n));
+        written += n;
+    }
+}
+
+// Byte-for-byte file comparison (streamed, so 10 MB doesn't all sit in RAM).
+bool filesEqual(const fs::path& a, const fs::path& b) {
+    std::error_code ec1, ec2;
+    if (fs::file_size(a, ec1) != fs::file_size(b, ec2) || ec1 || ec2) return false;
+    std::ifstream fa(a, std::ios::binary), fb(b, std::ios::binary);
+    if (!fa || !fb) return false;
+    std::vector<char> ba(64 * 1024), bb(64 * 1024);
+    while (fa && fb) {
+        fa.read(ba.data(), static_cast<std::streamsize>(ba.size()));
+        fb.read(bb.data(), static_cast<std::streamsize>(bb.size()));
+        const std::streamsize na = fa.gcount(), nb = fb.gcount();
+        if (na != nb) return false;
+        if (na == 0) break;
+        if (std::memcmp(ba.data(), bb.data(), static_cast<size_t>(na)) != 0) return false;
+    }
+    return true;
+}
+
+// Binary-safe substring search (the multipart body is raw bytes; std::strstr
+// would stop at the first embedded NUL).
+const char* findBytes(const char* hay, size_t hlen, const char* needle, size_t nlen) {
+    if (nlen == 0 || hlen < nlen) return nullptr;
+    for (size_t i = 0; i + nlen <= hlen; ++i) {
+        if (std::memcmp(hay + i, needle, nlen) == 0) return hay + i;
+    }
+    return nullptr;
+}
+
+// Minimal single-part multipart/form-data parser: pull the boundary from the
+// Content-Type header, locate the first part, read its filename, and slice the
+// file bytes out of [end-of-part-headers .. CRLF + closing boundary).
+bool parseMultipartFile(Bn3Monkey::HttpRequest& req,
+                        std::string& out_filename,
+                        std::vector<char>& out_data) {
+    const char* ct = req.header("Content-Type");
+    if (!ct) return false;
+    const char* bp = std::strstr(ct, "boundary=");
+    if (!bp) return false;
+    std::string boundary = bp + std::strlen("boundary=");
+    if (!boundary.empty() && boundary.front() == '"') {       // RFC allows quoting
+        boundary.erase(0, 1);
+        const auto q = boundary.find('"');
+        if (q != std::string::npos) boundary.erase(q);
+    }
+    const std::string delim = "--" + boundary;
+
+    const char*  body = static_cast<const char*>(req.body());
+    const size_t blen = req.bodySize();
+
+    const char* part = findBytes(body, blen, delim.data(), delim.size());
+    if (!part) return false;
+    part += delim.size();
+
+    const size_t after_delim = blen - static_cast<size_t>(part - body);
+    const char* hdr_end = findBytes(part, after_delim, "\r\n\r\n", 4);
+    if (!hdr_end) return false;
+
+    const std::string headers(part, static_cast<size_t>(hdr_end - part));
+    const auto fpos = headers.find("filename=\"");
+    if (fpos != std::string::npos) {
+        const auto start = fpos + std::strlen("filename=\"");
+        const auto fend = headers.find('"', start);
+        if (fend != std::string::npos) out_filename = headers.substr(start, fend - start);
+    }
+
+    const char*  data_start = hdr_end + 4;
+    const size_t data_rem   = blen - static_cast<size_t>(data_start - body);
+    const std::string closing = "\r\n" + delim;               // CRLF precedes the next/closing boundary
+    const char* data_end = findBytes(data_start, data_rem, closing.data(), closing.size());
+    if (!data_end) return false;
+
+    out_data.assign(data_start, data_end);
+    return true;
+}
+
+// POST /upload: parse the multipart body, write the file under out/. Registered
+// SLOW so the 10 MB parse + disk write runs on the worker thread, off the event
+// loop. Reports counts so the test can assert all 10 landed.
+class MultipartUploadHandler : public Bn3Monkey::HttpRequestHandler {
+public:
+    explicit MultipartUploadHandler(fs::path out_dir) : _out_dir(std::move(out_dir)) {}
+
+    void registerRoutes(Bn3Monkey::HttpRouter& router) override {
+        router.post("/upload", [this](Bn3Monkey::ClientConnection&,
+                                      Bn3Monkey::HttpRequest& req,
+                                      Bn3Monkey::HttpResponse& res) {
+            std::string       filename;
+            std::vector<char> data;
+            if (!parseMultipartFile(req, filename, data) || filename.empty()) {
+                res.status(400).body("bad multipart", 13);
+                return;
+            }
+            const fs::path dest = _out_dir / fs::path(filename).filename();
+            std::ofstream f(dest, std::ios::binary | std::ios::trunc);
+            f.write(data.data(), static_cast<std::streamsize>(data.size()));
+            f.close();
+            _saved.fetch_add(1, std::memory_order_relaxed);
+            res.status(200).body("ok", 2);
+        }, Bn3Monkey::RequestProcessingMode::SLOW);
+    }
+
+    int saved() const { return _saved.load(std::memory_order_relaxed); }
+
+private:
+    fs::path         _out_dir;
+    std::atomic<int> _saved{ 0 };
+};
+
+std::string multipartUrl(const char* path) {
+    return std::string("http://127.0.0.1:") + std::to_string(kMultipartPort) + path;
+}
+
+}  // namespace
+
+TEST(HttpServerMultipart, LargeFileUploadRoundTrip) {
+#if defined(__ANDROID__)
+    GTEST_SKIP() << "Multipart large-file upload test is not run on Android.";
+#else
+    // 2/8. Wipe any leftover scratch tree from a prior run, then (re)create it
+    //      next to the test binary with a fresh out/ sink.
+    const fs::path scratch = executableDir() / "multipart_large_files";
+    const fs::path out_dir = scratch / "out";
+    std::error_code ec;
+    fs::remove_all(scratch, ec);
+    ASSERT_TRUE(fs::create_directories(out_dir, ec)) << "create scratch dir: " << ec.message();
+
+    // 3. Stage 10 x 10 MB source files in the scratch dir.
+    std::vector<fs::path> sources;
+    for (int i = 0; i < kMultipartFileCount; ++i) {
+        const fs::path src = scratch / ("file_" + std::to_string(i) + ".bin");
+        writeRandomFile(src, kMultipartFileSize, /*seed*/ 0xC0FFEEu + static_cast<uint32_t>(i));
+        ASSERT_EQ(kMultipartFileSize, fs::file_size(src)) << "staged " << src.string();
+        sources.push_back(src);
+    }
+
+    // Server lives on this (main) thread; default 64 MB body cap admits 10 MB.
+    MultipartUploadHandler handler(out_dir);
+    Bn3Monkey::RequestServer server(Bn3Monkey::NetworkConfiguration{
+        "127.0.0.1", kMultipartPort, false, 5, 5000, 5000, 100, 65536 });
+    ASSERT_EQ(Bn3Monkey::NetworkResultCode::SUCCESS, server.open(&handler, 8).code());
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+
+    // 4. Client thread: upload each file as real multipart/form-data via curl_mime.
+    std::atomic<int> uploaded{ 0 };
+    std::thread client([&] {
+        for (const fs::path& src : sources) {
+            CURL* h = curl_easy_init();
+            if (!h) { ADD_FAILURE() << "curl_easy_init"; return; }
+            curl_easy_setopt(h, CURLOPT_URL, multipartUrl("/upload").c_str());
+
+            curl_mime* mime = curl_mime_init(h);
+            curl_mimepart* part = curl_mime_addpart(mime);
+            curl_mime_name(part, "file");
+            // Sets the part filename to the basename and a known size, so curl
+            // emits Content-Length (not chunked) — which the server requires.
+            curl_mime_filedata(part, src.string().c_str());
+            curl_easy_setopt(h, CURLOPT_MIMEPOST, mime);
+
+            long code = 0; std::string resp;
+            const bool ok = perform(h, code, resp);
+            EXPECT_TRUE(ok) << "upload transport failed for " << src.filename().string();
+            EXPECT_EQ(200, code) << "upload " << src.filename().string() << " body=" << resp;
+            if (ok && code == 200) uploaded.fetch_add(1, std::memory_order_relaxed);
+
+            curl_mime_free(mime);
+            curl_easy_cleanup(h);
+        }
+    });
+
+    // 6. Server thread waits until the client thread is done.
+    client.join();
+
+    EXPECT_EQ(kMultipartFileCount, uploaded.load());
+    EXPECT_EQ(kMultipartFileCount, handler.saved());
+
+    // 7. Every original must match its out/ copy byte-for-byte.
+    for (const fs::path& src : sources) {
+        const fs::path dst = out_dir / src.filename();
+        ASSERT_TRUE(fs::exists(dst)) << "missing uploaded copy: " << dst.string();
+        EXPECT_TRUE(filesEqual(src, dst))
+            << "content mismatch for " << src.filename().string();
+    }
+
+    server.close();
+
+    // 8. Remove the scratch tree.
+    fs::remove_all(scratch, ec);
+#endif  // __ANDROID__
 }
 
 #endif  // SECURITYSOCKET_TEST_USE_CURL

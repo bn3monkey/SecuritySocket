@@ -17,12 +17,14 @@ ClientConnectionImpl::ClientConnectionImpl(ServerActiveSocketContainer&  contain
                                            HttpRouterImpl*               router,
                                            CustomProtocolRequestHandler* custom,
                                            size_t                        pdu_size,
-                                           bool                          is_secure)
+                                           bool                          is_secure,
+                                           size_t                        max_http_request_body_size)
     : _container(container),
       _handler(handler),
       _router(router),
       _custom(custom),
       _is_secure(is_secure),
+      _max_http_request_body_size(max_http_request_body_size),
       _pdu_size(pdu_size ? pdu_size : kRecvChunk),
       _input(pdu_size ? pdu_size : kRecvChunk),
       _output(pdu_size ? pdu_size : kRecvChunk)

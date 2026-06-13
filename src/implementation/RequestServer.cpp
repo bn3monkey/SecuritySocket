@@ -122,7 +122,8 @@ void Bn3Monkey::RequestServerImpl::run(RequestHandler* handler)
 
 				ClientConnectionImpl* connection = _socket_connection_pool.acquire(
 					socket_container, *handler, router_ptr, _custom,
-					_configuration.pdu_size(), _tls_configuration.valid());
+					_configuration.pdu_size(), _tls_configuration.valid(),
+					_configuration.max_http_request_body_size());
 				// Fixed-size pool (32): nullptr once exhausted. Drop the freshly
 				// accepted socket — close it explicitly so its fd doesn't leak.
 				if (connection == nullptr)

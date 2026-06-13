@@ -14,12 +14,6 @@ namespace Bn3Monkey
 {
     namespace
     {
-        // The body cap the framework enforces before accumulating. Mirrors
-        // NetworkConfiguration::max_http_request_body_size from the design doc;
-        // hard-coded here because NetworkConfiguration does not yet expose it.
-        // TODO(integration): thread the configured value through PhaseHost.
-        constexpr long kMaxRequestBody = 1 * 1024 * 1024;   // 1 MB
-
         // In-place tokenise the parsed header block: NUL-terminate METHOD, PATH,
         // and every (name, value) pair so HttpRequestImpl/HeaderIndex can hand
         // back bare `const char*`. Writes directly through the input buffer's
@@ -156,8 +150,12 @@ namespace Bn3Monkey
             return HttpRequestResult::UPGRADING;
         }
 
-        // 4. Body accumulation by Content-Length.
-        if (content_length > kMaxRequestBody) {
+        // 4. Body accumulation by Content-Length. The cap is the configured
+        //    NetworkConfiguration::max_http_request_body_size (threaded through
+        //    PhaseHost). Cast to long so a negative content_length (no header)
+        //    stays a signed compare and never trips the cap.
+        const long max_request_body = static_cast<long>(host.maxHttpRequestBodySize());
+        if (content_length > max_request_body) {
             emitStatus(out, 413);
             return HttpRequestResult::ERROR_CLOSE;
         }

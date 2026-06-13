@@ -47,7 +47,8 @@ namespace Bn3Monkey
                              HttpRouterImpl*               router,   // null => no HTTP
                              CustomProtocolRequestHandler* custom,   // null => no Custom
                              size_t                        pdu_size,
-                             bool                          is_secure);
+                             bool                          is_secure,
+                             size_t                        max_http_request_body_size);
         ~ClientConnectionImpl() override;
 
         // ── ClientConnection (user-facing) ──
@@ -82,6 +83,7 @@ namespace Bn3Monkey
         const char*                   wsPattern() const override { return _ws_pattern; }
 
         void setWebSocket(bool on) override { _is_websocket = on; }
+        size_t maxHttpRequestBodySize() const override { return _max_http_request_body_size; }
         void dispatchSlow(std::function<void()> call,
                           SocketMultiEventListener& listener) override;
 
@@ -116,6 +118,7 @@ namespace Bn3Monkey
         bool                          _is_secure{ false };
         bool                          _is_websocket{ false };
         bool                          _closed{ false };
+        size_t                        _max_http_request_body_size{ 0 };
 
         ConnectionState _state{ ConnectionState::Sniffing };
         SocketEventType _listener_event{ SocketEventType::READ };
