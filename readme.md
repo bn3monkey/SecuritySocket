@@ -1,6 +1,10 @@
 # Security Socket
 
-Security Socket is a simple socket c++ library for supporting TCP and TLS.
+Security Socket is a socket c++ library for TCP and TLS.
+Since v3 it also ships an HTTP/1.1 + WebSocket + Custom-Protocol stack: a single
+`RequestServer` auto-detects (sniffs) HTTP vs. a user-defined binary protocol on
+one port, routes HTTP with an Express-style router, tunnels the Custom Protocol
+over WebSocket, and pairs with matching `HttpClient` / `RequestClient` clients.
 It is compatible for Windows(MSVC, MinGW Compiler), Android (Clang), Linux (gcc)
 
 - [Security Socket](#security-socket)
@@ -10,8 +14,11 @@ It is compatible for Windows(MSVC, MinGW Compiler), Android (Clang), Linux (gcc)
   - [Example](#example)
     - [Using Client](#using-client)
     - [Using TLS Client](#using-tls-client)
-    - [Using Request Server](#using-request-server)
+    - [Using Request Server (Custom Protocol)](#using-request-server-custom-protocol)
     - [Using TLS Request Server](#using-tls-request-server)
+    - [Using HTTP Server](#using-http-server)
+    - [Using HTTP Client](#using-http-client)
+    - [Using Request Client](#using-request-client)
     - [Using Notification Server](#using-notification-server)
     - [Using TLS Notification Server](#using-tls-notification-server)
   - [TLS Configuration](#tls-configuration)
@@ -42,6 +49,7 @@ It is compatible for Windows(MSVC, MinGW Compiler), Android (Clang), Linux (gcc)
     - [2.3.0 / 2026.04.29](#230--20260429)
     - [2.3.1 / 2026.04.30](#231--20260430)
     - [2.3.2 / 2026.05.04](#232--20260504)
+    - [3.0.0 / 2026.06.02](#300--20260602)
 
 ## Build
 
@@ -56,7 +64,7 @@ cmake_minimum_required (VERSION 3.16)
 include(FetchContent)
 FetchContent_Declear(SecuritySocket
     GIT_REPOSITORY https://github.com/bn3monkey/securitysocket
-    GIT_TAG v2.3.2)
+    GIT_TAG v3.0.0)
 FetchContent_MakeAvailable(SecuritySocket)
 
 ...
@@ -113,7 +121,7 @@ option(BUILD_SECURITYSOCKET_TEST OFF CACHE BOOL "Build Security socket test" FOR
 
 FetchContent_Declear(SecuritySocket
     GIT_REPOSITORY https://github.com/bn3monkey/securitysocket
-    GIT_TAG v2.3.2)
+    GIT_TAG v3.0.0)
 
 FetchContent_MakeAvailable(SecuritySocket)
 
@@ -225,7 +233,8 @@ int main()
     };
 
     // Optional: register a callback to receive TLS handshake event messages
-    tls_config.setOnTLSEvent([](const char* message) {
+    tls_config.setOnTLSEvent([](const char* message)
+    {
         printf("[TLS] %s\n", message);
     });
 
@@ -278,117 +287,195 @@ int main()
 }
 ```
 
-### Using Request Server
+### Using Request Server (Custom Protocol)
+
+`RequestServer` drives a **Custom Protocol** handler. You define a fixed-size
+header, and the server keeps calling back four methods to frame and dispatch each
+message:
+
+- `headerSize()` — how many bytes the header occupies (static).
+- `payloadSize(header)` — payload length, derived from the just-received header.
+- `classifyMode(header)` — pick the dispatch path **per message**:
+  - `FAST` — handled inline on the event-loop thread (`process()` fills a response).
+  - `SLOW` — handled on a per-connection worker thread (for blocking I/O).
+  - `WRITE_STREAM` — a response-less upload stream (`onWriteStreamBegin` / `onWriteStreamData`).
+  - `READ_STREAM` — a download stream the server emits in chunks (`onReadStreamBegin` / `onReadStreamData`).
+- `process(conn, req, res)` — fill `res` for `FAST` / `SLOW` messages.
+
+The example below shows all three shapes: an **echo** (`FAST`), a **file upload**
+(`WRITE_STREAM`), and a **file download** (`READ_STREAM`).
 
 ```cpp
 #include <SecuritySocket.hpp>
 #include <cstdio>
+#include <cstring>
+
+using namespace Bn3Monkey;
+
+enum class Op : int32_t
+{
+    ECHO,         // FAST         : echo header + payload back
+    WRITE_BEGIN,  // WRITE_STREAM : payload = remote filename, open for writing
+    WRITE_CHUNK,  // stream data  : payload = file bytes; header.last=1 ends the stream
+    READ_OPEN,    // FAST         : payload = filename; response carries the total size
+    READ_BEGIN,   // READ_STREAM  : server streams the file back in chunks
+};
+
+struct MsgHeader
+{
+    Op       op{ Op::ECHO };
+    int32_t  req_no{ 0 };
+    uint32_t payload_size{ 0 };
+    int32_t  last{ 0 };          // WRITE_CHUNK: 1 = final chunk
+};
+
+// NOTE: this handler keeps a single FILE* pair, so it assumes one connection at
+// a time. A real service would key open files by `conn` (e.g. a map<const
+// ClientConnection*, FILE*>) the way the test fixture does.
+struct FileService : public CustomProtocolRequestHandler
+{
+    FILE* _wf{ nullptr };   // open file for the upload  stream
+    FILE* _rf{ nullptr };   // open file for the download stream
+
+    size_t headerSize() override
+    {
+        return sizeof(MsgHeader);
+    }
+
+    size_t payloadSize(const void* header) override
+    {
+        return reinterpret_cast<const MsgHeader*>(header)->payload_size;
+    }
+
+    RequestProcessingMode classifyMode(const void* header) override
+    {
+        switch (reinterpret_cast<const MsgHeader*>(header)->op)
+        {
+        case Op::WRITE_BEGIN:
+            return RequestProcessingMode::WRITE_STREAM;
+        case Op::READ_BEGIN:
+            return RequestProcessingMode::READ_STREAM;
+        default:
+            return RequestProcessingMode::FAST;   // ECHO / READ_OPEN
+        }
+    }
+
+    void onConnected(const ClientConnection& conn) override
+    {
+        printf("connected    %s:%u\n", conn.ip(), conn.port());
+    }
+
+    void onDisconnected(const ClientConnection& conn) override
+    {
+        printf("disconnected %s:%u\n", conn.ip(), conn.port());
+    }
+
+    // ── FAST: ECHO + READ_OPEN ──
+    void process(const ClientConnection&, const CustomProtocolRequest& req,
+                 CustomProtocolResponse& res) override
+    {
+        auto* h   = reinterpret_cast<const MsgHeader*>(req.header());
+        char* out = reinterpret_cast<char*>(res.data());
+
+        if (h->op == Op::ECHO)
+        {
+            std::memcpy(out, req.header(), req.headerLength());
+            std::memcpy(out + req.headerLength(), req.payload(), req.payloadLength());
+            res.setLength(req.headerLength() + req.payloadLength());
+            return;
+        }
+        if (h->op == Op::READ_OPEN)
+        {
+            _rf = fopen(reinterpret_cast<const char*>(req.payload()), "rb");
+            uint32_t total = 0;
+            if (_rf)
+            {
+                fseek(_rf, 0, SEEK_END);
+                total = (uint32_t)ftell(_rf);
+                fseek(_rf, 0, SEEK_SET);
+            }
+            MsgHeader reply{ Op::READ_OPEN, h->req_no, total, 0 };
+            std::memcpy(out, &reply, sizeof(reply));
+            res.setLength(sizeof(reply));
+        }
+    }
+
+    // ── WRITE_STREAM: file upload (no per-chunk response) ──
+    void onWriteStreamBegin(const ClientConnection&, const CustomProtocolRequest& req) override
+    {
+        _wf = fopen(reinterpret_cast<const char*>(req.payload()), "wb");   // payload = filename
+    }
+
+    StreamProgress onWriteStreamData(const ClientConnection&, const CustomProtocolRequest& req) override
+    {
+        auto* h = reinterpret_cast<const MsgHeader*>(req.header());
+        if (_wf)
+        {
+            fwrite(req.payload(), 1, req.payloadLength(), _wf);
+        }
+        if (h->last)
+        {
+            fclose(_wf);
+            _wf = nullptr;
+            return StreamProgress::COMPLETE;
+        }
+        return StreamProgress::CONTINUE;
+    }
+
+    // ── READ_STREAM: file download (server emits N chunks) ──
+    void onReadStreamBegin(const ClientConnection&, const CustomProtocolRequest&) override
+    {
+        // _rf was already opened by the preceding READ_OPEN (FAST) message.
+    }
+
+    StreamProgress onReadStreamData(const ClientConnection&, CustomProtocolResponse& res) override
+    {
+        size_t n = _rf ? fread(res.data(), 1, res.capacity(), _rf) : 0;
+        res.setLength(n);
+        if (!_rf || feof(_rf))
+        {
+            if (_rf)
+            {
+                fclose(_rf);
+            }
+            _rf = nullptr;
+            return StreamProgress::COMPLETE;
+        }
+        return StreamProgress::CONTINUE;
+    }
+};
 
 int main()
 {
-    using namespace Bn3Monkey;
+    initializeSecuritySocket();
 
-    NetworkConfiguration config{
-        "127.0.0.1",
-        20000,
-        false,
-        5,
-        1000,
-        1000,
-        8192
-    };
+    NetworkConfiguration config{ "127.0.0.1", 20000, false, 5, 1000, 1000, 100, 8192 };
 
-    /*
-    The Request Server is assumed to operate as follows:
-        1. The client sends a Request Header containing the payload size.
-        2. The client sends the Request Payload.
-        3. The server parses the payload and sends a Response.
-        4. The client receives the payload.
-    */
-
-    struct EchoRequestHeader
-    {
-        int32_t request_type{ 0 };
-        int32_t request_no{ 0 };
-        size_t payload_size{ 0 };
-        int32_t client_no{ 0 };
-
-        EchoRequestHeader(int32_t request_type, int32_t request_no, size_t payload_size, int32_t client_no) :
-            request_type(request_type),
-            request_no(request_no),
-            payload_size(payload_size),
-            client_no(client_no) {
-        }
-
-        size_t payloadSize() override { return payload_size;  }
-    };
-
-    struct EchoRequestHandler : public Bn3Monkey::CustomProtocolRequestHandler
-    {
-        size_t headerSize() override {
-            return sizeof(EchoRequestHeader);
-        }
-        size_t payloadSize(const void* header) override {
-            return reinterpret_cast<const EchoRequestHeader*>(header)->payload_size;
-        }
-        Bn3Monkey::RequestProcessingMode classifyMode(const void* header) override {
-            auto* derived_header = reinterpret_cast<const EchoRequestHeader*>(header);
-            switch (derived_header->request_type) {
-            case 0:
-                return Bn3Monkey::RequestProcessingMode::FAST;
-            }
-            return Bn3Monkey::RequestProcessingMode::FAST;
-        }
-
-        void onConnected(const Bn3Monkey::ClientConnection& conn) override {
-            printConcurrent("Client connected (ip : %s port : %u)\n", conn.ip(), conn.port());
-        }
-
-        void onDisconnected(const Bn3Monkey::ClientConnection& conn) override {
-            printConcurrent("Client disconnected (ip : %s port : %u)\n", conn.ip(), conn.port());
-        }
-
-        void process(
-            const Bn3Monkey::ClientConnection& conn,
-            const Bn3Monkey::CustomProtocolRequest& req,
-            Bn3Monkey::CustomProtocolResponse& res
-        ) override {
-            (void)conn;
-
-            auto* derived_header = reinterpret_cast<const EchoRequestHeader*>(req.header());
-            auto* input_buffer   = reinterpret_cast<const char*>(req.payload());
-            size_t input_size    = req.payloadLength();
-
-            switch (derived_header->request_type) {
-            case 0:
-                printConcurrent("[Client %d -> Server] : %s\n", derived_header->client_no, input_buffer);
-
-                new (res.data()) EchoResponse{ {derived_header->request_type, derived_header->request_no, sizeof(EchoResponse)}, input_buffer, input_size };
-                res.setLength(sizeof(EchoResponse));
-
-                break;
-            }
-        }
-    };
-
-    EchoRequestHandler handler;
-
-    RequestServer server{ config};
-    auto result = server.open(&handler, 4);
+    FileService handler;
+    RequestServer server{ config };
+    auto result = server.open(&handler, /*num_of_clients=*/8);
     if (result.code() != NetworkResultCode::SUCCESS)
-        {
-            printf(result.message());
-            return -1;
-        }
+    {
+        printf("%s", result.message());
+        return -1;
+    }
 
-    // Sleep Thread
+    // ... keep the main thread alive while the server runs ...
 
     server.close();
-    return;
+    releaseSecuritySocket();
+    return 0;
 }
 ```
 
+> See [Using Request Client](#using-request-client) for the matching client that
+> drives this `FileService` handler over both raw TCP and WebSocket.
+
 ### Using TLS Request Server
+
+A TLS `RequestServer` is identical to the example above except it takes a
+`TlsServerConfiguration` as the second constructor argument. The handler code is
+unchanged.
 
 ```cpp
 #include <SecuritySocket.hpp>
@@ -397,47 +484,259 @@ int main()
 int main()
 {
     using namespace Bn3Monkey;
+
+    initializeSecuritySocket();
 
     NetworkConfiguration config{ "127.0.0.1", 20000 };
 
     // TLS server with optional client certificate authentication (mTLS)
     TlsServerConfiguration tls_config{
-        { TlsVersion::TLS1_2, TlsVersion::TLS1_3 },   // supported TLS versions
+        { TlsVersion::TLS1_2, TlsVersion::TLS1_3 },         // supported TLS versions
         { TlsV12CipherSuite::ECDHE_RSA_AES256_GCM_SHA384 }, // TLS 1.2 cipher suites
         { TlsV13CipherSuite::TLS_AES_256_GCM_SHA384 },      // TLS 1.3 cipher suites
-        "/path/to/server.crt",                                     // server certificate path
-        "/path/to/server.key",                                     // server private key path
-        "keypassword",                                             // private key password (nullptr if not encrypted)
-        TlsClientAuthMode::AUTH_MODE_OPTIONAL,               // client auth: AUTH_MODE_NONE / AUTH_MODE_OPTIONAL / AUTH_MODE_REQUIRED
-        "/path/to/ca.crt"                                          // CA certificate path for verifying clients
+        "/path/to/server.crt",                              // server certificate path
+        "/path/to/server.key",                              // server private key path
+        "keypassword",                                      // private key password (nullptr if not encrypted)
+        TlsClientAuthMode::AUTH_MODE_OPTIONAL,              // AUTH_MODE_NONE / AUTH_MODE_OPTIONAL / AUTH_MODE_REQUIRED
+        "/path/to/ca.crt"                                   // CA certificate path for verifying clients
     };
 
     // Optional: register a callback to receive TLS handshake event messages
-    tls_config.setOnTLSEvent([](const char* message) {
+    tls_config.setOnTLSEvent([](const char* message)
+    {
         printf("[TLS] %s\n", message);
     });
 
-    struct EchoRequestHandler : public Bn3Monkey::CustomProtocolRequestHandler
-    {
-        // ... (same as non-TLS example above)
-    };
-
-    EchoRequestHandler handler;
+    FileService handler;   // same CustomProtocolRequestHandler as the non-TLS example
 
     RequestServer server{ config, tls_config };
-    auto result = server.open(&handler, 4);
+    auto result = server.open(&handler, 8);
     if (result.code() != NetworkResultCode::SUCCESS)
     {
-        printf(result.message());
+        printf("%s", result.message());
         return -1;
     }
 
-    // Sleep Thread
+    // ... keep the main thread alive while the server runs ...
 
     server.close();
+    releaseSecuritySocket();
     return 0;
 }
 ```
+
+### Using HTTP Server
+
+The same `RequestServer` also speaks HTTP/1.1 — it sniffs the first bytes of each
+connection and routes HTTP traffic to an `HttpRequestHandler`. Routes are
+registered once in `registerRoutes()` with an Express-style trie router
+(`:id` path parameters, `*rest` wildcards). Each route picks `FAST` (run inline)
+or `SLOW` (run on a worker thread) at registration time.
+
+```cpp
+#include <SecuritySocket.hpp>
+#include <cstdio>
+
+using namespace Bn3Monkey;
+
+class ApiHandler : public HttpRequestHandler
+{
+public:
+    void registerRoutes(HttpRouter& router) override
+    {
+        router.get("/ping", [](ClientConnection&, HttpRequest&, HttpResponse& res)
+        {
+            res.status(200).body("pong", 4);
+        });
+
+        // :id is auto-decoded; query("...") is auto-decoded too.
+        router.get("/user/:id", [](ClientConnection&, HttpRequest& req, HttpResponse& res)
+        {
+            const char* id = req.pathParam("id");
+            res.status(200).json(id);   // json() also sets Content-Type: application/json
+        });
+
+        // Echo the request body back. SLOW → dispatched to a worker thread.
+        router.post("/echo", [](ClientConnection&, HttpRequest& req, HttpResponse& res)
+        {
+            res.status(200).body(req.body(), req.bodySize());
+        }, RequestProcessingMode::SLOW);
+
+        // Custom 404 / 405 body when nothing matches.
+        router.fallback([](ClientConnection&, HttpRequest&, HttpResponse& res)
+        {
+            res.status(404).json("{\"error\":\"not found\"}");
+        });
+    }
+};
+
+int main()
+{
+    initializeSecuritySocket();
+
+    NetworkConfiguration config{ "127.0.0.1", 8080, false, 5, 1000, 1000, 100, 8192 };
+
+    ApiHandler handler;
+    RequestServer server{ config };
+    auto result = server.open(&handler, 8);
+    if (result.code() != NetworkResultCode::SUCCESS)
+    {
+        printf("%s", result.message());
+        return -1;
+    }
+
+    // ... keep the main thread alive while the server runs ...
+
+    server.close();
+    releaseSecuritySocket();
+    return 0;
+}
+```
+
+> A handler that derives **both** `HttpRequestHandler` and
+> `CustomProtocolRequestHandler` (the latter built with a
+> `WebSocketConfiguration{ "/ws" }`) serves HTTP, the Custom Protocol, and
+> Custom-over-WebSocket from one port. Pass a `TlsServerConfiguration` to
+> `RequestServer` for HTTPS / `wss://`.
+
+### Using HTTP Client
+
+`HttpClient` is a synchronous HTTP/1.1 client built on the same TCP/TLS transport
+as `Client`. The connection is established lazily on the first call and reused
+across calls (keep-alive). Every call returns an `HttpClientResponse` whose
+`resultCode()` is the transport outcome and whose `status()` is the HTTP status.
+
+```cpp
+#include <SecuritySocket.hpp>
+#include <cstdio>
+#include <cstring>
+
+int main()
+{
+    using namespace Bn3Monkey;
+
+    initializeSecuritySocket();
+
+    NetworkConfiguration config{ "127.0.0.1", 8080 };
+    HttpClient client{ config };
+    // For HTTPS:  HttpClient client{ config, TlsClientConfiguration{ { TlsVersion::TLS1_2, TlsVersion::TLS1_3 } } };
+
+    // Simple GET helper.
+    {
+        auto resp = client.get("/ping");
+        if (resp.resultCode() == NetworkResultCode::SUCCESS && resp.status() == 200)
+        {
+            printf("body: %.*s\n", (int)resp.bodySize(), (const char*)resp.body());
+        }
+    }
+
+    // POST with a body.
+    {
+        const char* payload = "hello";
+        auto resp = client.post("/echo", payload, std::strlen(payload));
+        printf("status=%d\n", resp.status());
+    }
+
+    // Full control — custom method / path params / query / headers.
+    {
+        HttpClientRequest req;
+        req.method("GET")
+           .path("/user/%s", "alice")        // printf-style (not auto-encoded)
+           .query("filter", "age>20")        // name + value auto percent-encoded
+           .header("Authorization", "Bearer xyz");
+        auto resp = client.request(req);
+        printf("status=%d\n", resp.status());
+    }
+
+    releaseSecuritySocket();
+    return 0;
+}
+```
+
+### Using Request Client
+
+`RequestClient` is the client side of the Custom Protocol. Constructed plainly it
+is a raw TCP/TLS client; constructed with a `WebSocketConfiguration` it performs
+an HTTP Upgrade handshake and tunnels each message as a binary WebSocket frame.
+**The same `send` / `receive` calls work in both modes**, so one piece of client
+code exercises a server reached over raw TCP or over WebSocket.
+
+```cpp
+#include <SecuritySocket.hpp>
+#include <cstdio>
+#include <cstring>
+#include <vector>
+
+using namespace Bn3Monkey;
+
+// Reuse the MsgHeader / Op protocol from the Request Server example.
+
+int main()
+{
+    initializeSecuritySocket();
+
+    NetworkConfiguration config{ "127.0.0.1", 20000, false, 5, 2000, 2000, 50, 8192 };
+
+    // Raw TCP mode:
+    RequestClient client{ config };
+    // WebSocket-tunnelled mode (pattern must match the server's WebSocketConfiguration):
+    //   RequestClient client{ config, WebSocketConfiguration{ "/ws" } };
+    // TLS variants take a TlsClientConfiguration before the optional WebSocketConfiguration.
+
+    if (client.connect().code() != NetworkResultCode::SUCCESS)
+    {
+        printf("connect failed\n");
+        return -1;
+    }
+
+    // ── echo round-trip ──
+    {
+        const char* text = "Hello, World!";
+        uint32_t plen = (uint32_t)std::strlen(text);
+
+        // One message = header followed by payload, sent as a single unit.
+        std::vector<char> msg(sizeof(MsgHeader) + plen);
+        MsgHeader h{ Op::ECHO, 1, plen, 0 };
+        std::memcpy(msg.data(), &h, sizeof(h));
+        std::memcpy(msg.data() + sizeof(h), text, plen);
+        client.send(msg.data(), msg.size());
+
+        // receive() returns one message (raw: one recv; WS: one frame's payload).
+        char buf[256];
+        size_t got = 0;
+        auto r = client.receive(buf, sizeof(buf), &got, /*timeout_ms=*/2000);
+        if (r.code() == NetworkResultCode::SUCCESS)
+        {
+            printf("echoed %zu bytes\n", got);
+        }
+    }
+
+    // ── upload a file (WRITE_STREAM): WRITE_BEGIN, then WRITE_CHUNK… with last=1 ──
+    {
+        const char* remote = "uploaded.bin";
+        MsgHeader begin{ Op::WRITE_BEGIN, 2, (uint32_t)std::strlen(remote) + 1, 0 };
+        client.send(&begin, sizeof(begin));
+        client.send(remote, begin.payload_size);   // payload of WRITE_BEGIN = filename
+
+        char chunk[4096];
+        std::memset(chunk, 'x', sizeof(chunk));
+        for (int i = 0; i < 8; ++i)
+        {
+            MsgHeader ch{ Op::WRITE_CHUNK, 3, sizeof(chunk), /*last=*/(i == 7) ? 1 : 0 };
+            client.send(&ch, sizeof(ch));
+            client.send(chunk, sizeof(chunk));      // upload stream: server sends no reply
+        }
+    }
+
+    releaseSecuritySocket();
+    return 0;
+}
+```
+
+> `send()` / `receive()` carry exactly the bytes you pass. In raw mode `receive()`
+> maps onto a single `recv()` (loop it to reassemble a fixed-size frame); in
+> WebSocket mode it returns one reassembled binary message and handles control
+> frames (auto-PONG, CLOSE → `SOCKET_CLOSED`) internally.
 
 ### Using Notification Server
 
@@ -456,11 +755,14 @@ int main()
     };
 
     // Optional: implement BroadcastHandler to observe connect/disconnect
-    struct PrintingHandler : public BroadcastHandler {
-        void onClientConnected(const char* ip, int port) override {
+    struct PrintingHandler : public BroadcastHandler
+    {
+        void onClientConnected(const char* ip, int port) override
+        {
             printf("client connected    %s:%d\n", ip, port);
         }
-        void onClientDisconnected(const char* ip, int port) override {
+        void onClientDisconnected(const char* ip, int port) override
+        {
             printf("client disconnected %s:%d\n", ip, port);
         }
     };
@@ -471,7 +773,7 @@ int main()
     {
         {
             auto result = server.open(&handler, 1);  // pass nullptr if you don't need callbacks
-            if(NetworkResultCode::SUCCESS != result.code())
+            if (NetworkResultCode::SUCCESS != result.code())
             {
                 printf("%s", result.message());
             }
@@ -604,7 +906,8 @@ TlsClientConfiguration tls_config{
 You can register a callback to receive diagnostic messages during the TLS handshake:
 
 ```cpp
-tls_config.setOnTLSEvent([](const char* message) {
+tls_config.setOnTLSEvent([](const char* message)
+{
     printf("[TLS] %s\n", message);
 });
 ```
@@ -629,7 +932,8 @@ TlsServerConfiguration tls_config{
 You can register a callback to receive diagnostic messages during the TLS handshake:
 
 ```cpp
-tls_config.setOnTLSEvent([](const char* message) {
+tls_config.setOnTLSEvent([](const char* message)
+{
     printf("[TLS] %s\n", message);
 });
 ```
@@ -750,3 +1054,38 @@ C++ 14
 - Treat `POLLNVAL` as `DISCONNECTED` in `SocketMultiEventListener::wait()` on both Linux and Windows. Without this, an fd closed under the listener kept firing the same `revents` on every subsequent `poll()` / `WSAPoll()` and the cleanup path never ran.
 - Internal: promote the broadcast server's `SocketMultiEventListener` and accept `SocketEventContext` from monitor-thread locals to members so `dropAll()` can call `removeEvent()` from the broadcast caller's thread. Add a `_pending_destruction` list that holds dropped clients until the monitor's next loop iteration — releasing the strong refs synchronously would race the in-flight wait+dispatch step that still dereferences context pointers.
 - Internal: tighten `BroadcastServer::await()` to re-check `_is_monitoring` and `_active_clients.empty()` under the lock after `wait_for`, so a `close()` or `dropAll()` racing the wake returns the correct result code instead of a stale success.
+
+### 3.0.0 / 2026.06.02
+
+First major release of the unified HTTP / WebSocket / Custom-Protocol stack.
+
+- **HTTP/1.1 server.** `RequestServer` now sniffs each connection and routes HTTP
+  to an `HttpRequestHandler`. Express-style trie router (`HttpRouter`) with
+  `get/post/put/del/patch/head/options/fallback`, `:id` path parameters, and
+  `*rest` wildcards. Per-route `FAST` (event-loop thread) / `SLOW` (worker thread)
+  dispatch. `HttpRequest` / `HttpResponse` view/builder with auto percent-decoding
+  of path params and query, keep-alive, and a configurable request-body limit.
+  Powered by a vendored picohttpparser.
+- **WebSocket.** HTTP `Upgrade` handshake plus frame encode/decode (masking,
+  fragmentation reassembly, PING/PONG/CLOSE). The Custom Protocol tunnels over
+  binary WebSocket frames — one `CustomProtocolRequestHandler` serves both raw TCP
+  and WebSocket, selected by a `WebSocketConfiguration{ pattern }`.
+- **Custom Protocol refactor.** New `CustomProtocolRequestHandler` with
+  `headerSize` / `payloadSize(header)` / `classifyMode(header)` / `process()`.
+  `RequestProcessingMode` gains `WRITE_STREAM` / `READ_STREAM` for bounded-memory
+  continuous upload / download streams (`onWriteStreamBegin` / `onWriteStreamData`,
+  `onReadStreamBegin` / `onReadStreamData`).
+- **Unified handler base.** `RequestHandler` base with `supportHttp()` /
+  `supportUserProtocol()` / `supportWebSocket()` capability flags (virtual
+  inheritance, no RTTI). A single handler may derive both `HttpRequestHandler` and
+  `CustomProtocolRequestHandler` to serve HTTP + Custom + WebSocket on one port.
+- **`HttpClient`.** Synchronous HTTP/1.1 client over the `Client` transport (TCP /
+  TLS), with `get/head/del/options` + `post/put/patch` helpers, a fluent
+  `HttpClientRequest` (printf-style `path()`, auto-encoding `query()`), keep-alive
+  connection reuse, and value-returned `HttpClientResponse`.
+- **`RequestClient`.** Custom Protocol client with `connect` / `send` / `receive`.
+  A `WebSocketConfiguration` in the constructor switches it from raw TCP/TLS to
+  WebSocket-tunnelled mode using the same call surface.
+- **Breaking:** classes lost their `Socket` prefix and the API was reorganized
+  under `Bn3Monkey::` (e.g. `RequestServer::open()` now takes a `RequestHandler*`).
+  No compatibility aliases are provided.
