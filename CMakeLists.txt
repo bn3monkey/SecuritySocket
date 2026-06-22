@@ -38,7 +38,7 @@ if (SECURITYSOCKET_USING_TLS)
     # set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build OpenSSL Static Libraries" FORCE)
     FetchContent_Declare(OpenSSL
         GIT_REPOSITORY https://github.com/bn3monkey/openssl-cmake
-        GIT_TAG proto)
+        GIT_TAG v1.0.0)
     FetchContent_MakeAvailable(OpenSSL)
     # set(BUILD_SHARED_LIBS ${TEMP_BUILD_SHARED_LIBS} ON CACHE BOOL "Build OpenSSL Static Libraries" FORCE)
 
