@@ -56,6 +56,12 @@ namespace Bn3Monkey
         virtual CustomProtocolRequestHandler* customHandler() = 0;   // null => no Custom
         virtual const char*                   wsPattern() const = 0; // null => no WS
 
+        // The configured HTTP body cap (NetworkConfiguration::max_http_request_
+        // body_size). HttpPhase rejects a larger Content-Length with 413 before
+        // allocating. Non-pure with a default so test fakes need not override it;
+        // the default mirrors NetworkConfiguration's own default (64 MB).
+        virtual size_t maxHttpRequestBodySize() const { return 64u * 1024 * 1024; }
+
         // Latch the connection as upgraded to WebSocket (affects isWebSocket()).
         virtual void setWebSocket(bool on) = 0;
 
