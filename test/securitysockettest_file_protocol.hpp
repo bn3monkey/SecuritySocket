@@ -36,6 +36,7 @@
 
 #include "securitysockettest_helper.hpp"   // printConcurrent
 
+
 enum class FileRequestType : int32_t {
     CREATE_FILE,   // FAST         : open "wb" -> FileOpenResponse{fp, 0}
     OPEN_FILE,     // FAST         : open "rb" -> FileOpenResponse{fp, total}
@@ -184,7 +185,7 @@ struct FileRequestHandler : public Bn3Monkey::CustomProtocolRequestHandler
             st = it->second;
         }
 
-        const size_t want = std::min(std::min(st.chunk_size, st.remaining), res.capacity());
+        const size_t want = min_of(min_of(st.chunk_size, st.remaining), res.capacity());
         const size_t n = (want && st.fp) ? fread(res.data(), 1, want, st.fp) : 0;
         res.setLength(n);
         st.remaining -= n;

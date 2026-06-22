@@ -23,7 +23,7 @@ int startSecuritySocketTest(int argc, char** argv, const char* cwd)
     // Ensure all TLS test certificates exist before any test runs.
     // createCertificates();
     //::testing::GTEST_FLAG(filter) = "TLSConnection*";
-    //::testing::GTEST_FLAG(filter) = "-TLSConnection*";
+    // ::testing::GTEST_FLAG(filter) = "-TLSConnection*";
     // ::testing::GTEST_FLAG(filter) = "PicoHttpParser*:TCPBroadcast*:TCPRequestEcho*:TCPRequestFile*:CustomProtocolHandler*:UrlEncode*:UrlDecode*:HttpRouter*:HttpRequest*:HttpResponse*";
 
     return RUN_ALL_TESTS();

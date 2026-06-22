@@ -158,4 +158,13 @@ private:
     std::condition_variable _cv;
 };
 
+template<typename T>
+constexpr T min_of(const T& a, const T& b) {
+    return a < b ? a : b;
+}
+template<typename T>
+constexpr T max_of(const T& a, const T& b) {
+    return a > b ? a : b;
+}
+
 #endif // __SECURITY_SOCKET_TEST_HELPER__

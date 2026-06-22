@@ -21,16 +21,22 @@
 #include <atomic>
 #include <chrono>
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
-#include <filesystem>
 #include <fstream>
 #include <random>
 #include <string>
 #include <thread>
 #include <vector>
 
-// Resolving the running test executable's own directory (the multipart test
-// stages its large-file scratch tree next to the binary).
+#include <sys/stat.h>
+
+#include "securitysockettest_helper.hpp"
+
+// Resolving the running test executable's own directory and a handful of plain
+// file-system operations the multipart test needs. The project targets C++14,
+// so we deliberately avoid <filesystem>; the per-platform helpers below cover
+// the few operations we use (see the FsHelpers block).
 #if defined(_WIN32)
 #  ifndef NOMINMAX
 #    define NOMINMAX
@@ -39,8 +45,10 @@
 #    define WIN32_LEAN_AND_MEAN
 #  endif
 #  include <windows.h>
+#  include <direct.h>
 #elif defined(__linux__)
 #  include <unistd.h>
+#  include <dirent.h>
 #endif
 
 namespace {
@@ -618,38 +626,135 @@ TEST(HttpServerStress, FullMatrixOverTheWire) {
 // ===========================================================================
 namespace {
 
-namespace fs = std::filesystem;
-
 constexpr uint16_t kMultipartPort = 28773;
 constexpr int      kMultipartFileCount = 10;
 constexpr size_t   kMultipartFileSize  = 10 * 1024 * 1024;   // 10 MB each
 
+// ── FsHelpers: minimal C++14 file-system helpers ──
+// The project targets C++14, so we cannot use <filesystem>. Paths are plain
+// std::string and only the operations this test needs are implemented, with
+// per-platform code where the POSIX and Win32 calls differ.
+
+#if defined(_WIN32)
+constexpr char kPathSep = '\\';
+#else
+constexpr char kPathSep = '/';
+#endif
+
+// Join two path components with the platform separator (no-op if either side
+// already ends/starts cleanly).
+std::string pathJoin(const std::string& a, const std::string& b) {
+    if (a.empty()) return b;
+    if (b.empty()) return a;
+    const char back = a.back();
+    if (back == '/' || back == '\\') return a + b;
+    return a + kPathSep + b;
+}
+
+// Last path component (basename); handles both separators.
+std::string baseName(const std::string& p) {
+    const size_t pos = p.find_last_of("/\\");
+    return pos == std::string::npos ? p : p.substr(pos + 1);
+}
+
+// Everything up to (not including) the last separator; "." when there is none.
+std::string parentDir(const std::string& p) {
+    const size_t pos = p.find_last_of("/\\");
+    return pos == std::string::npos ? std::string(".") : p.substr(0, pos);
+}
+
+bool fileExists(const std::string& p) {
+    struct stat st;
+    return ::stat(p.c_str(), &st) == 0;
+}
+
+bool isDir(const std::string& p) {
+    struct stat st;
+    if (::stat(p.c_str(), &st) != 0) return false;
+#if defined(_WIN32)
+    return (st.st_mode & _S_IFDIR) != 0;
+#else
+    return S_ISDIR(st.st_mode);
+#endif
+}
+
+// File size in bytes, or (uint64_t)-1 on error.
+uint64_t fileSize(const std::string& p) {
+    struct stat st;
+    if (::stat(p.c_str(), &st) != 0) return static_cast<uint64_t>(-1);
+    return static_cast<uint64_t>(st.st_size);
+}
+
+// mkdir -p: create the directory and any missing parents.
+bool makeDirs(const std::string& p) {
+    if (p.empty()) return false;
+    if (fileExists(p)) return isDir(p);
+    const std::string parent = parentDir(p);
+    if (!parent.empty() && parent != p && parent != "." && !fileExists(parent)) {
+        if (!makeDirs(parent)) return false;
+    }
+#if defined(_WIN32)
+    return ::_mkdir(p.c_str()) == 0 || isDir(p);
+#else
+    return ::mkdir(p.c_str(), 0755) == 0 || isDir(p);
+#endif
+}
+
+// rm -rf: recursively remove a file or directory tree. Best-effort (no throw).
+void removeTree(const std::string& p) {
+    if (!fileExists(p)) return;
+    if (!isDir(p)) { ::remove(p.c_str()); return; }
+#if defined(_WIN32)
+    WIN32_FIND_DATAA fd;
+    HANDLE h = ::FindFirstFileA(pathJoin(p, "*").c_str(), &fd);
+    if (h != INVALID_HANDLE_VALUE) {
+        do {
+            const std::string name = fd.cFileName;
+            if (name == "." || name == "..") continue;
+            removeTree(pathJoin(p, name));
+        } while (::FindNextFileA(h, &fd) != 0);
+        ::FindClose(h);
+    }
+    ::_rmdir(p.c_str());
+#else
+    if (DIR* d = ::opendir(p.c_str())) {
+        for (struct dirent* e = ::readdir(d); e != nullptr; e = ::readdir(d)) {
+            const std::string name = e->d_name;
+            if (name == "." || name == "..") continue;
+            removeTree(pathJoin(p, name));
+        }
+        ::closedir(d);
+    }
+    ::rmdir(p.c_str());
+#endif
+}
+
 // Directory of the running test binary; the scratch tree is created here per
 // the test spec ("테스트 실행 파일이 있는 디렉토리"). Falls back to the CWD if
 // the platform path can't be resolved.
-fs::path executableDir() {
+std::string executableDir() {
 #if defined(_WIN32)
     char buf[MAX_PATH];
     const DWORD n = ::GetModuleFileNameA(nullptr, buf, MAX_PATH);
-    if (n > 0 && n < MAX_PATH) return fs::path(std::string(buf, n)).parent_path();
+    if (n > 0 && n < MAX_PATH) return parentDir(std::string(buf, n));
 #elif defined(__linux__)
     char buf[4096];
     const ssize_t n = ::readlink("/proc/self/exe", buf, sizeof(buf));
-    if (n > 0) return fs::path(std::string(buf, static_cast<size_t>(n))).parent_path();
+    if (n > 0) return parentDir(std::string(buf, static_cast<size_t>(n)));
 #endif
-    return fs::current_path();
+    return std::string(".");
 }
 
 // Deterministic-but-not-trivial file content: a per-file seeded PRNG so each
 // file differs and the bytes aren't all-equal (which would hide off-by-one
 // boundary-trim bugs in the multipart parser).
-void writeRandomFile(const fs::path& path, size_t size, uint32_t seed) {
+void writeRandomFile(const std::string& path, size_t size, uint32_t seed) {
     std::mt19937 rng(seed);
     std::ofstream f(path, std::ios::binary | std::ios::trunc);
     std::vector<char> chunk(64 * 1024);
     size_t written = 0;
     while (written < size) {
-        const size_t n = std::min(chunk.size(), size - written);
+        const size_t n = min_of(chunk.size(), size - written);
         for (size_t i = 0; i < n; ++i) chunk[i] = static_cast<char>(rng() & 0xFF);
         f.write(chunk.data(), static_cast<std::streamsize>(n));
         written += n;
@@ -657,9 +762,9 @@ void writeRandomFile(const fs::path& path, size_t size, uint32_t seed) {
 }
 
 // Byte-for-byte file comparison (streamed, so 10 MB doesn't all sit in RAM).
-bool filesEqual(const fs::path& a, const fs::path& b) {
-    std::error_code ec1, ec2;
-    if (fs::file_size(a, ec1) != fs::file_size(b, ec2) || ec1 || ec2) return false;
+bool filesEqual(const std::string& a, const std::string& b) {
+    const uint64_t sa = fileSize(a), sb = fileSize(b);
+    if (sa == static_cast<uint64_t>(-1) || sa != sb) return false;
     std::ifstream fa(a, std::ios::binary), fb(b, std::ios::binary);
     if (!fa || !fb) return false;
     std::vector<char> ba(64 * 1024), bb(64 * 1024);
@@ -736,7 +841,7 @@ bool parseMultipartFile(Bn3Monkey::HttpRequest& req,
 // loop. Reports counts so the test can assert all 10 landed.
 class MultipartUploadHandler : public Bn3Monkey::HttpRequestHandler {
 public:
-    explicit MultipartUploadHandler(fs::path out_dir) : _out_dir(std::move(out_dir)) {}
+    explicit MultipartUploadHandler(std::string out_dir) : _out_dir(std::move(out_dir)) {}
 
     void registerRoutes(Bn3Monkey::HttpRouter& router) override {
         router.post("/upload", [this](Bn3Monkey::ClientConnection&,
@@ -748,7 +853,7 @@ public:
                 res.status(400).body("bad multipart", 13);
                 return;
             }
-            const fs::path dest = _out_dir / fs::path(filename).filename();
+            const std::string dest = pathJoin(_out_dir, baseName(filename));
             std::ofstream f(dest, std::ios::binary | std::ios::trunc);
             f.write(data.data(), static_cast<std::streamsize>(data.size()));
             f.close();
@@ -760,7 +865,7 @@ public:
     int saved() const { return _saved.load(std::memory_order_relaxed); }
 
 private:
-    fs::path         _out_dir;
+    std::string      _out_dir;
     std::atomic<int> _saved{ 0 };
 };
 
@@ -776,18 +881,17 @@ TEST(HttpServerMultipart, LargeFileUploadRoundTrip) {
 #else
     // 2/8. Wipe any leftover scratch tree from a prior run, then (re)create it
     //      next to the test binary with a fresh out/ sink.
-    const fs::path scratch = executableDir() / "multipart_large_files";
-    const fs::path out_dir = scratch / "out";
-    std::error_code ec;
-    fs::remove_all(scratch, ec);
-    ASSERT_TRUE(fs::create_directories(out_dir, ec)) << "create scratch dir: " << ec.message();
+    const std::string scratch = pathJoin(executableDir(), "multipart_large_files");
+    const std::string out_dir = pathJoin(scratch, "out");
+    removeTree(scratch);
+    ASSERT_TRUE(makeDirs(out_dir)) << "create scratch dir: " << out_dir;
 
     // 3. Stage 10 x 10 MB source files in the scratch dir.
-    std::vector<fs::path> sources;
+    std::vector<std::string> sources;
     for (int i = 0; i < kMultipartFileCount; ++i) {
-        const fs::path src = scratch / ("file_" + std::to_string(i) + ".bin");
+        const std::string src = pathJoin(scratch, "file_" + std::to_string(i) + ".bin");
         writeRandomFile(src, kMultipartFileSize, /*seed*/ 0xC0FFEEu + static_cast<uint32_t>(i));
-        ASSERT_EQ(kMultipartFileSize, fs::file_size(src)) << "staged " << src.string();
+        ASSERT_EQ(static_cast<uint64_t>(kMultipartFileSize), fileSize(src)) << "staged " << src;
         sources.push_back(src);
     }
 
@@ -801,7 +905,7 @@ TEST(HttpServerMultipart, LargeFileUploadRoundTrip) {
     // 4. Client thread: upload each file as real multipart/form-data via curl_mime.
     std::atomic<int> uploaded{ 0 };
     std::thread client([&] {
-        for (const fs::path& src : sources) {
+        for (const std::string& src : sources) {
             CURL* h = curl_easy_init();
             if (!h) { ADD_FAILURE() << "curl_easy_init"; return; }
             curl_easy_setopt(h, CURLOPT_URL, multipartUrl("/upload").c_str());
@@ -811,13 +915,13 @@ TEST(HttpServerMultipart, LargeFileUploadRoundTrip) {
             curl_mime_name(part, "file");
             // Sets the part filename to the basename and a known size, so curl
             // emits Content-Length (not chunked) — which the server requires.
-            curl_mime_filedata(part, src.string().c_str());
+            curl_mime_filedata(part, src.c_str());
             curl_easy_setopt(h, CURLOPT_MIMEPOST, mime);
 
             long code = 0; std::string resp;
             const bool ok = perform(h, code, resp);
-            EXPECT_TRUE(ok) << "upload transport failed for " << src.filename().string();
-            EXPECT_EQ(200, code) << "upload " << src.filename().string() << " body=" << resp;
+            EXPECT_TRUE(ok) << "upload transport failed for " << baseName(src);
+            EXPECT_EQ(200, code) << "upload " << baseName(src) << " body=" << resp;
             if (ok && code == 200) uploaded.fetch_add(1, std::memory_order_relaxed);
 
             curl_mime_free(mime);
@@ -832,17 +936,17 @@ TEST(HttpServerMultipart, LargeFileUploadRoundTrip) {
     EXPECT_EQ(kMultipartFileCount, handler.saved());
 
     // 7. Every original must match its out/ copy byte-for-byte.
-    for (const fs::path& src : sources) {
-        const fs::path dst = out_dir / src.filename();
-        ASSERT_TRUE(fs::exists(dst)) << "missing uploaded copy: " << dst.string();
+    for (const std::string& src : sources) {
+        const std::string dst = pathJoin(out_dir, baseName(src));
+        ASSERT_TRUE(fileExists(dst)) << "missing uploaded copy: " << dst;
         EXPECT_TRUE(filesEqual(src, dst))
-            << "content mismatch for " << src.filename().string();
+            << "content mismatch for " << baseName(src);
     }
 
     server.close();
 
     // 8. Remove the scratch tree.
-    fs::remove_all(scratch, ec);
+    removeTree(scratch);
 #endif  // __ANDROID__
 }
 
