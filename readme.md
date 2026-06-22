@@ -50,6 +50,7 @@ It is compatible for Windows(MSVC, MinGW Compiler), Android (Clang), Linux (gcc)
     - [2.3.1 / 2026.04.30](#231--20260430)
     - [2.3.2 / 2026.05.04](#232--20260504)
     - [3.0.0 / 2026.06.02](#300--20260602)
+    - [3.0.1 / 2026.06.22](#301--20260622)
 
 ## Build
 
@@ -64,7 +65,7 @@ cmake_minimum_required (VERSION 3.16)
 include(FetchContent)
 FetchContent_Declear(SecuritySocket
     GIT_REPOSITORY https://github.com/bn3monkey/securitysocket
-    GIT_TAG v3.0.0)
+    GIT_TAG v3.0.1)
 FetchContent_MakeAvailable(SecuritySocket)
 
 ...
@@ -121,7 +122,7 @@ option(BUILD_SECURITYSOCKET_TEST OFF CACHE BOOL "Build Security socket test" FOR
 
 FetchContent_Declear(SecuritySocket
     GIT_REPOSITORY https://github.com/bn3monkey/securitysocket
-    GIT_TAG v3.0.0)
+    GIT_TAG v3.0.1)
 
 FetchContent_MakeAvailable(SecuritySocket)
 
@@ -1089,3 +1090,21 @@ First major release of the unified HTTP / WebSocket / Custom-Protocol stack.
 - **Breaking:** classes lost their `Socket` prefix and the API was reorganized
   under `Bn3Monkey::` (e.g. `RequestServer::open()` now takes a `RequestHandler*`).
   No compatibility aliases are provided.
+
+### 3.0.1 / 2026.06.22
+
+- **Fix (Linux): `RequestServer` event loop died on a signal, hanging all new
+  connections.** A signal delivered to the event-loop thread wakes `epoll_wait`
+  with `EINTR`, which was mapped to `SOCKET_EVENT_ERROR` and treated as fatal —
+  the loop `break`ed, so nothing called `accept()` afterwards and new clients
+  piled up unserviced in the kernel accept queue (TCP connects, but the
+  HTTP/WebSocket upgrade never responds). `EINTR` is now handled as a timeout in
+  both `SocketMultiEventListener::wait()` (epoll) and `SocketEventListener::wait()`
+  (poll), so the loop simply retries. Linux-only — Windows `WSAPoll` has no
+  `EINTR`; not caught by tests because the harness delivers no signals.
+- **Prompt server shutdown.** `SocketMultiEventListener` is now owned by
+  `RequestServerImpl`, so `close()` `wake()`s the event loop out of `epoll_wait`
+  and tears it down after `join()` (no wake/close race), instead of waiting up to
+  `read_timeout` for the next poll to lapse. Note the library installs no signal
+  handlers: the application owns shutdown (e.g. a `SIGINT` handler that sets a
+  flag, with the main thread calling `server.close()`).
