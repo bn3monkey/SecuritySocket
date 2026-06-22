@@ -53,7 +53,12 @@ NetworkResult SocketEventListener::wait(uint32_t timeout_ms)
         res = NetworkResult(NetworkResultCode::SOCKET_TIMEOUT);
     }
     else if (ret <0) {
-        res = NetworkResult(NetworkResultCode::SOCKET_EVENT_ERROR);
+        // EINTR (signal interruption) is not fatal — treat as timeout so the
+        // caller retries instead of treating the wait as a hard error.
+        if (errno == EINTR)
+            res = NetworkResult(NetworkResultCode::SOCKET_TIMEOUT);
+        else
+            res = NetworkResult(NetworkResultCode::SOCKET_EVENT_ERROR);
     }
     else {
         if (_handle.revents & POLLERR) {
@@ -224,6 +229,15 @@ SocketEventResult SocketMultiEventListener::wait(uint32_t timeout_ms)
         return res;
     }
     if (ret < 0) {
+        // EINTR: a signal was delivered to this thread while it was parked in
+        // epoll_wait. This is NOT an error — the POSIX contract is to retry.
+        // Surface it as a timeout so run()'s loop simply iterates again rather
+        // than treating it as fatal and tearing down the whole accept loop
+        // (which leaves the listen socket unserviced and hangs new clients).
+        if (errno == EINTR) {
+            res.result = NetworkResult(NetworkResultCode::SOCKET_TIMEOUT);
+            return res;
+        }
         res.result = NetworkResult(NetworkResultCode::SOCKET_EVENT_ERROR);
         return res;
     }

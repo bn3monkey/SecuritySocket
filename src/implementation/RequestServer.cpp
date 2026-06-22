@@ -77,26 +77,33 @@ void Bn3Monkey::RequestServerImpl::close()
 	if (_is_running)
 	{
 		_is_running = false;
+		// Wake the event loop out of epoll_wait so it observes _is_running and
+		// exits now, instead of blocking until the current read_timeout lapses.
+		_listener.wake();
 		_routine.join();
 
+		// Tear the listener down only AFTER the run thread has fully exited.
+		// Doing it here (not inside run()) guarantees close() never races the
+		// wake() above: wake() writes to the wakeup fd while the loop is still
+		// live, and the fd is only closed once nothing can wake() it anymore.
+		_listener.close();
 		_socket->close();
 	}
 }
 
 void Bn3Monkey::RequestServerImpl::run(RequestHandler* handler)
 {
-	SocketMultiEventListener listener;
-	listener.open();
+	_listener.open();
 
 	SocketEventContext server_context;
 	server_context.fd = _socket->descriptor();
-	listener.addEvent(&server_context, SocketEventType::ACCEPT);
+	_listener.addEvent(&server_context, SocketEventType::ACCEPT);
 
 	HttpRouterImpl* router_ptr = _has_http ? &_router : nullptr;
 
 	while (_is_running)
 	{
-		auto eventlist = listener.wait(_configuration.read_timeout());
+		auto eventlist = _listener.wait(_configuration.read_timeout());
 		const auto code = eventlist.result.code();
 		if (code == NetworkResultCode::SOCKET_TIMEOUT)
 		{
@@ -134,22 +141,23 @@ void Bn3Monkey::RequestServerImpl::run(RequestHandler* handler)
 
 				connection->onAccept();
 				handler->onConnected(*connection);
-				listener.addEvent(connection, SocketEventType::READ);
+				_listener.addEvent(connection, SocketEventType::READ);
 			}
 			else
 			{
 				auto* connection = static_cast<ClientConnectionImpl*>(context);
-				const auto disposition = connection->handleEvent(type, listener);
+				const auto disposition = connection->handleEvent(type, _listener);
 				if (disposition == ClientConnectionImpl::Disposition::CLOSE)
 				{
 					handler->onDisconnected(*connection);
-					listener.removeEvent(connection);
+					_listener.removeEvent(connection);
 					connection->closeSocket();
 					_socket_connection_pool.release(connection);
 				}
 			}
 		}
 	}
-
-	listener.close();
+	// NB: _listener.close() is intentionally NOT called here. The owning
+	// RequestServerImpl::close() tears the listener down after join()ing this
+	// thread, so a concurrent wake() can never write to a closed wakeup fd.
 }

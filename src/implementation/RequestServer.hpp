@@ -42,6 +42,11 @@ namespace Bn3Monkey
 		std::atomic<bool> _is_running{ false };
 		std::thread _routine;
 
+		// Owned by the server (not a run() local) so close() can wake() it and
+		// break the event loop out of epoll_wait immediately, rather than
+		// waiting up to read_timeout for the next poll to lapse.
+		SocketMultiEventListener _listener;
+
 		FixedObjectPool<ClientConnectionImpl> _socket_connection_pool {32};
 
 		// Built in open() when the handler supports HTTP; lives for the server's
