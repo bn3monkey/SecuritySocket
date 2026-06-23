@@ -166,15 +166,22 @@ namespace Bn3Monkey
             return HttpRequestResult::NEED_MORE_BYTES;   // wait for the body
         }
 
-        // 5. Route match (slices straight out of head(), no copy / NUL needed).
+        // 5. Route match — match on the PATH ONLY. The request-target may carry a
+        //    ?query, which is not part of the route pattern (query params are
+        //    parsed separately by HttpRequestImpl). Without stripping it, every
+        //    GET with a query string misses the trie and falls through to 404.
         HttpRouterImpl* router = host.router();
         if (!router) {
             emitStatus(out, 404);
             in.drain(total);
             return HttpRequestResult::ERROR_CLOSE;
         }
+        size_t route_path_len = req.path_len;
+        if (const void* q = std::memchr(req.path, '?', req.path_len)) {
+            route_path_len = static_cast<size_t>(static_cast<const char*>(q) - req.path);
+        }
         HttpRouterImpl::MatchResult mr =
-            router->match(req.method, req.method_len, req.path, req.path_len);
+            router->match(req.method, req.method_len, req.path, route_path_len);
 
         // No handler at all: 405 if the path exists for other methods, else 404.
         // (A registered fallback fills mr.fn, so it flows through dispatch below.)

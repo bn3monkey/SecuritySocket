@@ -169,6 +169,83 @@ TEST(HttpPhase, WebSocketUpgradeHandshake)
     }
 }
 
+// Regression (query string vs. routing): a GET whose request-target carries a
+// ?query must still match the registered route, and the query must reach the
+// handler. Before the fix, the trie was matched against the full target
+// (path + "?query"), so every GET with a query string fell through to 404.
+namespace
+{
+    struct Captured {
+        bool        called  = false;
+        std::string q_a, q_b, id;
+    };
+    Captured g_captured;
+
+    void captureQuery(ClientConnection&, HttpRequest& req, HttpResponse& res)
+    {
+        g_captured.called = true;
+        if (const char* a = req.query("a")) g_captured.q_a = a;
+        if (const char* b = req.query("b")) g_captured.q_b = b;
+        if (const char* id = req.pathParam("id")) g_captured.id = id;
+        res.status(200);
+    }
+}
+
+TEST(HttpPhase, GetWithQueryStringStillRoutes)
+{
+    HttpRouterImpl router;
+    router.get("/x",         captureQuery);
+    router.get("/items/:id", captureQuery);
+
+    // /x?a=1&b=2 -> matches /x, query reaches the handler.
+    {
+        FakePhaseHost host; host.setRouter(&router);
+        HttpPhase phase;
+        g_captured = Captured{};
+        std::string req = get("/x?a=1&b=2");
+        host.feed(req.data(), req.size());
+        EXPECT_EQ(ConnectionState::SendingHttpResponse, host.drive(phase));
+        EXPECT_TRUE(g_captured.called);
+        EXPECT_EQ("1", g_captured.q_a);
+        EXPECT_EQ("2", g_captured.q_b);
+    }
+
+    // /x (no query) still matches.
+    {
+        FakePhaseHost host; host.setRouter(&router);
+        HttpPhase phase;
+        g_captured = Captured{};
+        std::string req = get("/x");
+        host.feed(req.data(), req.size());
+        EXPECT_EQ(ConnectionState::SendingHttpResponse, host.drive(phase));
+        EXPECT_TRUE(g_captured.called);
+    }
+
+    // Path param + query: ?x=1 must not bleed into the bound :id value.
+    {
+        FakePhaseHost host; host.setRouter(&router);
+        HttpPhase phase;
+        g_captured = Captured{};
+        std::string req = get("/items/42?x=1");
+        host.feed(req.data(), req.size());
+        EXPECT_EQ(ConnectionState::SendingHttpResponse, host.drive(phase));
+        EXPECT_TRUE(g_captured.called);
+        EXPECT_EQ("42", g_captured.id);
+    }
+
+    // base64-ish session value carrying a percent-encoded '+' decodes to '+'.
+    {
+        FakePhaseHost host; host.setRouter(&router);
+        HttpPhase phase;
+        g_captured = Captured{};
+        std::string req = get("/x?a=ab%2Bcd&b=2");
+        host.feed(req.data(), req.size());
+        EXPECT_EQ(ConnectionState::SendingHttpResponse, host.drive(phase));
+        EXPECT_TRUE(g_captured.called);
+        EXPECT_EQ("ab+cd", g_captured.q_a);
+    }
+}
+
 // SLOW route is dispatched (inline here) and still produces a response.
 TEST(HttpPhase, SlowRouteDispatches)
 {

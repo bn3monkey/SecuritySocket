@@ -51,6 +51,7 @@ It is compatible for Windows(MSVC, MinGW Compiler), Android (Clang), Linux (gcc)
     - [2.3.2 / 2026.05.04](#232--20260504)
     - [3.0.0 / 2026.06.02](#300--20260602)
     - [3.0.1 / 2026.06.22](#301--20260622)
+    - [3.0.2 / 2026.06.23](#302--20260623)
 
 ## Build
 
@@ -65,7 +66,7 @@ cmake_minimum_required (VERSION 3.16)
 include(FetchContent)
 FetchContent_Declear(SecuritySocket
     GIT_REPOSITORY https://github.com/bn3monkey/securitysocket
-    GIT_TAG v3.0.1)
+    GIT_TAG v3.0.2)
 FetchContent_MakeAvailable(SecuritySocket)
 
 ...
@@ -122,7 +123,7 @@ option(BUILD_SECURITYSOCKET_TEST OFF CACHE BOOL "Build Security socket test" FOR
 
 FetchContent_Declear(SecuritySocket
     GIT_REPOSITORY https://github.com/bn3monkey/securitysocket
-    GIT_TAG v3.0.1)
+    GIT_TAG v3.0.2)
 
 FetchContent_MakeAvailable(SecuritySocket)
 
@@ -1108,3 +1109,15 @@ First major release of the unified HTTP / WebSocket / Custom-Protocol stack.
   `read_timeout` for the next poll to lapse. Note the library installs no signal
   handlers: the application owns shutdown (e.g. a `SIGINT` handler that sets a
   flag, with the main thread calling `server.close()`).
+
+### 3.0.2 / 2026.06.23
+
+- **Fix (HTTP): every GET carrying a query string fell through to 404.** The
+  HTTP phase passed the raw request-target — path **plus** `?query` — to the
+  router, so `GET /api/content?session=...` never matched the registered
+  `/api/content` route and dropped to the 404 fallback (the 405 lookup missed
+  for the same reason). The route now matches on the path only, truncated at the
+  first `?`; query parsing (`HttpRequest::query`) was already correct and is
+  unaffected. As a side effect, a trailing `?query` can no longer bleed into a
+  bound `:id` path parameter. Added HTTP-phase regression tests covering
+  `GET /x?a=1&b=2`, no-query, path-param + query, and percent-encoded values.
