@@ -52,6 +52,7 @@ It is compatible for Windows(MSVC, MinGW Compiler), Android (Clang), Linux (gcc)
     - [3.0.0 / 2026.06.02](#300--20260602)
     - [3.0.1 / 2026.06.22](#301--20260622)
     - [3.0.2 / 2026.06.23](#302--20260623)
+    - [3.0.3 / 2026.07.07](#303--20260707)
 
 ## Build
 
@@ -66,7 +67,7 @@ cmake_minimum_required (VERSION 3.16)
 include(FetchContent)
 FetchContent_Declear(SecuritySocket
     GIT_REPOSITORY https://github.com/bn3monkey/securitysocket
-    GIT_TAG v3.0.2)
+    GIT_TAG v3.0.3)
 FetchContent_MakeAvailable(SecuritySocket)
 
 ...
@@ -123,7 +124,7 @@ option(BUILD_SECURITYSOCKET_TEST OFF CACHE BOOL "Build Security socket test" FOR
 
 FetchContent_Declear(SecuritySocket
     GIT_REPOSITORY https://github.com/bn3monkey/securitysocket
-    GIT_TAG v3.0.2)
+    GIT_TAG v3.0.3)
 
 FetchContent_MakeAvailable(SecuritySocket)
 
@@ -1121,3 +1122,15 @@ First major release of the unified HTTP / WebSocket / Custom-Protocol stack.
   unaffected. As a side effect, a trailing `?query` can no longer bleed into a
   bound `:id` path parameter. Added HTTP-phase regression tests covering
   `GET /x?a=1&b=2`, no-query, path-param + query, and percent-encoded values.
+
+### 3.0.3 / 2026.07.07
+
+- **Fix (Android): test-harness process spawning no longer breaks the build /
+  runtime.** Android's Bionic libc does not provide `posix_spawnp`, so the
+  `LocalProcess` helper in the test suite (`openProcess` / `closeProcess`) could
+  not be built or run there. On Android these operations are now compiled as
+  no-ops: `openProcess()` returns `0` (treated as "no process") and
+  `closeProcess()` does nothing. The unsupported `<spawn.h>` include and the
+  `posix_spawnp` / `kill` / `waitpid` paths are excluded from the Android build.
+  Behaviour on Windows (`CreateProcessA`) and Linux (`posix_spawnp`) is
+  unchanged.

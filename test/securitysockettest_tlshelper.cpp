@@ -243,7 +243,17 @@ int32_t LocalProcess::openProcess(const char* cmd, ...)
     vsnprintf(buffer, sizeof(buffer), cmd, args);
     va_end(args);
 
-#if defined(_WIN32)
+#if defined(__ANDROID__)
+
+    // --------- Android ---------
+    //
+    // Bionic libc has no posix_spawnp and local process spawning is not
+    // supported on Android. Do nothing and return 0 so callers treat it as
+    // "no process" (closeProcess() then no-ops on the <= 0 id).
+    (void)buffer;
+    return 0;
+
+#elif defined(_WIN32)
 
     // --------- Windows ---------
 
@@ -309,7 +319,14 @@ void LocalProcess::closeProcess(int32_t process_id)
     if (process_id <= 0)
         return;
 
-#if defined(_WIN32)
+#if defined(__ANDROID__)
+
+    // --------- Android ---------
+    // Process spawning is a no-op on Android, so there is nothing to close.
+    (void)process_id;
+    return;
+
+#elif defined(_WIN32)
 
     HANDLE hProcess = OpenProcess(PROCESS_TERMINATE, FALSE, process_id);
     if (!hProcess)

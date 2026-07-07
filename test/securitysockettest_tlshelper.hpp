@@ -20,6 +20,12 @@
 
 #if defined(_WIN32)
 #include <windows.h>
+#elif defined(__ANDROID__)
+// Android's Bionic libc does not provide posix_spawnp, and spawning local
+// helper processes is not meaningful on Android. All LocalProcess operations
+// are compiled as no-ops (see securitysockettest_tlshelper.cpp).
+#include <unistd.h>
+#include <sys/types.h>
 #else
 #include <unistd.h>
 #include <sys/types.h>
