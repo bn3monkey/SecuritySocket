@@ -18,8 +18,12 @@ MSVC 빌드는 **항상 프로젝트 스크립트**를 사용한다. `d:\claude_
    - `--rebuild` : clean 후 재구성+빌드.
 
 ### 주의
-- **`--rebuild`는 가급적 피한다.** 재구성 시 OpenSSL을 FetchContent로 다시 받는데, 빌드 스크립트가 PATH를 sanitize하면서 `git`이 없어 FetchContent가 깨진다. deps가 이미 받아진 상태에서는 **인자 없는 증분 빌드**가 안전하다.
-- **새 소스 파일을 새 디렉토리에 추가**한 경우, `file(GLOB)` 결과가 캐시되어 빌드에 반영되지 않을 수 있다. 새 `.cpp`를 꼭 컴파일해야 하면 `CMakeLists.txt`를 touch하거나(권장) 부득이하면 `--rebuild`(위 FetchContent 주의 감안).
+- **`--rebuild`는 이제 정상 동작한다** (v3.1.0~). 생성되는 `build.sh`의 sanitize된 PATH에
+  `git`(반드시 `Git\cmd` 래퍼)을 되살려 넣어 FetchContent가 깨지지 않는다. OpenSSL도
+  prebuilt 아티팩트를 받으므로 클린 재구성이 40초 수준이다.
+  - `mingw64\bin\git.exe`는 쓰면 안 된다 — `libexec/git-core`의 헬퍼를 못 찾아
+    서브모듈 clone이 `fatal: 'submodule' appears to be a git command...`로 죽는다.
+- **새 소스 파일을 새 디렉토리에 추가**한 경우, `file(GLOB)` 결과가 캐시되어 빌드에 반영되지 않을 수 있다. 새 `.cpp`를 꼭 컴파일해야 하면 `CMakeLists.txt`를 touch한다.
 - 헤더 변경은 Ninja가 의존성으로 추적하므로 증분 빌드로 충분히 반영된다.
 
 ## 테스트 실행 (gtest)

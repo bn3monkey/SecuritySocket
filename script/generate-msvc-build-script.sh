@@ -181,6 +181,50 @@ if [[ -z "$CMAKE_PATH" || ! -f "$CMAKE_PATH" ]]; then
 fi
 echo "[INFO] cmake         : $CMAKE_PATH"
 
+# ----- 2-1. git 검색 ---------------------------------------------------------
+# CMake FetchContent(OpenSSL / googletest / remote-command)는 GIT_REPOSITORY 로
+# clone 하므로 git 이 PATH 에 있어야 한다. 생성되는 build.sh 가 PATH 를 sanitize
+# 하기 때문에, git 디렉토리를 여기서 찾아 그 PATH 에 명시적으로 되살려 넣는다.
+# 이게 없으면 재구성(--rebuild / cache 분실)이 FetchContent 단계에서 죽는다.
+#
+# 반드시 `cmd\git.exe` (래퍼)를 쓴다. `mingw64\bin\git.exe` 는 libexec\git-core 의
+# 헬퍼를 못 찾아 서브모듈 clone 에서 다음과 같이 실패한다:
+#   fatal: 'submodule' appears to be a git command, but we were not able to execute it
+GIT_DIR_WIN=""
+git_exe="$(command -v git 2>/dev/null || true)"
+if [[ -n "$git_exe" ]]; then
+    # git-bash 안에서 `command -v git` 은 /mingw64/bin/git 같은 MSYS *가상* 경로를
+    # 준다. 그 POSIX 경로로는 Git 설치 루트를 역산할 수 없으므로(가상 마운트라
+    # 루트가 "/" 로 접힌다), 먼저 Windows 실경로로 바꾼 뒤 계산한다.
+    # 탐색은 POSIX 쪽에서 한다. Windows 경로로 바꿔 놓고 되돌리려 하면
+    # `cygpath -u 'D:\Program files\Git'` 이 '/' 로 뭉개져 버린다.
+    git_bin_posix="$(dirname "$git_exe")"                 # /mingw64/bin
+    git_cmd_dir=""
+    # 후보 루트: bin 한 단계 위(…/Git/cmd/git.exe), 두 단계 위(…/mingw64/bin → …/Git)
+    for cand in "$(dirname "$git_bin_posix")" "$(dirname "$(dirname "$git_bin_posix")")"; do
+        # 루트("/")일 때 그냥 이으면 "//cmd" 가 되어 MSYS 가 UNC 경로로 해석한다.
+        cand="${cand%/}"
+        if [[ -f "$cand/cmd/git.exe" ]]; then
+            git_cmd_dir="$cand/cmd"
+            break
+        fi
+    done
+    # 이미 cmd 래퍼를 가리키고 있으면 그대로 쓴다.
+    [[ -z "$git_cmd_dir" && -f "$git_bin_posix/git.exe" && "$(basename "$git_bin_posix")" == "cmd" ]] \
+        && git_cmd_dir="$git_bin_posix"
+
+    if [[ -n "$git_cmd_dir" ]]; then
+        GIT_DIR_WIN="$(to_win_bs "$git_cmd_dir")"
+    else
+        GIT_DIR_WIN="$(to_win_bs "$git_bin_posix")"
+    fi
+fi
+if [[ -n "$GIT_DIR_WIN" ]]; then
+    echo "[INFO] git           : $GIT_DIR_WIN"
+else
+    echo "[WARN] git 을 찾지 못했습니다 — 재구성 시 FetchContent 가 실패할 수 있습니다."
+fi
+
 # ----- 3. 빌드 디렉토리 검색 -------------------------------------------------
 # 1) --build-dir 로 명시 받았으면 그 값을 그대로 채택. 디렉토리가 없으면 생성.
 #    CMakeCache.txt 부재는 OK — build.sh 의 do_configure 가 fresh 구성한다.
@@ -256,9 +300,11 @@ cat > "$OUTPUT" <<EOF
 #
 # 동작 (PS quoting 우회 — 임시 .bat 파일 패턴):
 #   1) 임시 .bat 파일을 생성한다. 그 안에서:
-#      a) PATH 를 system minimal (System32 + WindowsPowerShell) 로 sanitize.
+#      a) PATH 를 system minimal (System32 + WindowsPowerShell) + git 으로 sanitize.
 #         ※ 호출 측 bash 의 PATH 가 ssh-agent 출력 등으로 오염되어 있어도
 #           VsDevCmd.bat 의 PATH 파싱이 깨지지 않도록 하기 위함.
+#         ※ git 은 예외적으로 되살린다 — FetchContent 가 GIT_REPOSITORY 로
+#           clone 하므로, git 이 없으면 재구성이 그 단계에서 죽는다.
 #      b) call VsDevCmd.bat — MSVC 환경변수를 같은 cmd 세션에 주입.
 #      c) cmake.exe (절대 경로) 로 configure / build 호출.
 #   2) cmd.exe //c 로 그 .bat 파일을 한 번에 실행 (인자 0 — 인자 quoting 문제 zero).
@@ -282,6 +328,9 @@ CMAKE_PATH='${CMAKE_PATH_WIN}'
 BUILD_DIR='${BUILD_DIR_WIN}'
 PROJECT_ROOT='${PROJECT_ROOT_WIN}'
 ARCH='${ARCH}'
+# FetchContent(OpenSSL / googletest / remote-command)가 git clone 을 하므로,
+# sanitize 된 PATH 에 git 을 되살려 넣는다. 비어 있으면 재구성이 실패한다.
+GIT_DIR='${GIT_DIR_WIN}'
 CMAKE_GENERATOR_NAME='${CMAKE_GENERATOR_VALUE}'
 CMAKE_BUILD_TYPE_NAME='${CMAKE_BUILD_TYPE_VALUE}'
 
@@ -339,7 +388,7 @@ run_in_vs_env() {
     # %errorlevel% 같은 cmd-side 변수는 그대로 유지된다.
     cat > "\$bat_file" <<BATEOF
 @echo off
-set PATH=C:\\Windows\\System32;C:\\Windows;C:\\Windows\\System32\\WindowsPowerShell\\v1.0
+set PATH=C:\\Windows\\System32;C:\\Windows;C:\\Windows\\System32\\WindowsPowerShell\\v1.0;\$GIT_DIR
 call "\$VS_DEV_CMD" -arch=\$ARCH -host_arch=\$ARCH -no_logo
 if errorlevel 1 exit /b %errorlevel%
 \$cmake_cmd
