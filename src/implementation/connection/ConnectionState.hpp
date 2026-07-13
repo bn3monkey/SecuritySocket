@@ -13,6 +13,15 @@ namespace Bn3Monkey
     // two enums cross the host<->phase boundary.
     enum class ConnectionState : uint8_t {
         // Lifecycle (host-driven)
+        //
+        // TlsHandshaking is an antechamber in front of the protocol machine: a TLS
+        // connection sits here until SSL_accept() completes, then moves to whichever
+        // state a plaintext connection would have started in. It is deliberately in
+        // NEITHER isReadState() nor isWriteState() — unlike every other state, its
+        // wait direction is not a property of the state. SSL_accept() reports what it
+        // needs on each call (WANT_READ / WANT_WRITE), so the listener is armed from
+        // that return value rather than inferred here.
+        TlsHandshaking,                  // [READ or WRITE] SSL_accept in progress
         Sniffing,                        // [READ]  first bytes, protocol detect
         Closing,                         // [WRITE] last bytes (error / close frame)
         Closed,                          // (terminal) removed from listener

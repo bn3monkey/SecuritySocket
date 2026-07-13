@@ -2,6 +2,7 @@
 
 #include "NetworkResult.hpp"
 #include "SocketHelper.hpp"
+#include "TlsTrace.hpp"
 
 #ifdef _WIN32
 #include <Winsock2.h>
@@ -120,41 +121,8 @@ NetworkResult Bn3Monkey::ClientActiveSocket::read(void* buffer, size_t size)
 	return createResult(ret);
 }
 
-static void trackTLSInfo(const SSL* ssl, int where, int ret)
-{
-	char buffer[2048]{ 0 };
-
-	int w = where & ~SSL_ST_MASK;
-
-	if (where & SSL_CB_LOOP)
-	{
-		const char* header = "";
-		if (w & SSL_ST_CONNECT) header = "SSL_connect";
-		else if (w & SSL_ST_ACCEPT) header = "SSL_accept";
-		snprintf(buffer, sizeof(buffer), "[%s] %s", header, SSL_state_string_long(ssl));
-	}
-	else if (where & SSL_CB_ALERT)
-	{
-		snprintf(buffer, sizeof(buffer), "[ALERT] : %s :%s", SSL_alert_type_string_long(ret), SSL_alert_desc_string_long(ret));
-	}
-	else if (where & SSL_CB_EXIT)
-	{
-		if (ret <= 0) {
-			snprintf(buffer, sizeof(buffer), "%s", ret == 0 ? "Handshake failed" : "Handshake error");
-		}
-	}
-	else if (where & SSL_CB_HANDSHAKE_START) {
-		snprintf(buffer, sizeof(buffer), "Handshake start");
-	}
-	else if (where & SSL_CB_HANDSHAKE_DONE) {
-		snprintf(buffer, sizeof(buffer), "Handshake done");
-	}
-	
-    auto* onTLSEvent = reinterpret_cast<TlsClientConfiguration::TlsEventCallback>(SSL_get_ex_data(ssl, 0));
-	if (onTLSEvent) {
-		onTLSEvent(buffer);
-	}
-}
+// trackTLSInfo moved to TlsTrace.hpp so the server (TLSPassiveSocket) shares it
+// instead of duplicating the rendering. It already handled SSL_ST_ACCEPT.
 
 Bn3Monkey::TlsClientActiveSocket::TlsClientActiveSocket(bool is_unix_domain, const TlsClientConfiguration& tls_configuration, const char* hostname)
 	: ClientActiveSocket(is_unix_domain, tls_configuration, hostname)
@@ -236,7 +204,7 @@ Bn3Monkey::TlsClientActiveSocket::TlsClientActiveSocket(bool is_unix_domain, con
 	// TLS info tracking
 	auto on_tls_event = tls_configuration.getOnTLSEvent();
 	if (on_tls_event) {
-        SSL_set_ex_data(_ssl, 0, reinterpret_cast<void*>(on_tls_event));
+        SSL_set_ex_data(_ssl, kTlsEventCallbackExDataIndex, reinterpret_cast<void*>(on_tls_event));
 		SSL_CTX_set_info_callback(_context, trackTLSInfo);
 	}
 }

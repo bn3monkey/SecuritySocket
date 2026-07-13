@@ -7,6 +7,7 @@
 #include "SocketHelper.hpp"
 
 #include <cstdint>
+#include <utility>
 #include "TlsHelper.hpp"
 
 namespace Bn3Monkey
@@ -17,6 +18,16 @@ namespace Bn3Monkey
 	public:
 		ClientActiveSocket(bool is_unix_domain, const TlsClientConfiguration& tls_configuration, const char* hostname = nullptr);
 		virtual ~ClientActiveSocket();
+
+		// SocketContainer is move-only. Steal the fd so the moved-from object
+		// can never close a descriptor we still own.
+		ClientActiveSocket(ClientActiveSocket&& other) noexcept {
+			_socket = other._socket;
+			_result = other._result;
+			other._socket = -1;
+		}
+		ClientActiveSocket(const ClientActiveSocket&) = delete;
+		ClientActiveSocket& operator=(const ClientActiveSocket&) = delete;
 
 		virtual void close();
 
@@ -37,6 +48,15 @@ namespace Bn3Monkey
 	public:
 		TlsClientActiveSocket(bool is_unix_domain, const TlsClientConfiguration& tls_configuration, const char* hostname = nullptr);
 		virtual ~TlsClientActiveSocket();
+
+		TlsClientActiveSocket(TlsClientActiveSocket&& other) noexcept
+			: ClientActiveSocket(std::move(other)),
+			  _context(other._context), _ssl(other._ssl), _hostname(other._hostname)
+		{
+			// Only one owner may SSL_free() / SSL_CTX_free().
+			other._context = nullptr;
+			other._ssl = nullptr;
+		}
 
 		virtual void close() override;
 

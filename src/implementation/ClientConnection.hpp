@@ -42,12 +42,15 @@ namespace Bn3Monkey
     public:
         enum class Disposition { KEEP, CLOSE };
 
-        ClientConnectionImpl(ServerActiveSocketContainer&  container,
+        // The container is moved in: after this returns the caller's container is
+        // empty, so exactly one object owns the accepted fd (and, under TLS, the
+        // SSL session). is_secure is not a parameter — it is read off the socket
+        // that was actually accepted (ServerActiveSocket::isTls()).
+        ClientConnectionImpl(ServerActiveSocketContainer&& container,
                              RequestHandler&               handler,
                              HttpRouterImpl*               router,   // null => no HTTP
                              CustomProtocolRequestHandler* custom,   // null => no Custom
                              size_t                        pdu_size,
-                             bool                          is_secure,
                              size_t                        max_http_request_body_size);
         ~ClientConnectionImpl() override;
 
@@ -66,6 +69,11 @@ namespace Bn3Monkey
         // socket before queueing the worker). Returns CLOSE when the server must
         // tear the connection down (onDisconnected + removeEvent + release).
         Disposition handleEvent(SocketEventType ev, SocketMultiEventListener& listener);
+
+        // Whether onConnected() has fired for this connection. A TLS connection
+        // that dies mid-handshake never reaches it, and the server must not then
+        // report onDisconnected() for a connection the handler never saw.
+        bool connectedNotified() const { return _connected_notified; }
 
         // Close the underlying socket fd (idempotent). Called by the server
         // during teardown, after onDisconnected and before pool release.
@@ -94,13 +102,24 @@ namespace Bn3Monkey
         Disposition driveRead(SocketMultiEventListener& listener);
         Disposition onWriteEvent(SocketMultiEventListener& listener);
 
+        // Push the TLS handshake one step (state == TlsHandshaking only). On
+        // completion the connection leaves the antechamber for the state a
+        // plaintext connection would have started in, and onConnected() fires.
+        Disposition driveHandshake(SocketMultiEventListener& listener);
+
         // The active phase for a given state (null for host-handled lifecycle
         // states and for groups not yet implemented).
         ConnectionPhase* phaseForState(ConnectionState s);
 
         // Re-arm the listener (READ/WRITE) to match the current state. No-op if
         // already correct, or if the socket was detached for a SLOW dispatch.
+        // A pending _tls_want overrides the state — see TlsWant.
         void armListener(SocketMultiEventListener& listener);
+
+        // Re-arm in an explicitly given direction. Used where the state does not
+        // determine the direction: TlsHandshaking, and TLS I/O that reports it
+        // needs the opposite readiness from the one its state implies.
+        void armListener(SocketMultiEventListener& listener, SocketEventType desired);
 
         int  recvChunk();      // >0 bytes read, 0 would-block, -1 peer close/fatal
         bool flushOutput();    // false on socket error; sets _output_fully_sent
@@ -123,6 +142,20 @@ namespace Bn3Monkey
         ConnectionState _state{ ConnectionState::Sniffing };
         SocketEventType _listener_event{ SocketEventType::READ };
         bool            _detached{ false };   // SLOW handed the socket to worker
+
+        // Where the connection goes once TLS finishes: the state a plaintext
+        // connection would have started in (Sniffing / ReceivingHttpRequest /
+        // ReceivingCustomMessage). onAccept() computes it from handler capability;
+        // a plaintext connection just starts there directly.
+        ConnectionState _post_handshake_state{ ConnectionState::Sniffing };
+        bool            _connected_notified{ false };
+
+        // TLS can need the *opposite* readiness from the one the state implies:
+        // SSL_read() may return WANT_WRITE (e.g. a TLS 1.3 KeyUpdate response it
+        // must send first) and SSL_write() may return WANT_READ. The logical state
+        // stays put; only the listener direction flips. NONE => infer from state.
+        // Mirrored from ServerActiveSocket::ioWant() after every TLS read/write.
+        TlsWant _tls_want{ TlsWant::NONE };
 
         // ── phases (per-connection strategies) ──
         SniffPhase     _sniff;

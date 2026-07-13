@@ -17,6 +17,11 @@ inline METHOD* TLS_client_method()
     return nullptr;
 }
 
+inline METHOD* TLS_server_method()
+{
+    return nullptr;
+}
+
 inline SSL_CTX* SSL_CTX_new(METHOD* method)
 {
     (void)method;
@@ -44,10 +49,23 @@ inline int32_t SSL_accept(SSL* ssl)
     (void)ssl;
     return 0;
 }
-inline void SSL_shutdown(SSL* ssl)
+inline void SSL_set_accept_state(SSL* ssl)
 {
     (void)ssl;
-    return;
+}
+// Real OpenSSL returns int (0 = shutdown not finished, 1 = done, <0 = error).
+// The stub used to return void, which would not compile once close() inspects it.
+inline int32_t SSL_shutdown(SSL* ssl)
+{
+    (void)ssl;
+    return 1;
+}
+// Bytes already decrypted and buffered inside the SSL object but not yet handed
+// to the caller. epoll never re-fires for these, so the read loop must drain them.
+inline int32_t SSL_pending(const SSL* ssl)
+{
+    (void)ssl;
+    return 0;
 }
 inline void SSL_free(SSL* ssl)
 {
@@ -101,6 +119,17 @@ static constexpr int TLS1_3_VERSION = 0x0304;
 // Verify mode constants
 static constexpr int SSL_VERIFY_NONE = 0;
 static constexpr int SSL_VERIFY_PEER = 1;
+// Server-side only: reject the handshake outright when the client sends no
+// certificate. Combined with SSL_VERIFY_PEER it turns "request" into "require".
+static constexpr int SSL_VERIFY_FAIL_IF_NO_PEER_CERT = 2;
+
+// SSL_CTX_set_mode flags used by the server write path.
+//   MOVING_WRITE_BUFFER : allow a retried SSL_write() to pass a different buffer
+//                         address (StagingBuffer may reallocate between retries).
+//   ENABLE_PARTIAL_WRITE: allow SSL_write() to report fewer bytes than requested.
+static constexpr long SSL_MODE_ENABLE_PARTIAL_WRITE       = 0x1L;
+static constexpr long SSL_MODE_ACCEPT_MOVING_WRITE_BUFFER = 0x2L;
+inline long SSL_CTX_set_mode(SSL_CTX*, long mode) { return mode; }
 
 // Certificate file type
 static constexpr int SSL_FILETYPE_PEM = 1;
@@ -116,8 +145,13 @@ inline int SSL_CTX_set_max_proto_version(SSL_CTX*, int) { return 1; }
 inline int SSL_CTX_set_cipher_list(SSL_CTX*, const char*) { return 1; }
 inline int SSL_CTX_set_ciphersuites(SSL_CTX*, const char*) { return 1; }
 
-// Server certificate verification
-inline void SSL_CTX_set_verify(SSL_CTX*, int, int(*)(int, void*)) {}
+// Peer certificate verification.
+// Real OpenSSL's callback is int(*)(int, X509_STORE_CTX*); the old stub declared
+// int(*)(int, void*). Every call site passes nullptr, so nothing broke, but the
+// mismatch would bite the moment someone supplied a real callback.
+struct X509_STORE_CTX;
+using SSL_verify_cb = int (*)(int, X509_STORE_CTX*);
+inline void SSL_CTX_set_verify(SSL_CTX*, int, SSL_verify_cb) {}
 inline int  SSL_CTX_load_verify_locations(SSL_CTX*, const char*, const char*) { return 1; }
 inline int  SSL_CTX_set_default_verify_paths(SSL_CTX*) { return 1; }
 
@@ -126,6 +160,19 @@ inline void SSL_CTX_set_default_passwd_cb(SSL_CTX*, pem_password_cb) {}
 inline void SSL_CTX_set_default_passwd_cb_userdata(SSL_CTX*, void*) {}
 inline int  SSL_CTX_use_certificate_file(SSL_CTX*, const char*, int) { return 1; }
 inline int  SSL_CTX_use_PrivateKey_file(SSL_CTX*, const char*, int) { return 1; }
+
+// Server certificate / key.
+// use_certificate_chain_file (not use_certificate_file) so intermediate CAs in
+// the PEM are sent to the client; without them a client that lacks the
+// intermediate cannot build a path to its trusted root.
+inline int SSL_CTX_use_certificate_chain_file(SSL_CTX*, const char*) { return 1; }
+inline int SSL_CTX_check_private_key(const SSL_CTX*) { return 1; }
+
+// The acceptable-CA list sent in the TLS CertificateRequest. Without it a client
+// doing mTLS has no idea which of its certificates the server would accept.
+using X509_NAME_STACK = void;
+inline X509_NAME_STACK* SSL_load_client_CA_file(const char*) { return nullptr; }
+inline void SSL_CTX_set_client_CA_list(SSL_CTX*, X509_NAME_STACK*) {}
 
 // Hostname / SNI
 inline int SSL_set_tlsext_host_name(SSL*, const char*) { return 1; }
@@ -205,6 +252,11 @@ inline const char* SSL_alert_desc_string_long(int)         { return ""; }
 // project's TlsEventCallback pointer at runtime.
 inline int   SSL_set_ex_data(SSL*, int, void*)             { return 1; }
 inline void* SSL_get_ex_data(const SSL*, int)              { return nullptr; }
+
+// Context-level user data. The server stashes the TlsEventCallback here at
+// SSL_CTX construction so each accepted connection can copy it onto its own SSL.
+inline int   SSL_CTX_set_ex_data(SSL_CTX*, int, void*)     { return 1; }
+inline void* SSL_CTX_get_ex_data(const SSL_CTX*, int)      { return nullptr; }
 
 #endif // USING_TLS
 

@@ -10,26 +10,38 @@ namespace
 {
     // recv chunk granularity; the buffer grows by at least this when it runs low.
     constexpr size_t kRecvChunk = 16 * 1024;
+
+    // "The socket had nothing to give / could take nothing more" — retry on the
+    // next readiness event rather than tearing the connection down.
+    //
+    // Both codes must be tested. createResult() maps EWOULDBLOCK / EAGAIN /
+    // WSAEWOULDBLOCK to SOCKET_CONNECTION_NEED_TO_BE_BLOCKED, *not* to
+    // SOCKET_TIMEOUT (which comes from an SO_RCVTIMEO/SO_SNDTIMEO lapse), and
+    // createTLSResult() maps SSL_ERROR_WANT_READ / WANT_WRITE to the same code.
+    inline bool isWouldBlock(NetworkResultCode code)
+    {
+        return code == NetworkResultCode::SOCKET_TIMEOUT
+            || code == NetworkResultCode::SOCKET_CONNECTION_NEED_TO_BE_BLOCKED;
+    }
 }
 
-ClientConnectionImpl::ClientConnectionImpl(ServerActiveSocketContainer&  container,
+ClientConnectionImpl::ClientConnectionImpl(ServerActiveSocketContainer&& container,
                                            RequestHandler&               handler,
                                            HttpRouterImpl*               router,
                                            CustomProtocolRequestHandler* custom,
                                            size_t                        pdu_size,
-                                           bool                          is_secure,
                                            size_t                        max_http_request_body_size)
-    : _container(container),
+    : _container(std::move(container)),
       _handler(handler),
       _router(router),
       _custom(custom),
-      _is_secure(is_secure),
       _max_http_request_body_size(max_http_request_body_size),
       _pdu_size(pdu_size ? pdu_size : kRecvChunk),
       _input(pdu_size ? pdu_size : kRecvChunk),
       _output(pdu_size ? pdu_size : kRecvChunk)
 {
     _socket = _container.get();
+    _is_secure = _socket->isTls();
     fd = _socket->descriptor();   // SocketEventContext::fd — listener key
 
     if (_custom && _custom->supportWebSocket()) {
@@ -54,15 +66,30 @@ void ClientConnectionImpl::onAccept()
     const bool has_http   = _router != nullptr;
     const bool has_custom = _custom != nullptr;
 
+    // The state a plaintext connection starts in, decided by handler capability.
     if (has_http && has_custom) {
-        _state = ConnectionState::Sniffing;
+        _post_handshake_state = ConnectionState::Sniffing;
     } else if (has_http) {
-        _state = ConnectionState::ReceivingHttpRequest;
+        _post_handshake_state = ConnectionState::ReceivingHttpRequest;
     } else {
-        _state = ConnectionState::ReceivingCustomMessage;
+        _post_handshake_state = ConnectionState::ReceivingCustomMessage;
     }
+
+    // A TLS connection waits in the antechamber until SSL_accept() completes, then
+    // enters that same state. Plaintext skips the antechamber entirely, so its code
+    // path below is byte-for-byte what it was before TLS existed.
+    _state = _socket->isTls() ? ConnectionState::TlsHandshaking
+                              : _post_handshake_state;
+
     _listener_event = SocketEventType::READ;   // server registered READ on accept
     _detached = false;
+    _tls_want = TlsWant::NONE;
+
+    // Plaintext: the server fires onConnected() right after this returns, so the
+    // connection counts as announced from the outset. TLS: nothing is announced
+    // until the handshake completes (driveHandshake sets this), which is what
+    // keeps onConnected/onDisconnected paired for a handshake that fails.
+    _connected_notified = !_socket->isTls();
     _input.clear();
     _output.clear();
     _output_fully_sent = false;
@@ -92,11 +119,15 @@ int ClientConnectionImpl::recvChunk()
     if (!_input.reserve(kRecvChunk)) return -1;   // OOM → treat as fatal
 
     auto r = _socket->read(_input.tail(), _input.remaining());
+    // Under TLS a read can stall wanting *write*; mirror the direction so
+    // armListener() overrides the one the state implies. Plaintext reports NONE.
+    _tls_want = _socket->ioWant();
     const NetworkResultCode code = r.code();
     if (code == NetworkResultCode::SOCKET_CLOSED) return -1;
-    if (code == NetworkResultCode::SOCKET_TIMEOUT) return 0;   // would-block
+    if (isWouldBlock(code)) return 0;
     const int32_t n = r.bytes();
-    if (n <= 0) return 0;
+    if (n < 0) return -1;    // TLS protocol error / fatal alert
+    if (n == 0) return 0;
     _input.fill(static_cast<size_t>(n));
     return n;
 }
@@ -105,9 +136,13 @@ bool ClientConnectionImpl::flushOutput()
 {
     _output_fully_sent = false;
     auto r = _socket->write(_output.head(), _output.pending());
+    _tls_want = _socket->ioWant();   // a write can stall wanting *read* (see above)
     const NetworkResultCode code = r.code();
     if (code == NetworkResultCode::SOCKET_CLOSED) return false;
-    if (code == NetworkResultCode::SOCKET_TIMEOUT) return true;   // would-block; stay
+    // The send buffer is full. Keep the unsent bytes staged and stay in the
+    // write state; the next POLLOUT retries. This MUST be checked before the
+    // `n < 0` fatal test below, because a would-block carries bytes() == -1.
+    if (isWouldBlock(code)) return true;
     const int32_t n = r.bytes();
     if (n < 0) return false;
     _output.drain(static_cast<size_t>(n));
@@ -150,8 +185,21 @@ ConnectionPhase* ClientConnectionImpl::phaseForState(ConnectionState s)
 
 void ClientConnectionImpl::armListener(SocketMultiEventListener& listener)
 {
-    const SocketEventType desired =
-        isWriteState(_state) ? SocketEventType::WRITE : SocketEventType::READ;
+    // A TLS stall on the opposite direction outranks the state: SSL_read() that
+    // returned WANT_WRITE will never make progress on a READ event, and with a
+    // level-triggered epoll (no EPOLLET here) an unread-byte-less socket never
+    // fires READ again — the connection would hang forever.
+    SocketEventType desired;
+    if (_tls_want == TlsWant::READ)       desired = SocketEventType::READ;
+    else if (_tls_want == TlsWant::WRITE) desired = SocketEventType::WRITE;
+    else desired = isWriteState(_state) ? SocketEventType::WRITE : SocketEventType::READ;
+
+    armListener(listener, desired);
+}
+
+void ClientConnectionImpl::armListener(SocketMultiEventListener& listener,
+                                       SocketEventType desired)
+{
     if (desired != _listener_event) {
         listener.modifyEvent(this, desired);
         _listener_event = desired;
@@ -174,13 +222,76 @@ ClientConnectionImpl::Disposition
 ClientConnectionImpl::handleEvent(SocketEventType ev, SocketMultiEventListener& listener)
 {
     if (ev == SocketEventType::DISCONNECTED) return Disposition::CLOSE;
+
+    // Intercepted before any phase routing. TlsHandshaking is a Lifecycle state:
+    // phaseForState() returns null for it and driveRead() would close on that.
+    // Note this ignores `ev` — the handshake may have been waiting on either
+    // direction, and SSL_accept() itself decides what it needs next.
+    if (_state == ConnectionState::TlsHandshaking) return driveHandshake(listener);
+
     if (ev == SocketEventType::WRITE)        return onWriteEvent(listener);
 
-    // READ
-    const int n = recvChunk();
-    if (n < 0) return Disposition::CLOSE;
-    if (n == 0) return Disposition::KEEP;
-    return driveRead(listener);
+    // READ. Loop rather than read once: SSL_read() decrypts a whole TLS record,
+    // and if _input could not take all of it the remainder sits inside the SSL
+    // object. The TCP socket then has no unread bytes, so a level-triggered epoll
+    // never fires again — those bytes must be drained here or they are lost.
+    // hasBufferedInput() is always false for plaintext, so this runs exactly once.
+    for (;;) {
+        const int n = recvChunk();
+        if (n < 0)  return Disposition::CLOSE;
+        if (n == 0) {                       // would-block
+            armListener(listener);          // _tls_want may have flipped direction
+            return Disposition::KEEP;
+        }
+
+        const Disposition d = driveRead(listener);
+        if (d == Disposition::CLOSE) return d;
+        if (_detached)               return d;   // handed to the SLOW worker
+        if (isWriteState(_state))    return d;   // now waiting to send a response
+        if (!_socket->hasBufferedInput()) return d;
+    }
+}
+
+ClientConnectionImpl::Disposition
+ClientConnectionImpl::driveHandshake(SocketMultiEventListener& listener)
+{
+    switch (_socket->handshake())
+    {
+    case TLSHandshakeState::WANT_READ:
+        armListener(listener, SocketEventType::READ);
+        return Disposition::KEEP;
+
+    case TLSHandshakeState::WANT_WRITE:
+        armListener(listener, SocketEventType::WRITE);
+        return Disposition::KEEP;
+
+    case TLSHandshakeState::FAILED:
+        // onConnected() never fired, so the server must not fire onDisconnected()
+        // either — it is gated on connectedNotified().
+        return Disposition::CLOSE;
+
+    case TLSHandshakeState::DONE:
+        break;
+    }
+
+    // Leave the antechamber. From here the connection is indistinguishable from a
+    // plaintext one: the same phases run over the same staging buffers, and only
+    // recvChunk()/flushOutput() know that the bytes pass through SSL_read/SSL_write.
+    _state = _post_handshake_state;
+    _handler.onConnected(*this);
+    _connected_notified = true;
+
+    armListener(listener, SocketEventType::READ);
+
+    // The client may have pipelined application data into the same TCP segment as
+    // its final handshake flight; SSL_accept() has already decrypted and buffered
+    // it, and epoll will not re-fire for it.
+    if (_socket->hasBufferedInput()) {
+        const int n = recvChunk();
+        if (n < 0) return Disposition::CLOSE;
+        if (n > 0) return driveRead(listener);
+    }
+    return Disposition::KEEP;
 }
 
 ClientConnectionImpl::Disposition
@@ -217,7 +328,13 @@ ClientConnectionImpl::Disposition
 ClientConnectionImpl::onWriteEvent(SocketMultiEventListener& listener)
 {
     if (!flushOutput()) return Disposition::CLOSE;
-    if (!_output_fully_sent) return Disposition::KEEP;   // partial; stay WRITE
+    if (!_output_fully_sent) {
+        // Partial send; stay in the write state. Re-arm anyway: under TLS the
+        // write may have stalled wanting *read*, and staying armed for WRITE
+        // would spin (or hang) instead of retrying when the peer's bytes arrive.
+        armListener(listener);
+        return Disposition::KEEP;
+    }
 
     if (_state == ConnectionState::Closing) return Disposition::CLOSE;
 

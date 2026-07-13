@@ -100,9 +100,18 @@ namespace Bn3Monkey
         SOCKET_EVENT_CANNOT_ADDED,
 
         SOCKET_SERVER_ALREADY_RUNNING,
-        
+
 
         UNKNOWN_ERROR,
+
+        // ── Server-side TLS ──
+        // Appended here, immediately before LENGTH: every value above keeps its
+        // numeric identity, so an already-compiled client of this DLL is unaffected.
+        TLS_SERVER_CERT_LOAD_FAIL,
+        TLS_SERVER_KEY_LOAD_FAIL,
+        TLS_SERVER_KEY_MISMATCH,
+        TLS_CLIENT_TRUST_STORE_LOAD_FAIL,
+        TLS_HANDSHAKE_FAILED,
 
         LENGTH,
     };

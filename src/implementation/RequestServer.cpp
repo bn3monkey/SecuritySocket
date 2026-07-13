@@ -42,7 +42,8 @@ Bn3Monkey::NetworkResult Bn3Monkey::RequestServerImpl::open(RequestHandler* hand
 
 	NetworkResult result = NetworkResult(NetworkResultCode::SUCCESS);
 
-	_container = PassiveSocketContainer(_tls_configuration.valid(), _configuration.is_unix_domain());
+	_container = PassiveSocketContainer(_tls_configuration.valid(),
+	                                   _configuration.is_unix_domain(), _tls_configuration);
 	_socket = _container.get();
 	result = _socket->valid();
 	if (result.code() != NetworkResultCode::SUCCESS)
@@ -128,19 +129,26 @@ void Bn3Monkey::RequestServerImpl::run(RequestHandler* handler)
 				}
 
 				ClientConnectionImpl* connection = _socket_connection_pool.acquire(
-					socket_container, *handler, router_ptr, _custom,
-					_configuration.pdu_size(), _tls_configuration.valid(),
+					std::move(socket_container), *handler, router_ptr, _custom,
+					_configuration.pdu_size(),
 					_configuration.max_http_request_body_size());
-				// Fixed-size pool (32): nullptr once exhausted. Drop the freshly
-				// accepted socket — close it explicitly so its fd doesn't leak.
+				// Fixed-size pool (32): nullptr once exhausted. acquire() returns
+				// before it forwards its arguments, so the container still owns the
+				// socket here — close it explicitly so its fd doesn't leak.
 				if (connection == nullptr)
 				{
-					client_socket->close();
+					socket_container.get()->close();
 					continue;
 				}
 
 				connection->onAccept();
-				handler->onConnected(*connection);
+				// TLS fires onConnected() itself once the handshake completes, so a
+				// connection that dies mid-handshake is never announced to the
+				// handler at all. Plaintext has nothing to wait for.
+				if (!connection->isSecure())
+				{
+					handler->onConnected(*connection);
+				}
 				_listener.addEvent(connection, SocketEventType::READ);
 			}
 			else
@@ -149,7 +157,13 @@ void Bn3Monkey::RequestServerImpl::run(RequestHandler* handler)
 				const auto disposition = connection->handleEvent(type, _listener);
 				if (disposition == ClientConnectionImpl::Disposition::CLOSE)
 				{
-					handler->onDisconnected(*connection);
+					// Keep the callbacks paired: a TLS handshake that failed never
+					// produced an onConnected(), so it must not produce an
+					// onDisconnected() for a connection the handler never saw.
+					if (connection->connectedNotified())
+					{
+						handler->onDisconnected(*connection);
+					}
 					_listener.removeEvent(connection);
 					connection->closeSocket();
 					_socket_connection_pool.release(connection);

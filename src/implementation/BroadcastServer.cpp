@@ -25,7 +25,8 @@ NetworkResult BroadcastServerImpl::open(BroadcastHandler* handler, size_t num_of
 
 	NetworkResult result = NetworkResult(NetworkResultCode::SUCCESS);
 
-	_container = PassiveSocketContainer(_tls_configuration.valid(), _configuration.is_unix_domain());
+	_container = PassiveSocketContainer(_tls_configuration.valid(),
+	                                   _configuration.is_unix_domain(), _tls_configuration);
 	_socket = _container.get();
 	result = _socket->valid();
 	if (result.code() != NetworkResultCode::SUCCESS)
@@ -103,16 +104,18 @@ void Bn3Monkey::BroadcastServerImpl::monitorClient()
 			case SocketEventType::ACCEPT:
 			{
 				auto socket_container = _socket->accept();
-				auto* client_socket = socket_container.get();
-				if (client_socket->result().code() != NetworkResultCode::SUCCESS)
+				if (socket_container.get()->result().code() != NetworkResultCode::SUCCESS)
 					break;
 
 				// Broadcast latency > coalescing throughput: disable Nagle so
 				// each write() reaches the wire immediately.
-				client_socket->setNoDelay();
+				socket_container.get()->setNoDelay();
 
 				auto client = std::make_shared<BroadcastClient>();
-				client->container = socket_container;
+				// Moves the socket into the client; `socket_container` is empty
+				// afterwards, so re-read the socket through its new owner.
+				client->container = std::move(socket_container);
+				auto* client_socket = client->container.get();
 				client->fd = client_socket->descriptor();
 				_listener.addEvent(client.get(), SocketEventType::READ);
 

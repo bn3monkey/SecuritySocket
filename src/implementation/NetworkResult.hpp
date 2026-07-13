@@ -251,6 +251,13 @@ inline const char* getMessage(const NetworkResultCode& code)
 
         case NetworkResultCode::SOCKET_SERVER_ALREADY_RUNNING: return "Socket server is already running";
 
+        // - SERVER-SIDE TLS
+        case NetworkResultCode::TLS_SERVER_CERT_LOAD_FAIL: return "Failed to load the server certificate (check the path and that it is PEM)";
+        case NetworkResultCode::TLS_SERVER_KEY_LOAD_FAIL: return "Failed to load the server private key (check the path, PEM format, and password)";
+        case NetworkResultCode::TLS_SERVER_KEY_MISMATCH: return "The server certificate and private key do not match";
+        case NetworkResultCode::TLS_CLIENT_TRUST_STORE_LOAD_FAIL: return "Failed to load the client trust store (CA) used to verify client certificates";
+        case NetworkResultCode::TLS_HANDSHAKE_FAILED: return "TLS handshake with the client failed";
+
         case NetworkResultCode::UNKNOWN_ERROR: return "Unknown socket error occurred";
 
         case NetworkResultCode::LENGTH: return "Invalid socket code (LENGTH should not be used)";
