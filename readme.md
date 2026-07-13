@@ -53,6 +53,7 @@ It is compatible for Windows(MSVC, MinGW Compiler), Android (Clang), Linux (gcc)
     - [3.0.1 / 2026.06.22](#301--20260622)
     - [3.0.2 / 2026.06.23](#302--20260623)
     - [3.0.3 / 2026.07.07](#303--20260707)
+    - [3.1.0 / 2026.07.13](#310--20260713)
 
 ## Build
 
@@ -67,7 +68,7 @@ cmake_minimum_required (VERSION 3.16)
 include(FetchContent)
 FetchContent_Declear(SecuritySocket
     GIT_REPOSITORY https://github.com/bn3monkey/securitysocket
-    GIT_TAG v3.0.3)
+    GIT_TAG v3.1.0)
 FetchContent_MakeAvailable(SecuritySocket)
 
 ...
@@ -124,7 +125,7 @@ option(BUILD_SECURITYSOCKET_TEST OFF CACHE BOOL "Build Security socket test" FOR
 
 FetchContent_Declear(SecuritySocket
     GIT_REPOSITORY https://github.com/bn3monkey/securitysocket
-    GIT_TAG v3.0.3)
+    GIT_TAG v3.1.0)
 
 FetchContent_MakeAvailable(SecuritySocket)
 
@@ -1101,3 +1102,52 @@ First major release of the unified HTTP / WebSocket / Custom-Protocol stack.
   `posix_spawnp` / `kill` / `waitpid` paths are excluded from the Android build.
   Behaviour on Windows (`CreateProcessA`) and Linux (`posix_spawnp`) is
   unchanged.
+
+### 3.1.0 / 2026.07.13
+
+- **Server-side TLS is now implemented.** `RequestServer` accepts a
+  `TlsServerConfiguration` and serves HTTPS / TLS Custom-Protocol connections.
+  Previously the type and the constructor existed but every TLS code path was a
+  `throw std::runtime_error("Not Implemented")` stub, so `open()` threw out of
+  the public API instead of returning a `NetworkResult`. What landed:
+  - `SSL_CTX` construction from the configuration: protocol version range,
+    TLS 1.2 / 1.3 cipher suites, server certificate + private key (with password
+    support), and mutual TLS (`AUTH_MODE_OPTIONAL` / `AUTH_MODE_REQUIRED`,
+    including the acceptable-CA list sent in the `CertificateRequest`).
+  - The handshake runs **on the event loop**, one `SSL_accept()` step per
+    readiness event, through a new internal `TlsHandshaking` connection state. It
+    is never run inline on the accept loop, so a slow or malicious peer cannot
+    stall the server (slow-loris).
+  - `onConnected()` fires only after the handshake completes, so a connection
+    that dies mid-negotiation is never announced to the handler — and therefore
+    never produces an unpaired `onDisconnected()`.
+  - Five new diagnostic result codes so a misconfigured deployment is debuggable
+    from `open()`'s return value alone: `TLS_SERVER_CERT_LOAD_FAIL`,
+    `TLS_SERVER_KEY_LOAD_FAIL`, `TLS_SERVER_KEY_MISMATCH`,
+    `TLS_CLIENT_TRUST_STORE_LOAD_FAIL`, `TLS_HANDSHAKE_FAILED`.
+
+- **Breaking: `BroadcastServer` is plaintext-only.** The
+  `BroadcastServer(config, tls_configuration)` overload has been removed. A
+  broadcast channel is a one-way push of the same bytes to every subscriber: it
+  has no request/response exchange to authenticate and nothing to negotiate per
+  peer. Encrypt the payload in the application before calling `write()`, or use
+  `RequestServer` when an authenticated encrypted channel is needed. (The removed
+  overload never worked — it threw on `open()` — so no working code can break.)
+
+- **Fix: a full send buffer no longer drops the connection.** `flushOutput()`
+  treated `EWOULDBLOCK` / `EAGAIN` as a fatal error, because `createResult()` maps
+  it to `SOCKET_CONNECTION_NEED_TO_BE_BLOCKED` rather than `SOCKET_TIMEOUT`. A
+  partially-sent response therefore tore the connection down instead of resuming
+  on the next `POLLOUT`. This affected plaintext connections too; it was simply
+  hard to hit while responses fit in one socket buffer.
+
+- **Fix: the socket container is now move-only.** `SocketContainer` copied its
+  inline storage with `memcpy`, leaving two owners aliasing one file descriptor
+  (and, with TLS, one `SSL` session). It also placement-new'd polymorphic objects
+  into a 1-aligned `char[]`. Copies are now deleted, the stored type is moved and
+  destroyed through its exact type, and the buffer is correctly aligned.
+
+- Internal: `PassiveSocket` gained a virtual destructor (this also silences
+  clang's `-Wdelete-non-abstract-non-virtual-dtor`, which fired in Android
+  builds); `ClientConnection::isSecure()` is now derived from the accepted socket
+  rather than from "a TLS configuration was supplied".
