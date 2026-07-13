@@ -20,7 +20,7 @@ It is compatible for Windows(MSVC, MinGW Compiler), Android (Clang), Linux (gcc)
     - [Using HTTP Client](#using-http-client)
     - [Using Request Client](#using-request-client)
     - [Using Notification Server](#using-notification-server)
-    - [Using TLS Notification Server](#using-tls-notification-server)
+    - [Notification Server and TLS](#notification-server-and-tls)
   - [TLS Configuration](#tls-configuration)
     - [TlsVersion](#tlsversion)
     - [TlsV12CipherSuite](#tlsv12ciphersuite)
@@ -792,50 +792,17 @@ int main()
 }
 ```
 
-### Using TLS Notification Server
+### Notification Server and TLS
 
-```cpp
-#include <SecuritySocket.hpp>
-#include <cstdio>
+`BroadcastServer` is **plaintext by design** — it has no `TlsServerConfiguration`
+overload. A broadcast channel pushes the same bytes to every subscriber; there is
+no request/response exchange to authenticate and nothing meaningful to negotiate
+per peer, so carrying a full TLS session per subscriber buys little.
 
-int main()
-{
-    using namespace Bn3Monkey;
-
-    NetworkConfiguration config{ "127.0.0.1", 20000 };
-
-    // TLS server requiring client certificate authentication (mTLS)
-    TlsServerConfiguration tls_config{
-        { TlsVersion::TLS1_2, TlsVersion::TLS1_3 },
-        {},                                                        // use default TLS 1.2 cipher suites
-        {},                                                        // use default TLS 1.3 cipher suites
-        "/path/to/server.crt",
-        "/path/to/server.key",
-        nullptr,                                                   // no key password
-        TlsClientAuthMode::REQUIRED,               // require client certificate
-        "/path/to/ca.crt"
-    };
-
-    BroadcastServer server{ config, tls_config };
-
-    {
-        auto result = server.open(nullptr, 4);  // optional BroadcastHandler*
-        if (NetworkResultCode::SUCCESS != result.code())
-        {
-            printf("%s", result.message());
-            return -1;
-        }
-    }
-
-    for (size_t i = 0; i < 20; i++)
-    {
-        server.write("Event", strlen("Event"));
-    }
-
-    server.close();
-    return 0;
-}
-```
+If the payload needs confidentiality, encrypt it in your application before handing
+it to `write()`. That keeps key management with the party that owns the data.
+For an authenticated, encrypted request/response channel, use `RequestServer` with a
+`TlsServerConfiguration` (see [Using TLS Request Server](#using-tls-request-server)).
 
 ## TLS Configuration
 
@@ -917,7 +884,7 @@ tls_config.setOnTLSEvent([](const char* message)
 
 ### TlsServerConfiguration
 
-Configuration for the TLS server. Passed as the second argument to `RequestServer` or `BroadcastServer`.
+Configuration for the TLS server. Passed as the second argument to `RequestServer`. (`BroadcastServer` is plaintext only — see [Notification Server and TLS](#notification-server-and-tls).)
 
 ```cpp
 TlsServerConfiguration tls_config{

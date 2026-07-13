@@ -714,8 +714,13 @@ namespace Bn3Monkey
     public:
         static constexpr size_t IMPLEMENTATION_SIZE = 2048;
 
+        // Plaintext only, by design — there is deliberately no TlsServerConfiguration
+        // overload. A broadcast channel pushes the same bytes to every subscriber; it
+        // has no request/response exchange to authenticate and nothing to negotiate
+        // per peer. If the payload needs confidentiality, encrypt it in the
+        // application before calling write(); that keeps key management with the
+        // party that owns the data. Use RequestServer for TLS.
         explicit BroadcastServer(const NetworkConfiguration& configuration);
-        explicit BroadcastServer(const NetworkConfiguration& configuration, const TlsServerConfiguration& tls_configuration);
         virtual ~BroadcastServer();
 
         NetworkResult open(BroadcastHandler* handler, size_t num_of_clients);

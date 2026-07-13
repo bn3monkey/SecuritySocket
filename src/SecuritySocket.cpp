@@ -113,10 +113,6 @@ Bn3Monkey::BroadcastServer::BroadcastServer(const NetworkConfiguration& configur
 {
 	new (_container) BroadcastServerImpl(configuration);
 }
-Bn3Monkey::BroadcastServer::BroadcastServer(const NetworkConfiguration& configuration,  const TlsServerConfiguration& tls_configuration)
-{
-	new (_container) BroadcastServerImpl(configuration, tls_configuration);
-}
 Bn3Monkey::BroadcastServer::~BroadcastServer()
 {
 	BroadcastServerImpl* impl = static_cast<BroadcastServerImpl*>((void*)_container);

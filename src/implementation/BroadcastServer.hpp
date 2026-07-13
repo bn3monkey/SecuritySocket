@@ -28,9 +28,14 @@ namespace Bn3Monkey
     class BroadcastServerImpl
     {
     public:
+        // Plaintext only, by design. A broadcast channel is a one-way push of the
+        // same bytes to every subscriber; it has no request/response semantics to
+        // authenticate and no per-peer negotiation worth carrying a TLS session
+        // for. Callers who need confidentiality should encrypt the payload before
+        // handing it to write() — that keeps the key management where it belongs
+        // (the application) instead of duplicating RequestServer's TLS machinery
+        // for a channel that cannot use most of it.
 		BroadcastServerImpl(const NetworkConfiguration& configuration) : _configuration(configuration) {}
-        BroadcastServerImpl(const NetworkConfiguration& configuration, const TlsServerConfiguration& tls_configuration)
-            : _configuration(configuration), _tls_configuration(tls_configuration) {}
 
 		virtual ~BroadcastServerImpl();
 
@@ -52,7 +57,6 @@ namespace Bn3Monkey
 
 	private:
         NetworkConfiguration _configuration;
-        TlsServerConfiguration _tls_configuration;
 
         PassiveSocketContainer _container;
         PassiveSocket* _socket{ nullptr };

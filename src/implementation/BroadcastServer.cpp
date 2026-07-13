@@ -25,8 +25,9 @@ NetworkResult BroadcastServerImpl::open(BroadcastHandler* handler, size_t num_of
 
 	NetworkResult result = NetworkResult(NetworkResultCode::SUCCESS);
 
-	_container = PassiveSocketContainer(_tls_configuration.valid(),
-	                                   _configuration.is_unix_domain(), _tls_configuration);
+	// `false`: never TLS. See the design note on BroadcastServerImpl's constructor.
+	_container = PassiveSocketContainer(false,
+	                                   _configuration.is_unix_domain(), TlsServerConfiguration{});
 	_socket = _container.get();
 	result = _socket->valid();
 	if (result.code() != NetworkResultCode::SUCCESS)
