@@ -67,6 +67,17 @@ namespace Bn3Monkey
         return *this;
     }
 
+    HttpResponse& HttpResponseImpl::bodyCopy(const void* data, size_t size)
+    {
+        _owned_body.assign(static_cast<const char*>(data),
+                           static_cast<const char*>(data) + size);
+        // Point at owned storage. .data() is stable for the object's lifetime
+        // (no further mutation of _owned_body happens before serialize()).
+        _body      = _owned_body.empty() ? nullptr : _owned_body.data();
+        _body_size = size;
+        return *this;
+    }
+
     HttpResponse& HttpResponseImpl::json(const char* json_str)
     {
         // Convenience: body + Content-Type header in one call. We always

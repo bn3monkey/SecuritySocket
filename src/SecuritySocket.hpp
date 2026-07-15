@@ -626,7 +626,15 @@ namespace Bn3Monkey
         virtual ~HttpResponse() = default;
         virtual HttpResponse& status(int code)                                     = 0;
         virtual HttpResponse& header(const char* name, const char* value)          = 0;
+        // BORROWS the bytes: they must stay valid until the response is
+        // serialized (which happens the moment the handler returns). Fine for a
+        // string literal or something that lives as long as the handler — e.g.
+        // req.body(). A pointer to a local buffer WILL dangle; use bodyCopy().
         virtual HttpResponse& body  (const void* data, size_t size)                = 0;
+        // COPIES the bytes into the response. Use for a body generated inside the
+        // handler — a file read, a rendered buffer — that does not outlive the
+        // call. Costs one copy; body() avoids it but only for already-owned data.
+        virtual HttpResponse& bodyCopy(const void* data, size_t size)              = 0;
         virtual HttpResponse& json  (const char* json_str)                         = 0;
     };
 
@@ -660,6 +668,31 @@ namespace Bn3Monkey
         // 405 bodies; without it the server emits a minimal default 404.
         virtual void fallback(HandlerFn fn,
                               RequestProcessingMode mode = RequestProcessingMode::FAST) = 0;
+
+        // Serve a directory of static files — a built frontend (HTML/CSS/JS),
+        // images, fonts, etc. One call wires up everything a static host needs:
+        //
+        //   * A GET catch-all that resolves each request path against
+        //     `directory` and streams the file back.
+        //   * Path-traversal protection: any ".." / drive / backslash segment is
+        //     rejected, so a request can never escape `directory`.
+        //   * Content-Type inferred from the file extension (.css, .js, .svg,
+        //     .woff2, .wasm, ...); unknown types fall back to
+        //     application/octet-stream.
+        //   * "/" (and any directory-style request) serves `index_file`.
+        //   * spa_fallback: when true, a request that matches no file returns
+        //     `index_file` with 200 instead of 404, so a client-side router
+        //     (React / Vue / …) can take over deep links like "/dashboard".
+        //     Leave false for a plain asset server (unknown path -> 404).
+        //
+        // Runs on the SLOW (worker-thread) path since it reads from disk, so it
+        // never blocks the event loop. Register it AFTER your API routes: exact
+        // and :param routes always win over this catch-all, so "/api/..." keeps
+        // working. This is a concrete convenience over get()/fallback() — not a
+        // virtual — so every router provides it identically.
+        void registerStatic(const char* directory,
+                             bool spa_fallback = false,
+                             const char* index_file = "index.html");
     };
 
     // Derived handler for HTTP traffic. registerRoutes runs once at open()

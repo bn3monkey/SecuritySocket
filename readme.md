@@ -17,6 +17,7 @@ It is compatible for Windows(MSVC, MinGW Compiler), Android (Clang), Linux (gcc)
     - [Using Request Server (Custom Protocol)](#using-request-server-custom-protocol)
     - [Using TLS Request Server](#using-tls-request-server)
     - [Using HTTP Server](#using-http-server)
+    - [Serving Static Files](#serving-static-files)
     - [Using HTTP Client](#using-http-client)
     - [Using Request Client](#using-request-client)
     - [Using Notification Server](#using-notification-server)
@@ -54,6 +55,7 @@ It is compatible for Windows(MSVC, MinGW Compiler), Android (Clang), Linux (gcc)
     - [3.0.2 / 2026.06.23](#302--20260623)
     - [3.0.3 / 2026.07.07](#303--20260707)
     - [3.1.0 / 2026.07.13](#310--20260713)
+    - [3.2.0 / 2026.07.15](#320--20260715)
 
 ## Build
 
@@ -68,7 +70,7 @@ cmake_minimum_required (VERSION 3.16)
 include(FetchContent)
 FetchContent_Declear(SecuritySocket
     GIT_REPOSITORY https://github.com/bn3monkey/securitysocket
-    GIT_TAG v3.1.0)
+    GIT_TAG v3.2.0)
 FetchContent_MakeAvailable(SecuritySocket)
 
 ...
@@ -125,7 +127,7 @@ option(BUILD_SECURITYSOCKET_TEST OFF CACHE BOOL "Build Security socket test" FOR
 
 FetchContent_Declear(SecuritySocket
     GIT_REPOSITORY https://github.com/bn3monkey/securitysocket
-    GIT_TAG v3.1.0)
+    GIT_TAG v3.2.0)
 
 FetchContent_MakeAvailable(SecuritySocket)
 
@@ -602,6 +604,59 @@ int main()
 > `WebSocketConfiguration{ "/ws" }`) serves HTTP, the Custom Protocol, and
 > Custom-over-WebSocket from one port. Pass a `TlsServerConfiguration` to
 > `RequestServer` for HTTPS / `wss://`.
+
+### Serving Static Files
+
+`HttpRouter::registerStatic(directory)` turns the server into a static file host —
+a built frontend, images, fonts — with one call. It wires up path-traversal
+protection, extension-based `Content-Type`, `/` → `index.html`, and an optional
+single-page-app fallback. It reads from disk on the SLOW (worker-thread) path, so
+it never blocks the event loop.
+
+```cpp
+class SiteHandler : public HttpRequestHandler
+{
+public:
+    void registerRoutes(HttpRouter& router) override
+    {
+        // API routes first — exact / :param routes always win over the static
+        // catch-all, and if you register a route that collides with one
+        // registerStatic would add (e.g. "/"), yours is kept and a warning is
+        // logged (first-writer-wins).
+        router.get("/api/health", [](ClientConnection&, HttpRequest&, HttpResponse& res)
+        {
+            res.status(200).json("{\"ok\":true}");
+        });
+
+        // Serve ./web at the root:
+        //   GET /            -> ./web/index.html
+        //   GET /app.css     -> ./web/app.css        (Content-Type: text/css)
+        //   GET /assets/x.js -> ./web/assets/x.js    (Content-Type: text/javascript)
+        //   GET /missing     -> 404
+        router.registerStatic("./web");
+
+        // For a single-page app (React / Vue / …), pass spa_fallback = true so an
+        // unknown path returns index.html (200) and the client-side router takes
+        // over deep links like /dashboard:
+        //   router.registerStatic("./web", /*spa_fallback=*/true);
+    }
+};
+```
+
+**Security.** Requests can never escape `directory`: any `..`, drive letter, or
+backslash segment is rejected, and the resolved real path (symlinks followed) is
+verified to be inside the root. Dotfiles and dot-directories (`.env`, `.git`, …)
+are refused by default — if you must expose one (e.g. `/.well-known/...`), add an
+explicit route for it. Windows reserved device names (`CON`, `NUL`, …) are refused.
+
+Combine it with a `TlsServerConfiguration` on the `RequestServer` to serve the
+site over HTTPS — the static handler is identical.
+
+> **Generating a response body inside a handler?** Use `res.bodyCopy(data, size)`,
+> not `res.body(...)`. `body()` *borrows* the bytes (they must outlive the handler,
+> which is true for a string literal or `req.body()` but **not** for a local buffer
+> like a file read); `bodyCopy()` copies them into the response so they cannot
+> dangle. `registerStatic` uses `bodyCopy` internally.
 
 ### Using HTTP Client
 
@@ -1102,6 +1157,38 @@ First major release of the unified HTTP / WebSocket / Custom-Protocol stack.
   `posix_spawnp` / `kill` / `waitpid` paths are excluded from the Android build.
   Behaviour on Windows (`CreateProcessA`) and Linux (`posix_spawnp`) is
   unchanged.
+
+### 3.2.0 / 2026.07.15
+
+- **Static file serving: `HttpRouter::registerStatic(directory)`.** One call
+  turns a `RequestServer` into a static host for a built frontend / assets. It
+  registers a GET catch-all that resolves each request against `directory` and
+  streams the file back, with:
+  - **Path-traversal protection** (two layers): every `..`, drive-letter, and
+    backslash segment is rejected, AND the resolved real path (symlinks followed
+    via `realpath` / `_fullpath`) is verified to lie inside the root — so a
+    symlink escape with no `..` in the URL is caught too. Dotfiles / dot-dirs
+    (`.env`, `.git`, …) and Windows reserved device names (`CON`, `NUL`, …) are
+    refused by default.
+  - **`Content-Type` from the file extension** (`.css`, `.js`, `.svg`, `.woff2`,
+    `.wasm`, …; unknown → `application/octet-stream`).
+  - **`/` → `index_file`** (default `index.html`).
+  - **Optional SPA fallback** (`registerStatic(dir, /*spa_fallback=*/true)`): an
+    unknown path returns `index.html` (200) so a client-side router owns deep
+    links.
+  - Runs on the SLOW (worker-thread) path, so disk reads never block the event
+    loop.
+
+- **`HttpResponse::bodyCopy(data, size)`.** Copies the body into the response
+  instead of borrowing it (as `body()` does). Use it for a body generated inside
+  the handler — a file read, a rendered buffer — that would otherwise dangle once
+  the handler returns and the response is serialized. `registerStatic` uses it.
+
+- **Duplicate route registration is now first-writer-wins, with a warning.**
+  Registering the same (method, path) — or a second `fallback` — twice previously
+  replaced the first handler silently; it now keeps the first and logs a warning
+  to stderr. This makes an explicit route always win over `registerStatic`'s
+  catch-all: an intentional API route is never shadowed by generic file serving.
 
 ### 3.1.0 / 2026.07.13
 

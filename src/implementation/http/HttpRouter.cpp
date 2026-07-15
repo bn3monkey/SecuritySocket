@@ -1,5 +1,6 @@
 #include "HttpRouter.hpp"
 
+#include <cstdio>
 #include <cstring>
 #include <utility>
 
@@ -16,8 +17,33 @@ namespace Bn3Monkey
     void HttpRouterImpl::head   (const char* pattern, HandlerFn fn, RequestProcessingMode mode) { registerRoute(Method::HEAD,    pattern, std::move(fn), mode); }
     void HttpRouterImpl::options(const char* pattern, HandlerFn fn, RequestProcessingMode mode) { registerRoute(Method::OPTIONS, pattern, std::move(fn), mode); }
 
+    // Method -> name for the duplicate-registration warning below.
+    static const char* methodName(HttpRouterImpl::Method m)
+    {
+        switch (m) {
+        case HttpRouterImpl::Method::GET:     return "GET";
+        case HttpRouterImpl::Method::POST:    return "POST";
+        case HttpRouterImpl::Method::PUT:     return "PUT";
+        case HttpRouterImpl::Method::DEL:     return "DELETE";
+        case HttpRouterImpl::Method::PATCH:   return "PATCH";
+        case HttpRouterImpl::Method::HEAD:    return "HEAD";
+        case HttpRouterImpl::Method::OPTIONS: return "OPTIONS";
+        default:                              return "?";
+        }
+    }
+
     void HttpRouterImpl::fallback(HandlerFn fn, RequestProcessingMode mode)
     {
+        if (!fn) return;
+        // First-writer-wins (see registerRoute): an explicit fallback the caller
+        // set earlier is kept, so registerStatic's SPA fallback never silently
+        // replaces it. Warn so the ignored second registration is not a mystery.
+        if (_has_fallback) {
+            std::fprintf(stderr,
+                "[SecuritySocket] HttpRouter: fallback already registered; "
+                "ignoring the later one (first-writer-wins).\n");
+            return;
+        }
         _fallback.fn   = std::move(fn);
         _fallback.mode = mode;
         _has_fallback  = static_cast<bool>(_fallback.fn);
@@ -42,8 +68,15 @@ namespace Bn3Monkey
             leaf.action_id = _actions[mi].size();
             _actions[mi].push_back(Route{ std::move(fn), mode });
         } else {
-            // Re-registration of the same (path, method) — last writer wins.
-            _actions[mi][leaf.action_id] = Route{ std::move(fn), mode };
+            // FIRST-writer-wins: the existing handler stays. This makes
+            // registerStatic (typically called last) yield to any explicit route
+            // the caller declared for the same path — an intentional API route is
+            // never silently shadowed by generic file serving. Warn so an
+            // accidental double-registration is visible rather than mysterious.
+            std::fprintf(stderr,
+                "[SecuritySocket] HttpRouter: %s \"%s\" already registered; "
+                "ignoring the later one (first-writer-wins).\n",
+                methodName(m), stored.c_str());
         }
     }
 

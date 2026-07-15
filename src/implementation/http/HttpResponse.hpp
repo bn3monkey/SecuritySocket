@@ -4,6 +4,7 @@
 #include "../../SecuritySocket.hpp"
 
 #include <cstddef>
+#include <vector>
 
 namespace Bn3Monkey
 {
@@ -28,6 +29,7 @@ namespace Bn3Monkey
         HttpResponse& status(int code)                            override;
         HttpResponse& header(const char* name, const char* value) override;
         HttpResponse& body  (const void* data, size_t size)       override;
+        HttpResponse& bodyCopy(const void* data, size_t size)     override;
         HttpResponse& json  (const char* json_str)                override;
 
         // Flatten accumulated state into 'out' as an HTTP/1.1 message.
@@ -63,6 +65,11 @@ namespace Bn3Monkey
 
         const void* _body      = nullptr;
         size_t      _body_size = 0;
+
+        // Backing store for bodyCopy(). _body points into this when the response
+        // owns its body; empty when body() borrowed instead. Lives as long as the
+        // HttpResponseImpl, which spans serialize(), so the pointer never dangles.
+        std::vector<char> _owned_body;
     };
 }
 
