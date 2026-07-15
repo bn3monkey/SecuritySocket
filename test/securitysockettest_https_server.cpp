@@ -19,6 +19,7 @@
 #include <string>
 #include <thread>
 
+#include "securitysockettest_helper.hpp"     // printConcurrent
 #include "securitysockettest_tls_fixture.hpp"
 
 using namespace Bn3MonkeyTest;
@@ -36,6 +37,17 @@ namespace
     class HttpsEchoHandler : public Bn3Monkey::HttpRequestHandler
     {
     public:
+        void onConnected(const Bn3Monkey::ClientConnection& conn) override
+        {
+            printConcurrent("[server] onConnected    ip=%s port=%u secure=%d  (TLS handshake OK)\n",
+                            conn.ip(), conn.port(), (int)conn.isSecure());
+        }
+
+        void onDisconnected(const Bn3Monkey::ClientConnection& conn) override
+        {
+            printConcurrent("[server] onDisconnected ip=%s port=%u\n", conn.ip(), conn.port());
+        }
+
         void registerRoutes(Bn3Monkey::HttpRouter& router) override
         {
             router.get("/ping", [](const Bn3Monkey::ClientConnection&,
@@ -93,6 +105,16 @@ namespace
     {
         return std::string(static_cast<const char*>(res.body()), res.bodySize());
     }
+
+    // One line per HTTPS exchange so the terminal shows what actually went over
+    // the wire: method, path, status, and a short body preview.
+    void logExchange(const char* method, const char* path,
+                     const Bn3Monkey::HttpClientResponse& res)
+    {
+        const std::string body = bodyOf(res);
+        printConcurrent("[client] %-4s %-16s -> %d  (%zu bytes) \"%.40s\"\n",
+                        method, path, res.status(), body.size(), body.c_str());
+    }
 }
 
 TEST(HttpsServer, GetRouteReturnsBody)
@@ -106,6 +128,7 @@ TEST(HttpsServer, GetRouteReturnsBody)
 
     HttpClient client{ httpsConfig(), makeClientTls() };
     auto res = client.get("/ping");
+    logExchange("GET", "/ping", res);
 
     ASSERT_EQ(NetworkResultCode::SUCCESS, res.resultCode());
     EXPECT_EQ(200, res.status());
@@ -127,6 +150,7 @@ TEST(HttpsServer, HandlerSeesConnectionAsSecure)
 
     HttpClient client{ httpsConfig(), makeClientTls() };
     auto res = client.get("/secure");
+    logExchange("GET", "/secure", res);
 
     ASSERT_EQ(NetworkResultCode::SUCCESS, res.resultCode());
     EXPECT_EQ(200, res.status());
@@ -147,6 +171,7 @@ TEST(HttpsServer, PostEchoesRequestBody)
     HttpClient client{ httpsConfig(), makeClientTls() };
     const std::string payload = "the quick brown fox jumps over the lazy dog";
     auto res = client.post("/echo", payload.data(), payload.size());
+    logExchange("POST", "/echo", res);
 
     ASSERT_EQ(NetworkResultCode::SUCCESS, res.resultCode());
     EXPECT_EQ(200, res.status());
@@ -173,7 +198,11 @@ TEST(HttpsServer, PostLargeBodySpansManyTlsRecords)
         payload.push_back(static_cast<char>('a' + (i % 26)));
 
     HttpClient client{ httpsConfig(), makeClientTls() };
+    printConcurrent("[client] POST /echo with %zu KB body (spans many TLS records)...\n",
+                    payload.size() / 1024);
     auto res = client.post("/echo", payload.data(), payload.size());
+    printConcurrent("[client] POST /echo -> %d, echoed %zu bytes back\n",
+                    res.status(), res.bodySize());
 
     ASSERT_EQ(NetworkResultCode::SUCCESS, res.resultCode());
     EXPECT_EQ(200, res.status());
@@ -194,6 +223,7 @@ TEST(HttpsServer, PathParamIsBound)
 
     HttpClient client{ httpsConfig(), makeClientTls() };
     auto res = client.get("/user/42");
+    logExchange("GET", "/user/42", res);
 
     ASSERT_EQ(NetworkResultCode::SUCCESS, res.resultCode());
     EXPECT_EQ(200, res.status());
@@ -213,6 +243,7 @@ TEST(HttpsServer, UnknownRouteReturns404)
 
     HttpClient client{ httpsConfig(), makeClientTls() };
     auto res = client.get("/no/such/route");
+    logExchange("GET", "/no/such/route", res);
 
     ASSERT_EQ(NetworkResultCode::SUCCESS, res.resultCode());
     EXPECT_EQ(404, res.status());
@@ -234,12 +265,14 @@ TEST(HttpsServer, KeepAliveManyRequestsOnOneConnection)
 
     HttpClient client{ httpsConfig(), makeClientTls() };
 
+    printConcurrent("[client] 20 GET /ping on ONE TLS session (keep-alive, one handshake)\n");
     for (int i = 0; i < 20; ++i)
     {
         auto res = client.get("/ping");
         ASSERT_EQ(NetworkResultCode::SUCCESS, res.resultCode()) << "request " << i;
         EXPECT_EQ(200, res.status()) << "request " << i;
         EXPECT_EQ("pong", bodyOf(res)) << "request " << i;
+        printConcurrent("[client]   request %2d/20 -> %d \"%s\"\n", i + 1, res.status(), bodyOf(res).c_str());
     }
 
     releaseSecuritySocket();

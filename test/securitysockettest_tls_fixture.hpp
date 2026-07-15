@@ -14,6 +14,7 @@
 #include <SecuritySocket.hpp>
 
 #include "securitysockettest_tls_server_certs.hpp"
+#include "securitysockettest_helper.hpp"   // printConcurrent
 
 #include <cstdio>
 #include <fstream>
@@ -51,9 +52,23 @@ namespace Bn3MonkeyTest
         TempPemFile key { "ss_srv.key", kServerKeyPem  };
     };
 
+    // OpenSSL handshake-progress callbacks. Registered via setOnTLSEvent() on the
+    // configuration; OpenSSL fires them at every state-machine step, alert, and
+    // handshake start/finish, so the test output shows the negotiation happening
+    // rather than just a silent pass. Free functions because the callback type is
+    // a plain void(*)(const char*).
+    inline void onServerTlsEvent(const char* message)
+    {
+        printConcurrent("    [server-tls] %s\n", message);
+    }
+    inline void onClientTlsEvent(const char* message)
+    {
+        printConcurrent("    [client-tls] %s\n", message);
+    }
+
     inline Bn3Monkey::TlsServerConfiguration makeServerTls(const ServerCertFiles& files)
     {
-        return Bn3Monkey::TlsServerConfiguration{
+        Bn3Monkey::TlsServerConfiguration cfg{
             { Bn3Monkey::TlsVersion::TLS1_2, Bn3Monkey::TlsVersion::TLS1_3 },
             {},                                   // default TLS 1.2 cipher suites
             {},                                   // default TLS 1.3 cipher suites
@@ -63,6 +78,8 @@ namespace Bn3MonkeyTest
             Bn3Monkey::TlsClientAuthMode::AUTH_MODE_NONE,
             nullptr                               // no client trust store
         };
+        cfg.setOnTLSEvent(onServerTlsEvent);
+        return cfg;
     }
 
     // The certificate is self-signed, so the client does not verify it. What is
@@ -70,7 +87,7 @@ namespace Bn3MonkeyTest
     // those already have coverage in securitysockettest_tls.cpp.
     inline Bn3Monkey::TlsClientConfiguration makeClientTls()
     {
-        return Bn3Monkey::TlsClientConfiguration{
+        Bn3Monkey::TlsClientConfiguration cfg{
             { Bn3Monkey::TlsVersion::TLS1_2, Bn3Monkey::TlsVersion::TLS1_3 },
             {}, {},
             false,      // verify_server
@@ -79,6 +96,8 @@ namespace Bn3MonkeyTest
             false,      // use_client_certificate
             nullptr, nullptr, nullptr
         };
+        cfg.setOnTLSEvent(onClientTlsEvent);
+        return cfg;
     }
 }
 

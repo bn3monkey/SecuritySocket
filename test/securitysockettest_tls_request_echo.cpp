@@ -98,6 +98,13 @@ namespace
             // The whole point of the suite: the handler is handed a connection
             // that reports itself encrypted, and it never had to know about TLS.
             if (conn.isSecure()) ++secure_connections;
+            printConcurrent("[server] onConnected    ip=%s port=%u secure=%d  (handshake OK)\n",
+                            conn.ip(), conn.port(), (int)conn.isSecure());
+        }
+
+        void onDisconnected(const Bn3Monkey::ClientConnection& conn) override
+        {
+            printConcurrent("[server] onDisconnected ip=%s port=%u\n", conn.ip(), conn.port());
         }
 
         void process(const Bn3Monkey::ClientConnection&,
@@ -107,6 +114,9 @@ namespace
             auto* header       = reinterpret_cast<const TlsEchoRequestHeader*>(req.header());
             auto* input_buffer = reinterpret_cast<const char*>(req.payload());
             const size_t input_size = req.payloadLength();
+
+            printConcurrent("[server] process        client=%d req#=%d payload=%zu bytes: \"%.40s\"\n",
+                            header->client_no, header->request_no, input_size, input_buffer);
 
             new (res.data()) TlsEchoResponse{
                 { header->request_type, header->request_no, sizeof(TlsEchoResponse) },
@@ -127,8 +137,10 @@ namespace
 
         Client client{ echoConfig(), makeClientTls() };
 
+        printConcurrent("[client %d] opening + TLS handshake...\n", client_no);
         ASSERT_EQ(NetworkResultCode::SUCCESS, client.open().code());
         ASSERT_EQ(NetworkResultCode::SUCCESS, client.connect().code());
+        printConcurrent("[client %d] connected (TLS handshake done)\n", client_no);
 
         int32_t count{ 0 };
         for (auto* pattern : kTlsEchoPatterns)
@@ -148,8 +160,12 @@ namespace
             EXPECT_EQ(response.header.response_no, request_header.request_no);
             EXPECT_EQ(response.header.request_type, request_header.request_type);
             EXPECT_STREQ(response.data, pattern);
+            printConcurrent("[client %d] req#=%d echoed OK: \"%.40s\"\n",
+                            client_no, request_header.request_no, response.data);
         }
 
+        printConcurrent("[client %d] all %d patterns echoed, closing\n",
+                        client_no, (int)(sizeof(kTlsEchoPatterns) / sizeof(kTlsEchoPatterns[0])));
         client.close();
     }
 }

@@ -53,8 +53,10 @@ namespace
 
         Client client{ fileConfig(), makeClientTls() };
 
+        printConcurrent("[client %d] opening + TLS handshake...\n", client_no);
         ASSERT_EQ(NetworkResultCode::SUCCESS, client.open().code());
         ASSERT_EQ(NetworkResultCode::SUCCESS, client.connect().code());
+        printConcurrent("[client %d] connected over TLS\n", client_no);
 
         auto test_cases = createTlsTestCases();
         const size_t ten_mb      = 10 * 1024 * 1024;
@@ -93,6 +95,8 @@ namespace
         }
 
         // ── WRITE_CHUNK × N (response-less; the last chunk ends the stream) ──
+        printConcurrent("[client %d] uploading %zu KB over TLS in %zu chunks...\n",
+                        client_no, ten_mb / 1024, chunk_count);
         for (size_t i = 0; i < chunk_count; i++)
         {
             const int32_t last = (i == chunk_count - 1) ? 1 : 0;
@@ -146,6 +150,8 @@ namespace
         }
         // Every byte we streamed up made it to disk intact.
         EXPECT_EQ(ten_mb, total);
+        printConcurrent("[client %d] upload complete, server reports %zu KB on disk\n",
+                        client_no, total / 1024);
 
         // ── READ_BEGIN (READ_STREAM entry) — server streams `total` raw bytes ──
         {
@@ -156,6 +162,8 @@ namespace
             client.write(&request_header, sizeof(request_header));
             client.write(&readBegin, sizeof(readBegin));
 
+            printConcurrent("[client %d] downloading %zu KB back over TLS...\n",
+                            client_no, total / 1024);
             std::vector<char> got(total);
             ASSERT_EQ(NetworkResultCode::SUCCESS,
                       readFully(client, got.data(), total).code());
@@ -166,6 +174,8 @@ namespace
                 EXPECT_TRUE(memcmp(got.data() + i * 4096, test_case.data(), 4096) == 0)
                     << "mismatch at chunk " << i;
             }
+            printConcurrent("[client %d] download verified byte-for-byte (%zu KB)\n",
+                            client_no, total / 1024);
         }
 
         // ── CLOSE_FILE (FAST) ──
